@@ -14,6 +14,8 @@ class HighlightSegment {
     this.playbackSpeed = 1.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
+    this.score = 0.0,
+    this.tags = const [],
   });
 
   final int order;
@@ -30,6 +32,8 @@ class HighlightSegment {
   final double playbackSpeed;
   final double audioFadeIn;
   final double audioFadeOut;
+  final double score;
+  final List<String> tags;
 
   double get duration => end - start;
   double get outputDuration => duration / playbackSpeed;
@@ -52,6 +56,8 @@ class HighlightSegment {
     double? playbackSpeed,
     double? audioFadeIn,
     double? audioFadeOut,
+    double? score,
+    List<String>? tags,
   }) {
     return HighlightSegment(
       order: order ?? this.order,
@@ -68,6 +74,8 @@ class HighlightSegment {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
+      score: score ?? this.score,
+      tags: tags ?? this.tags,
     );
   }
 
@@ -109,6 +117,14 @@ class HighlightSegment {
           (json['audio_fade_out'] as num?)?.toDouble() ??
           (json['audioFadeOut'] as num?)?.toDouble() ??
           0.0,
+      score:
+          (json['score'] as num?)?.toDouble() ??
+          (json['highlightScore'] as num?)?.toDouble() ??
+          0.0,
+      tags: (json['tags'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.trim().isNotEmpty)
+          .toList(),
     );
   }
 
@@ -128,6 +144,8 @@ class HighlightSegment {
       'playback_speed': playbackSpeed,
       'audio_fade_in': audioFadeIn,
       'audio_fade_out': audioFadeOut,
+      'score': score,
+      'tags': tags,
     };
   }
 }

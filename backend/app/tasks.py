@@ -99,6 +99,8 @@ def _normalize_highlights(
         playback_speed = max(0.25, min(float(item.get("playback_speed", 1.0)), 4.0))
         audio_fade_in = max(0.0, min(float(item.get("audio_fade_in", 0.0)), 10.0))
         audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
+        score = max(0.0, min(float(item.get("score", 0.0)), 20.0))
+        tags = [str(tag) for tag in item.get("tags", []) if str(tag).strip()]
         normalized.append(
             {
                 "order": int(item.get("order") or index),
@@ -115,6 +117,8 @@ def _normalize_highlights(
                 "playback_speed": round(playback_speed, 3),
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),
+                "score": round(score, 2),
+                "tags": tags[:6],
             }
         )
     normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])

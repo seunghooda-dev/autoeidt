@@ -35,7 +35,9 @@ class ClipInspector extends StatelessWidget {
               ),
             ),
             Text(
-              selected.source,
+              selected.score > 0
+                  ? '${selected.source} · ${selected.score.toStringAsFixed(1)}'
+                  : selected.source,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -54,6 +56,22 @@ class ClipInspector extends StatelessWidget {
           start: formatSeconds(selected.effectiveAudioStart),
           end: formatSeconds(selected.effectiveAudioEnd),
         ),
+        if (selected.tags.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final tag in selected.tags)
+                Chip(
+                  label: Text(tag),
+                  visualDensity: VisualDensity.compact,
+                  side: BorderSide(color: colorScheme.outline),
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: 14),
         _PropertySlider(
           icon: Icons.speed,

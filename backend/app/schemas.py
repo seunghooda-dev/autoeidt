@@ -49,6 +49,8 @@ class HighlightSegment(BaseModel):
     playback_speed: float = 1.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
+    score: float = 0.0
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("end")
     @classmethod
@@ -72,6 +74,11 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_fade_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("score")
+    @classmethod
+    def score_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 20.0))
 
 
 class UploadJobResponse(BaseModel):

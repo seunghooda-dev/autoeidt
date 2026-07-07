@@ -72,9 +72,31 @@ dist\AutoEdit-windows-x64.zip
   "end": 155.2,
   "reason": "핵심 주제 결론 및 강조 부분",
   "script": "해당 구간 시작 스크립트",
-  "source": "ai"
+  "source": "ai",
+  "score": 8.5,
+  "tags": ["핵심", "문제해결"]
 }
 ```
+
+## 자동 편집 스킬 엔진
+
+LLM을 쓰지 못하는 환경에서도 단순 키워드 컷이 아니라 여러 신호를 합산해
+하이라이트 후보를 고릅니다. 현재 내장 스킬은 핵심 키워드, 문제/해결 구조,
+질문형 후킹, 숫자 기반 구체성, 정보 밀도, 감정 표현, 논리 전환점을 평가합니다.
+LLM을 사용하는 경우에도 같은 스킬 점수로 결과를 보강해 프론트엔드에
+`score`와 `tags`를 함께 전달합니다.
+
+외부 분석 스킬은 Python 파일 또는 폴더를 `AUTOEDIT_ANALYSIS_SKILL_PATHS`에
+연결하면 됩니다. 여러 경로는 Windows에서 세미콜론(`;`)으로 구분합니다.
+
+```powershell
+$env:AUTOEDIT_ANALYSIS_SKILL_PATHS="C:\Users\seung\auto edit\backend\examples\analysis_skills"
+.\scripts\start-desktop-engine.ps1
+```
+
+외부 스킬 파일은 `create_skill()` 또는 `SKILL` 객체를 제공하고, `analyze(window)`
+메서드에서 `SkillSignal(score, tag, reason)`을 반환하면 됩니다. 예시는
+`backend\examples\analysis_skills\youtube_retention_skill.py`에 있습니다.
 
 ## Docker 실행
 

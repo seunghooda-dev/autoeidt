@@ -13,3 +13,5 @@ def test_fallback_highlights_returns_chronological_segments() -> None:
     assert highlights
     assert highlights == sorted(highlights, key=lambda item: item["start"])
     assert all(item["end"] > item["start"] for item in highlights)
+    assert all("score" in item for item in highlights)
+    assert all(item.get("tags") for item in highlights)

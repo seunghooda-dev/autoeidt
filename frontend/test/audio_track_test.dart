@@ -18,6 +18,8 @@ void main() {
       playbackSpeed: 1.5,
       audioFadeIn: 0.5,
       audioFadeOut: 1.0,
+      score: 8.4,
+      tags: ['핵심', '문제해결'],
     );
 
     final json = segment.toJson();
@@ -29,6 +31,8 @@ void main() {
     expect(json['playback_speed'], 1.5);
     expect(json['audio_fade_in'], 0.5);
     expect(json['audio_fade_out'], 1.0);
+    expect(json['score'], 8.4);
+    expect(json['tags'], ['핵심', '문제해결']);
 
     final restored = HighlightSegment.fromJson(json);
     expect(restored.effectiveAudioStart, 12);
@@ -39,6 +43,8 @@ void main() {
     expect(restored.playbackSpeed, 1.5);
     expect(restored.audioFadeIn, 0.5);
     expect(restored.audioFadeOut, 1.0);
+    expect(restored.score, 8.4);
+    expect(restored.tags, ['핵심', '문제해결']);
     expect(restored.outputDuration, closeTo(6.666, 0.01));
   });
 
