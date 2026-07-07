@@ -234,21 +234,21 @@ class EditControls extends StatelessWidget {
                 label: Text(selected.audioMuted ? '음소거 해제' : 'A1 음소거'),
               ),
               IconButton.outlined(
-                tooltip: 'A1 0.1초 앞으로',
+                tooltip: 'A1 1프레임 앞으로',
                 onPressed: selected.audioLinked
                     ? null
-                    : () => context.read<EditorController>().nudgeSelectedAudio(
-                        -0.1,
-                      ),
+                    : () => context
+                          .read<EditorController>()
+                          .nudgeSelectedAudioFrames(-1),
                 icon: const Icon(Icons.keyboard_double_arrow_left),
               ),
               IconButton.outlined(
-                tooltip: 'A1 0.1초 뒤로',
+                tooltip: 'A1 1프레임 뒤로',
                 onPressed: selected.audioLinked
                     ? null
-                    : () => context.read<EditorController>().nudgeSelectedAudio(
-                        0.1,
-                      ),
+                    : () => context
+                          .read<EditorController>()
+                          .nudgeSelectedAudioFrames(1),
                 icon: const Icon(Icons.keyboard_double_arrow_right),
               ),
             ],

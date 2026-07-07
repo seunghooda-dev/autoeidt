@@ -126,7 +126,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
-    widget.onScrub(_snapToTenth(_xToSeconds(position.dx, width)));
+    widget.onScrub(_snapToFrame(_xToSeconds(position.dx, width)));
   }
 
   void _startDrag(Offset position, double width) {
@@ -192,12 +192,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _activeTrack = null;
       _isScrubbing = true;
     });
-    widget.onScrub(_snapToTenth(_xToSeconds(x, width)));
+    widget.onScrub(_snapToFrame(_xToSeconds(x, width)));
   }
 
   void _updateDrag(double x, double width) {
     if (_isScrubbing) {
-      widget.onScrub(_snapToTenth(_xToSeconds(x, width)));
+      widget.onScrub(_snapToFrame(_xToSeconds(x, width)));
       return;
     }
 
@@ -209,7 +209,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     }
 
     final current = widget.segments[index];
-    final seconds = _snapToTenth(_xToSeconds(x, width));
+    final seconds = _snapToFrame(_xToSeconds(x, width));
 
     HighlightSegment updated;
     if (track == _DragTrack.video) {
@@ -310,7 +310,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     return (x / width).clamp(0.0, 1.0) * widget.duration;
   }
 
-  double _snapToTenth(double value) => (value * 10).round() / 10;
+  double _snapToFrame(double value) => snapSecondsToFrame(value);
 }
 
 class _TimelinePainter extends CustomPainter {

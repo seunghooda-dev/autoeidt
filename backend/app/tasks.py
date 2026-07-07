@@ -21,6 +21,19 @@ from app.services.llm_service import analyze_highlights
 from app.services.stt_service import transcribe_audio
 from app.storage import store
 
+TIMECODE_FRAME_RATE = 30000 / 1001
+TIMECODE_FRAME_DURATION = 1001 / 30000
+
+
+def _snap_to_timecode_frame(seconds: float) -> float:
+    if seconds <= 0:
+        return 0.0
+    return round(seconds * TIMECODE_FRAME_RATE) / TIMECODE_FRAME_RATE
+
+
+def _round_timecode_seconds(seconds: float) -> float:
+    return round(_snap_to_timecode_frame(seconds), 6)
+
 
 def _set_task_state(
     task: Any | None,
@@ -53,10 +66,18 @@ def _normalize_highlights(
 ) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for index, item in enumerate(highlights, start=1):
-        start = max(0.0, min(float(item["start"]), duration))
-        end = max(0.0, min(float(item["end"]), duration))
+        start = _round_timecode_seconds(
+            max(0.0, min(float(item["start"]), duration))
+        )
+        end = _round_timecode_seconds(
+            max(0.0, min(float(item["end"]), duration))
+        )
         if end <= start:
-            continue
+            end = _round_timecode_seconds(
+                min(duration, start + TIMECODE_FRAME_DURATION)
+            )
+            if end <= start:
+                continue
         audio_linked = bool(item.get("audio_linked", True))
         audio_start = item.get("audio_start")
         audio_end = item.get("audio_end")
@@ -64,8 +85,12 @@ def _normalize_highlights(
             normalized_audio_start = start
             normalized_audio_end = end
         else:
-            normalized_audio_start = max(0.0, min(float(audio_start), duration))
-            normalized_audio_end = max(0.0, min(float(audio_end), duration))
+            normalized_audio_start = _round_timecode_seconds(
+                max(0.0, min(float(audio_start), duration))
+            )
+            normalized_audio_end = _round_timecode_seconds(
+                max(0.0, min(float(audio_end), duration))
+            )
             if normalized_audio_end <= normalized_audio_start:
                 normalized_audio_start = start
                 normalized_audio_end = end
@@ -74,13 +99,13 @@ def _normalize_highlights(
         normalized.append(
             {
                 "order": int(item.get("order") or index),
-                "start": round(start, 1),
-                "end": round(end, 1),
+                "start": start,
+                "end": end,
                 "reason": str(item.get("reason", "AI 추천 구간")),
                 "script": str(item.get("script", "")),
                 "source": str(item.get("source", "ai")),
-                "audio_start": round(normalized_audio_start, 1),
-                "audio_end": round(normalized_audio_end, 1),
+                "audio_start": normalized_audio_start,
+                "audio_end": normalized_audio_end,
                 "audio_muted": bool(item.get("audio_muted", False)),
                 "audio_volume": round(audio_volume, 2),
                 "audio_linked": audio_linked,
@@ -224,6 +249,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         )
         if not refined:
             refined = raw_highlights
+        refined = _normalize_highlights(refined, duration)
 
         _set_task_state(
             task,

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/state/editor_controller.dart';
+import 'package:highlight_editor_app/utils/timecode.dart';
 
 void main() {
   test('highlight segment serializes audio track state', () {
@@ -44,10 +45,10 @@ void main() {
     );
 
     final selected = controller.selectedSegment!;
-    expect(selected.start, 6);
-    expect(selected.end, 14);
-    expect(selected.effectiveAudioStart, 6);
-    expect(selected.effectiveAudioEnd, 14);
+    expect(secondsToTimecodeFrame(selected.start), 180);
+    expect(secondsToTimecodeFrame(selected.end), 420);
+    expect(selected.effectiveAudioStart, selected.start);
+    expect(selected.effectiveAudioEnd, selected.end);
     expect(selected.audioLinked, isTrue);
   });
 
@@ -60,13 +61,13 @@ void main() {
       ..selectedSegmentOrder = 1;
 
     controller.detachAudioForSelectedSegment();
-    controller.nudgeSelectedAudio(0.5);
+    controller.nudgeSelectedAudioFrames(1);
 
     final selected = controller.selectedSegment!;
-    expect(selected.start, 5);
-    expect(selected.end, 12);
-    expect(selected.effectiveAudioStart, 5.5);
-    expect(selected.effectiveAudioEnd, 12.5);
+    expect(secondsToTimecodeFrame(selected.start), 150);
+    expect(secondsToTimecodeFrame(selected.end), 360);
+    expect(selected.effectiveAudioStart, timecodeFrameToSeconds(151));
+    expect(selected.effectiveAudioEnd, timecodeFrameToSeconds(361));
     expect(selected.audioLinked, isFalse);
   });
 }

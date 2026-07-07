@@ -9,6 +9,7 @@ import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 import '../services/api_client.dart';
 import '../services/local_engine_service.dart';
+import '../utils/timecode.dart';
 
 class EditorController extends ChangeNotifier {
   EditorController({
@@ -62,7 +63,9 @@ class EditorController extends ChangeNotifier {
       job?.status != 'processing' &&
       job?.status != 'rendering';
   bool get hasValidMarks =>
-      markIn != null && markOut != null && markOut! - markIn! >= 0.5;
+      markIn != null &&
+      markOut != null &&
+      markOut! - markIn! >= timecodeFrameDurationSeconds;
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -328,7 +331,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkInFromPlayhead() {
-    markIn = _snapToTenth(_clampTime(currentPositionSeconds));
+    markIn = _snapToFrame(_clampTime(currentPositionSeconds));
     if (markOut != null && markOut! <= markIn!) {
       markOut = null;
     }
@@ -336,7 +339,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkOutFromPlayhead() {
-    markOut = _snapToTenth(_clampTime(currentPositionSeconds));
+    markOut = _snapToFrame(_clampTime(currentPositionSeconds));
     if (markIn != null && markOut! <= markIn!) {
       markIn = null;
     }
@@ -450,8 +453,8 @@ class EditorController extends ChangeNotifier {
     if (audioDuration <= 0) {
       return;
     }
-    var start = _snapToTenth(selected.effectiveAudioStart + delta);
-    var end = _snapToTenth(selected.effectiveAudioEnd + delta);
+    var start = _snapToFrame(selected.effectiveAudioStart + delta);
+    var end = _snapToFrame(selected.effectiveAudioEnd + delta);
     if (start < 0) {
       end -= start;
       start = 0;
@@ -469,6 +472,10 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void nudgeSelectedAudioFrames(int frameDelta) {
+    nudgeSelectedAudio(frameDelta * timecodeFrameDurationSeconds);
   }
 
   void deleteSelectedSegment() {
@@ -496,8 +503,9 @@ class EditorController extends ChangeNotifier {
     if (selected == null) {
       return;
     }
-    final splitAt = _snapToTenth(_clampTime(currentPositionSeconds));
-    if (splitAt <= selected.start + 0.5 || splitAt >= selected.end - 0.5) {
+    final splitAt = _snapToFrame(_clampTime(currentPositionSeconds));
+    if (splitAt <= selected.start + timecodeFrameDurationSeconds ||
+        splitAt >= selected.end - timecodeFrameDurationSeconds) {
       return;
     }
     final output = <HighlightSegment>[];
@@ -665,7 +673,8 @@ class EditorController extends ChangeNotifier {
     }
     final seconds = currentPositionSeconds;
     final isPlaying = controller.value.isPlaying;
-    if ((seconds - _lastNotifiedPosition).abs() >= 0.1 ||
+    if ((seconds - _lastNotifiedPosition).abs() >=
+            timecodeFrameDurationSeconds ||
         isPlaying != _lastNotifiedPlaying) {
       _lastNotifiedPosition = seconds;
       _lastNotifiedPlaying = isPlaying;
@@ -684,7 +693,7 @@ class EditorController extends ChangeNotifier {
 
   double _clampTime(double value) => value.clamp(0.0, duration).toDouble();
 
-  double _snapToTenth(double value) => (value * 10).round() / 10;
+  double _snapToFrame(double value) => snapSecondsToFrame(value);
 
   double _clampProjectTime(double value) {
     if (duration <= 0) {
@@ -694,24 +703,34 @@ class EditorController extends ChangeNotifier {
   }
 
   HighlightSegment _normalizeSegmentAudio(HighlightSegment segment) {
+    final start = _snapToFrame(_clampProjectTime(segment.start));
+    var end = _snapToFrame(_clampProjectTime(segment.end));
+    if (end <= start) {
+      end = _snapToFrame(
+        _clampProjectTime(start + timecodeFrameDurationSeconds),
+      );
+    }
+    final normalizedSegment = segment.copyWith(start: start, end: end);
     final volume = segment.audioVolume.clamp(0.0, 2.0).toDouble();
-    if (segment.audioLinked) {
-      return segment.copyWith(
-        audioStart: segment.start,
-        audioEnd: segment.end,
+    if (normalizedSegment.audioLinked) {
+      return normalizedSegment.copyWith(
+        audioStart: normalizedSegment.start,
+        audioEnd: normalizedSegment.end,
         audioVolume: volume,
       );
     }
 
-    var audioStart = _snapToTenth(
-      _clampProjectTime(segment.effectiveAudioStart),
+    var audioStart = _snapToFrame(
+      _clampProjectTime(normalizedSegment.effectiveAudioStart),
     );
-    var audioEnd = _snapToTenth(_clampProjectTime(segment.effectiveAudioEnd));
+    var audioEnd = _snapToFrame(
+      _clampProjectTime(normalizedSegment.effectiveAudioEnd),
+    );
     if (audioEnd <= audioStart) {
-      audioStart = segment.start;
-      audioEnd = segment.end;
+      audioStart = normalizedSegment.start;
+      audioEnd = normalizedSegment.end;
     }
-    return segment.copyWith(
+    return normalizedSegment.copyWith(
       audioStart: audioStart,
       audioEnd: audioEnd,
       audioVolume: volume,
@@ -745,7 +764,7 @@ class EditorController extends ChangeNotifier {
     final splitRatio = videoDuration <= 0
         ? 0.5
         : ((splitAt - segment.start) / videoDuration).clamp(0.0, 1.0);
-    final audioSplit = _snapToTenth(
+    final audioSplit = _snapToFrame(
       segment.effectiveAudioStart + audioDuration * splitRatio,
     );
     return _normalizeSegmentAudio(

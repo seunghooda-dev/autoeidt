@@ -215,8 +215,8 @@ def render_stream_copy(video_path: Path, segments: list[dict], output_path: Path
     input_path = _ffconcat_path(video_path)
     for segment in segments:
         lines.append(f"file '{input_path}'")
-        lines.append(f"inpoint {float(segment['start']):.3f}")
-        lines.append(f"outpoint {float(segment['end']):.3f}")
+        lines.append(f"inpoint {float(segment['start']):.6f}")
+        lines.append(f"outpoint {float(segment['end']):.6f}")
     concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     _run(
@@ -346,22 +346,26 @@ def _render_reencode_with_video_args(
     for index, segment in enumerate(segments):
         start = float(segment["start"])
         end = float(segment["end"])
-        video_duration = max(0.001, end - start)
+        video_duration = max(0.000001, end - start)
         audio_start = _segment_audio_start(segment)
         audio_end = _segment_audio_end(segment)
         if audio_end <= audio_start:
             audio_start = start
             audio_end = end
-        volume = 0.0 if segment.get("audio_muted", False) else _segment_audio_volume(segment)
-        filters.append(
-            f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]"
+        volume = (
+            0.0
+            if segment.get("audio_muted", False)
+            else _segment_audio_volume(segment)
         )
         filters.append(
-            f"[0:a]atrim=start={audio_start:.3f}:end={audio_end:.3f},"
+            f"[0:v]trim=start={start:.6f}:end={end:.6f},setpts=PTS-STARTPTS[v{index}]"
+        )
+        filters.append(
+            f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
             "asetpts=PTS-STARTPTS,"
             f"volume={volume:.3f},"
             "apad,"
-            f"atrim=duration={video_duration:.3f},"
+            f"atrim=duration={video_duration:.6f},"
             f"asetpts=PTS-STARTPTS[a{index}]"
         )
         concat_inputs.append(f"[v{index}][a{index}]")
@@ -473,17 +477,10 @@ def render_highlights(
     if not normalized:
         raise ValueError("at least one segment is required")
 
-    if aspect_ratio == "16:9" and not captions and _all_segments_use_default_audio(normalized):
-        try:
-            return render_stream_copy(video_path, normalized, output_path)
-        except Exception:
-            pass
-
-    fallback = output_path.with_name(f"{output_path.stem}_encoded{output_path.suffix}")
     return render_highlights_reencoded(
         video_path,
         normalized,
-        fallback,
+        output_path,
         aspect_ratio=aspect_ratio,
         captions=captions,
     )
