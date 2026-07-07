@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -36,10 +37,16 @@ class EditorController extends ChangeNotifier {
   double duration = 0;
   List<HighlightSegment> segments = [];
   List<TranscriptSegment> transcript = [];
+  List<CaptionSegment> captions = [];
+  List<double> waveform = [];
   String? renderUrl;
   int? selectedSegmentOrder;
   double? markIn;
   double? markOut;
+  bool includeCaptions = true;
+  String exportAspectRatio = '16:9';
+  double timelineZoom = 1.0;
+  String projectName = 'AutoEdit Project';
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
@@ -90,6 +97,18 @@ class EditorController extends ChangeNotifier {
     return '영상 파일을 선택해 주세요';
   }
 
+  ProjectState get projectState {
+    return ProjectState(
+      name: projectName,
+      jobId: jobId,
+      originalFilename: job?.originalFilename ?? selectedFile?.name,
+      duration: duration,
+      segments: segments,
+      captions: captions,
+      waveform: waveform,
+    );
+  }
+
   Future<void> ensureLocalEngine() async {
     engineState = const LocalEngineState(
       status: 'starting',
@@ -119,6 +138,8 @@ class EditorController extends ChangeNotifier {
     duration = 0;
     segments = [];
     transcript = [];
+    captions = [];
+    waveform = [];
     renderUrl = null;
     selectedSegmentOrder = null;
     markIn = null;
@@ -166,6 +187,25 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> requestRender() async {
+    await _requestRender(
+      aspectRatio: exportAspectRatio,
+      outputName: exportAspectRatio == '9:16'
+          ? 'youtube_shorts_highlights.mp4'
+          : 'youtube_highlights.mp4',
+    );
+  }
+
+  Future<void> requestShortsRender() async {
+    await _requestRender(
+      aspectRatio: '9:16',
+      outputName: 'youtube_shorts_highlights.mp4',
+    );
+  }
+
+  Future<void> _requestRender({
+    required String aspectRatio,
+    required String outputName,
+  }) async {
     final id = jobId;
     if (id == null || segments.isEmpty) {
       return;
@@ -175,11 +215,91 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _apiClient.requestRender(id, segments);
+      exportAspectRatio = aspectRatio;
+      await saveProjectToBackend(silent: true);
+      await _apiClient.requestRender(
+        id,
+        segments,
+        captions: captions,
+        aspectRatio: aspectRatio,
+        includeCaptions: includeCaptions,
+        outputName: outputName,
+      );
       _startPolling();
     } catch (error) {
       isRendering = false;
       errorMessage = '렌더링 요청 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> saveProjectToBackend({bool silent = false}) async {
+    final id = jobId;
+    if (id == null) {
+      return;
+    }
+    try {
+      final project = await _apiClient.saveProject(id, projectState);
+      _applyProject(project, keepJob: true);
+    } catch (error) {
+      if (!silent) {
+        errorMessage = '프로젝트 저장 실패: $error';
+      }
+    }
+    if (!silent) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportProjectFile() async {
+    final bytes = Uint8List.fromList(
+      utf8.encode(
+        const JsonEncoder.withIndent(
+          '  ',
+        ).convert({'version': 1, ...projectState.toJson()}),
+      ),
+    );
+    try {
+      await FilePicker.platform.saveFile(
+        dialogTitle: '프로젝트 저장',
+        fileName: '${_safeProjectFileName()}.autoedit.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: bytes,
+      );
+    } catch (error) {
+      errorMessage = '프로젝트 파일 저장 실패: $error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> importProjectFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '프로젝트 불러오기',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      final bytes = result.files.single.bytes;
+      if (bytes == null) {
+        throw StateError('프로젝트 파일을 읽을 수 없습니다.');
+      }
+      final payload = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      final project = ProjectState.fromJson(payload);
+      _applyProject(project, keepJob: false);
+      if (jobId != null) {
+        try {
+          await _initializePreview(jobId!);
+        } catch (_) {
+          await _disposeVideoController();
+        }
+      }
+    } catch (error) {
+      errorMessage = '프로젝트 불러오기 실패: $error';
     }
     notifyListeners();
   }
@@ -284,6 +404,93 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void splitSelectedAtPlayhead() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    final splitAt = _snapToTenth(_clampTime(currentPositionSeconds));
+    if (splitAt <= selected.start + 0.5 || splitAt >= selected.end - 0.5) {
+      return;
+    }
+    final output = <HighlightSegment>[];
+    for (final segment in segments) {
+      if (segment.order != selected.order) {
+        output.add(segment);
+        continue;
+      }
+      output.add(
+        segment.copyWith(
+          end: splitAt,
+          reason: '${segment.reason} / split A',
+          source: segment.source == 'ai' ? 'ai+manual' : segment.source,
+        ),
+      );
+      output.add(
+        segment.copyWith(
+          start: splitAt,
+          reason: '${segment.reason} / split B',
+          source: segment.source == 'ai' ? 'ai+manual' : segment.source,
+        ),
+      );
+    }
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = (selected.order + 1)
+        .clamp(1, segments.length)
+        .toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void moveSelectedSegment(int delta) {
+    final order = selectedSegmentOrder;
+    if (order == null) {
+      return;
+    }
+    final index = segments.indexWhere((segment) => segment.order == order);
+    final target = index + delta;
+    if (index < 0 || target < 0 || target >= segments.length) {
+      return;
+    }
+    final editable = [...segments];
+    final item = editable.removeAt(index);
+    editable.insert(target, item);
+    segments = _reorderSegments(editable);
+    selectedSegmentOrder = target + 1;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void updateCaption(CaptionSegment updated) {
+    captions = [
+      for (final caption in captions)
+        if (caption.order == updated.order) updated else caption,
+    ];
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void toggleCaption(CaptionSegment caption) {
+    updateCaption(caption.copyWith(enabled: !caption.enabled));
+  }
+
+  void setIncludeCaptions(bool value) {
+    includeCaptions = value;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void setExportAspectRatio(String value) {
+    exportAspectRatio = value;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void zoomTimeline(double delta) {
+    timelineZoom = (timelineZoom + delta).clamp(1.0, 6.0).toDouble();
+    notifyListeners();
+  }
+
   Future<void> seekTo(double seconds, {bool autoplay = true}) async {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -345,6 +552,8 @@ class EditorController extends ChangeNotifier {
     duration = timeline.duration;
     segments = timeline.segments;
     transcript = timeline.transcript;
+    captions = timeline.captions;
+    waveform = timeline.waveform;
     if (segments.isNotEmpty &&
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.first.order;
@@ -401,6 +610,34 @@ class EditorController extends ChangeNotifier {
   double _clampTime(double value) => value.clamp(0.0, duration).toDouble();
 
   double _snapToTenth(double value) => (value * 10).round() / 10;
+
+  List<HighlightSegment> _reorderSegments(List<HighlightSegment> input) {
+    return [
+      for (var index = 0; index < input.length; index++)
+        input[index].copyWith(order: index + 1),
+    ];
+  }
+
+  void _applyProject(ProjectState project, {required bool keepJob}) {
+    projectName = project.name;
+    if (!keepJob && project.jobId != null) {
+      jobId = project.jobId;
+    }
+    duration = project.duration;
+    segments = _reorderSegments(project.segments);
+    captions = [
+      for (var index = 0; index < project.captions.length; index++)
+        project.captions[index].copyWith(order: index + 1),
+    ];
+    waveform = project.waveform;
+    selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    renderUrl = null;
+  }
+
+  String _safeProjectFileName() {
+    final base = projectName.trim().isEmpty ? 'autoedit_project' : projectName;
+    return base.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+  }
 
   @override
   void dispose() {

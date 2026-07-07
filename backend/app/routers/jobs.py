@@ -8,6 +8,8 @@ from app.config import get_settings
 from app.schemas import (
     JobStatus,
     JobStatusResponse,
+    ProjectResponse,
+    ProjectState,
     RenderRequest,
     RenderResponse,
     TimelineResponse,
@@ -112,6 +114,44 @@ def get_timeline(job_id: str) -> TimelineResponse:
         duration=float(job.get("duration") or 0),
         segments=job.get("segments") or [],
         transcript=job.get("transcript") or [],
+        captions=job.get("captions") or [],
+        waveform=job.get("waveform") or [],
+    )
+
+
+@router.get("/{job_id}/project", response_model=ProjectResponse)
+def get_project(job_id: str) -> ProjectResponse:
+    job = _load_job_or_404(job_id)
+    return ProjectResponse(
+        job_id=job_id,
+        name=job.get("project_name") or job.get("original_filename") or "AutoEdit Project",
+        original_filename=job.get("original_filename"),
+        duration=float(job.get("duration") or 0),
+        segments=job.get("segments") or [],
+        captions=job.get("captions") or [],
+        waveform=job.get("waveform") or [],
+    )
+
+
+@router.post("/{job_id}/project", response_model=ProjectResponse)
+def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
+    _load_job_or_404(job_id)
+    updated = store.update(
+        job_id,
+        project_name=payload.name,
+        duration=payload.duration,
+        segments=[segment.model_dump() for segment in payload.segments],
+        captions=[caption.model_dump() for caption in payload.captions],
+        waveform=payload.waveform,
+    )
+    return ProjectResponse(
+        job_id=job_id,
+        name=updated.get("project_name") or payload.name,
+        original_filename=updated.get("original_filename"),
+        duration=float(updated.get("duration") or 0),
+        segments=updated.get("segments") or [],
+        captions=updated.get("captions") or [],
+        waveform=updated.get("waveform") or [],
     )
 
 
@@ -133,11 +173,17 @@ def render_job(
     _load_job_or_404(job_id)
     settings = get_settings()
     segments = [segment.model_dump() for segment in payload.segments]
+    render_options = {
+        "captions": [caption.model_dump() for caption in payload.captions],
+        "aspect_ratio": payload.aspect_ratio,
+        "include_captions": payload.include_captions,
+        "output_name": safe_filename(payload.output_name or "youtube_highlights.mp4"),
+    }
     if settings.task_runner == "inline":
         task_id = f"inline-render-{job_id}"
-        background_tasks.add_task(render_video_job, job_id, segments)
+        background_tasks.add_task(render_video_job, job_id, segments, render_options)
     else:
-        task = render_video_task.delay(job_id, segments)
+        task = render_video_task.delay(job_id, segments, render_options)
         task_id = task.id
     store.update(
         job_id,
@@ -147,6 +193,8 @@ def render_job(
         message="렌더링 작업 대기 중",
         render_task_id=task_id,
         segments=segments,
+        captions=render_options["captions"],
+        render_options=render_options,
     )
     return RenderResponse(
         job_id=job_id,
@@ -168,5 +216,5 @@ def download_render(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="video/mp4",
-        filename=f"{job_id}_youtube_highlights.mp4",
+        filename=path.name,
     )

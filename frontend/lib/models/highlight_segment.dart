@@ -77,3 +77,55 @@ class TranscriptSegment {
     );
   }
 }
+
+class CaptionSegment {
+  const CaptionSegment({
+    required this.order,
+    required this.start,
+    required this.end,
+    required this.text,
+    this.enabled = true,
+  });
+
+  final int order;
+  final double start;
+  final double end;
+  final String text;
+  final bool enabled;
+
+  CaptionSegment copyWith({
+    int? order,
+    double? start,
+    double? end,
+    String? text,
+    bool? enabled,
+  }) {
+    return CaptionSegment(
+      order: order ?? this.order,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      text: text ?? this.text,
+      enabled: enabled ?? this.enabled,
+    );
+  }
+
+  factory CaptionSegment.fromJson(Map<String, dynamic> json) {
+    return CaptionSegment(
+      order: (json['order'] as num?)?.toInt() ?? 0,
+      start: (json['start'] as num).toDouble(),
+      end: (json['end'] as num).toDouble(),
+      text: json['text'] as String? ?? '',
+      enabled: json['enabled'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'order': order,
+      'start': start,
+      'end': end,
+      'text': text,
+      'enabled': enabled,
+    };
+  }
+}

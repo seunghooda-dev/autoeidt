@@ -2,6 +2,8 @@ import json
 import re
 import shlex
 import subprocess
+import sys
+from array import array
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -159,6 +161,49 @@ def detect_scene_changes(video_path: Path, threshold: float = 0.35) -> list[floa
     return sorted(set(points))
 
 
+def generate_waveform(audio_path: Path, bucket_count: int = 900) -> list[float]:
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-i",
+            str(audio_path),
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "-",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return []
+
+    samples = array("h")
+    samples.frombytes(result.stdout)
+    if sys.byteorder == "big":
+        samples.byteswap()
+    if not samples:
+        return []
+
+    bucket_count = max(64, min(bucket_count, len(samples)))
+    bucket_size = max(1, len(samples) // bucket_count)
+    peaks: list[float] = []
+    for index in range(bucket_count):
+        start = index * bucket_size
+        end = len(samples) if index == bucket_count - 1 else min(len(samples), start + bucket_size)
+        if start >= len(samples):
+            peaks.append(0.0)
+            continue
+        peak = max(abs(value) for value in samples[start:end])
+        peaks.append(round(min(1.0, peak / 32768.0), 3))
+    return peaks
+
+
 def _ffconcat_path(path: Path) -> str:
     return str(path.resolve()).replace("\\", "/").replace("'", r"'\''")
 
@@ -195,11 +240,70 @@ def render_stream_copy(video_path: Path, segments: list[dict], output_path: Path
     return output_path
 
 
+def _subtitle_filter_path(path: Path) -> str:
+    normalized = str(path.resolve()).replace("\\", "/")
+    normalized = normalized.replace(":", r"\:").replace("'", r"\'")
+    return normalized
+
+
+def _srt_time(seconds: float) -> str:
+    milliseconds = int(round(seconds * 1000))
+    hours = milliseconds // 3_600_000
+    milliseconds %= 3_600_000
+    minutes = milliseconds // 60_000
+    milliseconds %= 60_000
+    secs = milliseconds // 1000
+    millis = milliseconds % 1000
+    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+
+def _write_caption_srt(
+    captions: list[dict],
+    segments: list[dict],
+    output_path: Path,
+) -> Path | None:
+    enabled = [caption for caption in captions if caption.get("enabled", True)]
+    if not enabled:
+        return None
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    entries: list[tuple[float, float, str]] = []
+    cursor = 0.0
+    for segment in segments:
+        segment_start = float(segment["start"])
+        segment_end = float(segment["end"])
+        for caption in enabled:
+            caption_start = float(caption["start"])
+            caption_end = float(caption["end"])
+            if caption_start >= segment_end or caption_end <= segment_start:
+                continue
+            start = cursor + max(caption_start, segment_start) - segment_start
+            end = cursor + min(caption_end, segment_end) - segment_start
+            text = str(caption.get("text") or "").strip()
+            if text and end > start:
+                entries.append((start, end, text))
+        cursor += max(0.0, segment_end - segment_start)
+
+    if not entries:
+        return None
+
+    lines: list[str] = []
+    for index, (start, end, text) in enumerate(entries, start=1):
+        lines.append(str(index))
+        lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
+        lines.append(text.replace("\n", " "))
+        lines.append("")
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    return output_path
+
+
 def _render_reencode_with_video_args(
     video_path: Path,
     segments: list[dict],
     output_path: Path,
     video_args: list[str],
+    aspect_ratio: str = "16:9",
+    captions: list[dict] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -216,7 +320,36 @@ def _render_reencode_with_video_args(
         concat_inputs.append(f"[v{index}][a{index}]")
 
     filter_complex = ";".join(filters)
-    filter_complex += f";{''.join(concat_inputs)}concat=n={len(segments)}:v=1:a=1[outv][outa]"
+    filter_complex += f";{''.join(concat_inputs)}concat=n={len(segments)}:v=1:a=1[basev][outa]"
+
+    video_chain = "[basev]"
+    if aspect_ratio == "9:16":
+        filter_complex += (
+            ";[basev]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,setsar=1[framedv]"
+        )
+        video_chain = "[framedv]"
+    else:
+        filter_complex += ";[basev]scale=1920:1080:force_original_aspect_ratio=decrease," \
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[framedv]"
+        video_chain = "[framedv]"
+
+    caption_file = None
+    if captions:
+        caption_file = _write_caption_srt(
+            captions,
+            segments,
+            output_path.with_suffix(".srt"),
+        )
+    if caption_file is not None:
+        filter_complex += (
+            f";{video_chain}subtitles='{_subtitle_filter_path(caption_file)}':"
+            "force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H90000000,BorderStyle=1,Outline=2,Shadow=0,"
+            "Alignment=2,MarginV=72'[outv]"
+        )
+    else:
+        filter_complex += f";{video_chain}format=yuv420p[outv]"
 
     _run(
         [
@@ -245,6 +378,16 @@ def _render_reencode_with_video_args(
 
 
 def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -> Path:
+    return render_highlights_reencoded(video_path, segments, output_path)
+
+
+def render_highlights_reencoded(
+    video_path: Path,
+    segments: list[dict],
+    output_path: Path,
+    aspect_ratio: str = "16:9",
+    captions: list[dict] | None = None,
+) -> Path:
     settings = get_settings()
     if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
         try:
@@ -253,6 +396,8 @@ def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -
                 segments,
                 output_path,
                 ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20"],
+                aspect_ratio=aspect_ratio,
+                captions=captions,
             )
         except FFmpegError:
             pass
@@ -262,10 +407,18 @@ def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -
         segments,
         output_path,
         ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"],
+        aspect_ratio=aspect_ratio,
+        captions=captions,
     )
 
 
-def render_highlights(video_path: Path, segments: list[dict], output_path: Path) -> Path:
+def render_highlights(
+    video_path: Path,
+    segments: list[dict],
+    output_path: Path,
+    aspect_ratio: str = "16:9",
+    captions: list[dict] | None = None,
+) -> Path:
     normalized = sorted(
         segments,
         key=lambda item: int(item.get("order") or 0),
@@ -273,8 +426,17 @@ def render_highlights(video_path: Path, segments: list[dict], output_path: Path)
     if not normalized:
         raise ValueError("at least one segment is required")
 
-    try:
-        return render_stream_copy(video_path, normalized, output_path)
-    except Exception:
-        fallback = output_path.with_name(f"{output_path.stem}_encoded{output_path.suffix}")
-        return render_reencode(video_path, normalized, fallback)
+    if aspect_ratio == "16:9" and not captions:
+        try:
+            return render_stream_copy(video_path, normalized, output_path)
+        except Exception:
+            pass
+
+    fallback = output_path.with_name(f"{output_path.stem}_encoded{output_path.suffix}")
+    return render_highlights_reencoded(
+        video_path,
+        normalized,
+        fallback,
+        aspect_ratio=aspect_ratio,
+        captions=captions,
+    )

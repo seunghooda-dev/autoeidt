@@ -55,12 +55,37 @@ class ApiClient {
 
   Future<void> requestRender(
     String jobId,
-    List<HighlightSegment> segments,
-  ) async {
+    List<HighlightSegment> segments, {
+    List<CaptionSegment> captions = const [],
+    String aspectRatio = '16:9',
+    bool includeCaptions = false,
+    String outputName = 'youtube_highlights.mp4',
+  }) async {
     await _dio.post<Map<String, dynamic>>(
       '$baseUrl/api/jobs/$jobId/render',
-      data: {'segments': segments.map((item) => item.toJson()).toList()},
+      data: {
+        'segments': segments.map((item) => item.toJson()).toList(),
+        'captions': captions.map((item) => item.toJson()).toList(),
+        'aspect_ratio': aspectRatio,
+        'include_captions': includeCaptions,
+        'output_name': outputName,
+      },
     );
+  }
+
+  Future<ProjectState> getProject(String jobId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/$jobId/project',
+    );
+    return ProjectState.fromJson(response.data!);
+  }
+
+  Future<ProjectState> saveProject(String jobId, ProjectState project) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/$jobId/project',
+      data: project.toJson(),
+    );
+    return ProjectState.fromJson(response.data!);
   }
 
   String sourceUrl(String jobId) => '$baseUrl/api/jobs/$jobId/source';

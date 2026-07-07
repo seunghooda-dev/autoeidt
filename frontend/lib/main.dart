@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'state/editor_controller.dart';
+import 'widgets/caption_editor.dart';
 import 'widgets/edit_controls.dart';
 import 'widgets/highlight_cards.dart';
 import 'widgets/status_panel.dart';
@@ -184,6 +185,14 @@ class _TopBar extends StatelessWidget {
             icon: const Icon(Icons.file_upload_outlined),
             label: Text(controller.renderUrl == null ? 'Export' : 'Re-export'),
           ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: controller.canRender
+                ? context.read<EditorController>().requestShortsRender
+                : null,
+            icon: const Icon(Icons.phone_iphone),
+            label: const Text('Shorts'),
+          ),
         ],
       ),
     );
@@ -286,6 +295,8 @@ class _TimelinePanel extends StatelessWidget {
                     selectedSegmentOrder: controller.selectedSegmentOrder,
                     markIn: controller.markIn,
                     markOut: controller.markOut,
+                    waveform: controller.waveform,
+                    zoom: controller.timelineZoom,
                     onSegmentChanged: context
                         .read<EditorController>()
                         .updateSegment,
@@ -325,42 +336,63 @@ class _InspectorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
-    final cards = HighlightCards(
-      segments: controller.segments,
-      onSeek: context.read<EditorController>().seekTo,
-      selectedOrder: controller.selectedSegmentOrder,
-      onSelect: context.read<EditorController>().selectSegment,
-    );
-
     return Padding(
       padding: const EdgeInsets.all(12),
       child: _SurfacePanel(
         padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _PanelHeader(title: 'AI Clips', icon: Icons.auto_awesome),
-            const SizedBox(height: 10),
-            Expanded(
-              child: controller.segments.isEmpty
-                  ? Center(
-                      child: Text(
-                        '분석 후 추천 클립이 표시됩니다',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    )
-                  : cards,
-            ),
-            if (controller.renderUrl != null) ...[
+        child: DefaultTabController(
+          length: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const TabBar(
+                tabs: [
+                  Tab(icon: Icon(Icons.auto_awesome), text: 'AI Clips'),
+                  Tab(
+                    icon: Icon(Icons.closed_caption_outlined),
+                    text: 'Captions',
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
-              SelectableText(
-                controller.renderUrl!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    controller.segments.isEmpty
+                        ? Center(
+                            child: Text(
+                              '분석 후 추천 클립이 표시됩니다',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          )
+                        : HighlightCards(
+                            segments: controller.segments,
+                            onSeek: context.read<EditorController>().seekTo,
+                            selectedOrder: controller.selectedSegmentOrder,
+                            onSelect: context
+                                .read<EditorController>()
+                                .selectSegment,
+                          ),
+                    CaptionEditor(
+                      captions: controller.captions,
+                      onChanged: context.read<EditorController>().updateCaption,
+                      onToggle: context.read<EditorController>().toggleCaption,
+                      onSeek: context.read<EditorController>().seekTo,
+                    ),
+                  ],
                 ),
               ),
+              if (controller.renderUrl != null) ...[
+                const SizedBox(height: 10),
+                SelectableText(
+                  controller.renderUrl!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

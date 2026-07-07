@@ -7,6 +7,7 @@ from app.schemas import JobStatus
 from app.services.ffmpeg_service import (
     detect_silence,
     extract_audio,
+    generate_waveform,
     probe_duration,
     render_highlights,
 )
@@ -72,6 +73,24 @@ def _normalize_highlights(
     return normalized
 
 
+def _captions_from_transcript(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    captions: list[dict[str, Any]] = []
+    for index, item in enumerate(transcript, start=1):
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        captions.append(
+            {
+                "order": index,
+                "start": round(float(item.get("start") or 0), 1),
+                "end": round(float(item.get("end") or 0), 1),
+                "text": text,
+                "enabled": True,
+            }
+        )
+    return captions
+
+
 def _silences_overlapping_highlights(
     silences: list,
     highlights: list[dict[str, Any]],
@@ -130,6 +149,8 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             audio_path=str(audio_path),
         )
         transcript = transcribe_audio(audio_path, duration)
+        captions = _captions_from_transcript(transcript)
+        waveform = generate_waveform(audio_path)
 
         _set_task_state(
             task,
@@ -139,6 +160,8 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             68,
             "하이라이트 분석 중",
             transcript=transcript,
+            captions=captions,
+            waveform=waveform,
         )
         raw_highlights = _normalize_highlights(
             analyze_highlights(transcript, duration),
@@ -192,6 +215,8 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             "가편집 타임라인 생성 완료",
             duration=duration,
             transcript=transcript,
+            captions=captions,
+            waveform=waveform,
             segments=refined,
             protected_silences=silence_ranges_to_dicts(protected_silences),
         )
@@ -216,9 +241,11 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
 def render_video_job(
     job_id: str,
     segments: list[dict[str, Any]],
+    options: dict[str, Any] | None = None,
     task: Any | None = None,
 ) -> dict[str, Any]:
     try:
+        options = options or {}
         job = store.load(job_id)
         duration = float(job.get("duration") or 0)
         normalized = _normalize_highlights(
@@ -240,8 +267,18 @@ def render_video_job(
         )
 
         video_path = Path(job["video_path"])
-        output_path = store.output_dir(job_id) / "youtube_highlights.mp4"
-        rendered_path = render_highlights(video_path, normalized, output_path)
+        output_name = str(options.get("output_name") or "youtube_highlights.mp4")
+        output_path = store.output_dir(job_id) / output_name
+        captions = options.get("captions") or []
+        if not options.get("include_captions", False):
+            captions = []
+        rendered_path = render_highlights(
+            video_path,
+            normalized,
+            output_path,
+            aspect_ratio=str(options.get("aspect_ratio") or "16:9"),
+            captions=captions,
+        )
 
         _set_task_state(
             self,
@@ -271,5 +308,6 @@ def render_video_task(
     self: Any,
     job_id: str,
     segments: list[dict[str, Any]],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return render_video_job(job_id, segments, self)
+    return render_video_job(job_id, segments, options, self)

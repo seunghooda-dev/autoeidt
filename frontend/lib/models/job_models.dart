@@ -78,16 +78,22 @@ class TimelineResponse {
     required this.duration,
     required this.segments,
     required this.transcript,
+    required this.captions,
+    required this.waveform,
   });
 
   final String jobId;
   final double duration;
   final List<HighlightSegment> segments;
   final List<TranscriptSegment> transcript;
+  final List<CaptionSegment> captions;
+  final List<double> waveform;
 
   factory TimelineResponse.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawTranscript = json['transcript'] as List<dynamic>? ?? const [];
+    final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
+    final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
     return TimelineResponse(
       jobId: json['job_id'] as String,
       duration: (json['duration'] as num).toDouble(),
@@ -101,6 +107,63 @@ class TimelineResponse {
             (item) => TranscriptSegment.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+      captions: rawCaptions
+          .map((item) => CaptionSegment.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      waveform: rawWaveform.map((item) => (item as num).toDouble()).toList(),
     );
+  }
+}
+
+class ProjectState {
+  const ProjectState({
+    required this.name,
+    required this.duration,
+    required this.segments,
+    required this.captions,
+    required this.waveform,
+    this.jobId,
+    this.originalFilename,
+  });
+
+  final String name;
+  final String? jobId;
+  final String? originalFilename;
+  final double duration;
+  final List<HighlightSegment> segments;
+  final List<CaptionSegment> captions;
+  final List<double> waveform;
+
+  factory ProjectState.fromJson(Map<String, dynamic> json) {
+    final rawSegments = json['segments'] as List<dynamic>? ?? const [];
+    final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
+    final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
+    return ProjectState(
+      name: json['name'] as String? ?? 'AutoEdit Project',
+      jobId: json['job_id'] as String?,
+      originalFilename: json['original_filename'] as String?,
+      duration: (json['duration'] as num?)?.toDouble() ?? 0,
+      segments: rawSegments
+          .map(
+            (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+      captions: rawCaptions
+          .map((item) => CaptionSegment.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      waveform: rawWaveform.map((item) => (item as num).toDouble()).toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      if (jobId != null) 'job_id': jobId,
+      if (originalFilename != null) 'original_filename': originalFilename,
+      'duration': duration,
+      'segments': segments.map((item) => item.toJson()).toList(),
+      'captions': captions.map((item) => item.toJson()).toList(),
+      'waveform': waveform,
+    };
   }
 }

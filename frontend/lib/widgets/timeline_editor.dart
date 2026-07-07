@@ -16,6 +16,8 @@ class TimelineEditor extends StatefulWidget {
     required this.selectedSegmentOrder,
     required this.markIn,
     required this.markOut,
+    required this.waveform,
+    required this.zoom,
     required this.onSegmentChanged,
     required this.onScrub,
     required this.onSegmentSelected,
@@ -27,6 +29,8 @@ class TimelineEditor extends StatefulWidget {
   final int? selectedSegmentOrder;
   final double? markIn;
   final double? markOut;
+  final List<double> waveform;
+  final double zoom;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
@@ -42,42 +46,59 @@ class _TimelineEditorState extends State<TimelineEditor> {
   int? _activeIndex;
   _DragEdge? _activeEdge;
   bool _isScrubbing = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (details) =>
-              _tap(details.localPosition.dx, constraints.maxWidth),
-          onPanStart: (details) =>
-              _startDrag(details.localPosition.dx, constraints.maxWidth),
-          onPanUpdate: (details) =>
-              _updateDrag(details.localPosition.dx, constraints.maxWidth),
-          onPanEnd: (_) => _finishDrag(),
-          onPanCancel: _finishDrag,
-          child: SizedBox(
-            height: 126,
-            child: CustomPaint(
-              painter: _TimelinePainter(
-                duration: widget.duration,
-                segments: widget.segments,
-                playheadSeconds: widget.playheadSeconds,
-                selectedSegmentOrder: widget.selectedSegmentOrder,
-                markIn: widget.markIn,
-                markOut: widget.markOut,
-                activeIndex: _activeIndex,
-                activeEdge: _activeEdge,
-                colorScheme: Theme.of(context).colorScheme,
-              ),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 98),
-                  child: Text(
-                    '원본 ${formatSeconds(widget.duration)}  |  선택 클립 합계 ${formatSeconds(_totalOutputSeconds())}',
-                    style: Theme.of(context).textTheme.labelMedium,
+        final width = constraints.maxWidth * widget.zoom;
+        return Scrollbar(
+          controller: _scrollController,
+          thumbVisibility: widget.zoom > 1.0,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) => _tap(details.localPosition.dx, width),
+              onPanStart: (details) =>
+                  _startDrag(details.localPosition.dx, width),
+              onPanUpdate: (details) =>
+                  _updateDrag(details.localPosition.dx, width),
+              onPanEnd: (_) => _finishDrag(),
+              onPanCancel: _finishDrag,
+              child: SizedBox(
+                width: width,
+                height: 126,
+                child: CustomPaint(
+                  painter: _TimelinePainter(
+                    duration: widget.duration,
+                    segments: widget.segments,
+                    playheadSeconds: widget.playheadSeconds,
+                    selectedSegmentOrder: widget.selectedSegmentOrder,
+                    markIn: widget.markIn,
+                    markOut: widget.markOut,
+                    waveform: widget.waveform,
+                    activeIndex: _activeIndex,
+                    activeEdge: _activeEdge,
+                    colorScheme: Theme.of(context).colorScheme,
+                  ),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 98),
+                      child: Text(
+                        '원본 ${formatSeconds(widget.duration)}  |  선택 클립 합계 ${formatSeconds(_totalOutputSeconds())}',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -227,6 +248,7 @@ class _TimelinePainter extends CustomPainter {
     required this.selectedSegmentOrder,
     required this.markIn,
     required this.markOut,
+    required this.waveform,
     required this.activeIndex,
     required this.activeEdge,
     required this.colorScheme,
@@ -238,6 +260,7 @@ class _TimelinePainter extends CustomPainter {
   final int? selectedSegmentOrder;
   final double? markIn;
   final double? markOut;
+  final List<double> waveform;
   final int? activeIndex;
   final _DragEdge? activeEdge;
   final ColorScheme colorScheme;
@@ -253,6 +276,24 @@ class _TimelinePainter extends CustomPainter {
     );
     final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
     canvas.drawRRect(track, trackPaint);
+
+    if (waveform.isNotEmpty) {
+      final wavePaint = Paint()
+        ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.48)
+        ..strokeWidth = 1;
+      final step = size.width / waveform.length;
+      final centerY = barTop + barHeight / 2;
+      for (var index = 0; index < waveform.length; index++) {
+        final x = index * step;
+        final peak = waveform[index].clamp(0.0, 1.0).toDouble();
+        final halfHeight = math.max(1.0, peak * barHeight / 2);
+        canvas.drawLine(
+          Offset(x, centerY - halfHeight),
+          Offset(x, centerY + halfHeight),
+          wavePaint,
+        );
+      }
+    }
 
     final inPoint = markIn;
     final outPoint = markOut;
@@ -392,6 +433,7 @@ class _TimelinePainter extends CustomPainter {
         selectedSegmentOrder != oldDelegate.selectedSegmentOrder ||
         markIn != oldDelegate.markIn ||
         markOut != oldDelegate.markOut ||
+        waveform != oldDelegate.waveform ||
         activeIndex != oldDelegate.activeIndex ||
         activeEdge != oldDelegate.activeEdge ||
         colorScheme != oldDelegate.colorScheme;

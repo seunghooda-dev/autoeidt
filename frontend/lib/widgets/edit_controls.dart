@@ -49,6 +49,11 @@ class EditControls extends StatelessWidget {
               label: 'Export',
               value: formatSeconds(outputSeconds),
             ),
+            _MetricChip(
+              icon: Icons.zoom_in,
+              label: 'Zoom',
+              value: '${controller.timelineZoom.toStringAsFixed(1)}x',
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -97,6 +102,92 @@ class EditControls extends StatelessWidget {
                   : context.read<EditorController>().deleteSelectedSegment,
               icon: const Icon(Icons.delete_outline),
               label: const Text('선택 클립 삭제'),
+            ),
+            OutlinedButton.icon(
+              onPressed: selected == null
+                  ? null
+                  : context.read<EditorController>().splitSelectedAtPlayhead,
+              icon: const Icon(Icons.call_split),
+              label: const Text('Split'),
+            ),
+            IconButton.outlined(
+              tooltip: '선택 클립 앞으로',
+              onPressed: selected == null
+                  ? null
+                  : () => context.read<EditorController>().moveSelectedSegment(
+                      -1,
+                    ),
+              icon: const Icon(Icons.keyboard_arrow_up),
+            ),
+            IconButton.outlined(
+              tooltip: '선택 클립 뒤로',
+              onPressed: selected == null
+                  ? null
+                  : () =>
+                        context.read<EditorController>().moveSelectedSegment(1),
+              icon: const Icon(Icons.keyboard_arrow_down),
+            ),
+            IconButton.outlined(
+              tooltip: '타임라인 확대',
+              onPressed: controller.hasTimeline
+                  ? () => context.read<EditorController>().zoomTimeline(0.5)
+                  : null,
+              icon: const Icon(Icons.zoom_in),
+            ),
+            IconButton.outlined(
+              tooltip: '타임라인 축소',
+              onPressed: controller.hasTimeline
+                  ? () => context.read<EditorController>().zoomTimeline(-0.5)
+                  : null,
+              icon: const Icon(Icons.zoom_out),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: '16:9', label: Text('16:9')),
+                ButtonSegment(value: '9:16', label: Text('9:16')),
+              ],
+              selected: {controller.exportAspectRatio},
+              onSelectionChanged: controller.hasTimeline
+                  ? (value) => context
+                        .read<EditorController>()
+                        .setExportAspectRatio(value.first)
+                  : null,
+            ),
+            FilterChip(
+              selected: controller.includeCaptions,
+              onSelected: controller.hasTimeline
+                  ? context.read<EditorController>().setIncludeCaptions
+                  : null,
+              avatar: const Icon(Icons.closed_caption_outlined, size: 18),
+              label: const Text('자막 포함'),
+            ),
+            OutlinedButton.icon(
+              onPressed: controller.hasTimeline
+                  ? () =>
+                        context.read<EditorController>().saveProjectToBackend()
+                  : null,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('프로젝트 저장'),
+            ),
+            OutlinedButton.icon(
+              onPressed: controller.hasTimeline
+                  ? context.read<EditorController>().exportProjectFile
+                  : null,
+              icon: const Icon(Icons.file_download_outlined),
+              label: const Text('내보내기'),
+            ),
+            OutlinedButton.icon(
+              onPressed: context.read<EditorController>().importProjectFile,
+              icon: const Icon(Icons.folder_open),
+              label: const Text('불러오기'),
             ),
           ],
         ),

@@ -26,6 +26,14 @@ class TranscriptSegment(BaseModel):
     words: list[TranscriptWord] = Field(default_factory=list)
 
 
+class CaptionSegment(BaseModel):
+    order: int = 0
+    start: float
+    end: float
+    text: str
+    enabled: bool = True
+
+
 class HighlightSegment(BaseModel):
     order: int = 0
     start: float
@@ -69,10 +77,16 @@ class TimelineResponse(BaseModel):
     duration: float
     segments: list[HighlightSegment]
     transcript: list[TranscriptSegment] = Field(default_factory=list)
+    captions: list[CaptionSegment] = Field(default_factory=list)
+    waveform: list[float] = Field(default_factory=list)
 
 
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
+    captions: list[CaptionSegment] = Field(default_factory=list)
+    aspect_ratio: str = "16:9"
+    include_captions: bool = False
+    output_name: str = "youtube_highlights.mp4"
 
 
 class RenderResponse(BaseModel):
@@ -80,3 +94,16 @@ class RenderResponse(BaseModel):
     render_task_id: str
     status: JobStatus
     stage: str
+
+
+class ProjectState(BaseModel):
+    name: str = "AutoEdit Project"
+    duration: float = 0
+    segments: list[HighlightSegment] = Field(default_factory=list)
+    captions: list[CaptionSegment] = Field(default_factory=list)
+    waveform: list[float] = Field(default_factory=list)
+
+
+class ProjectResponse(ProjectState):
+    job_id: str
+    original_filename: str | None = None

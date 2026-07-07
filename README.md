@@ -14,6 +14,14 @@
 Windows 데스크톱 앱은 CapCut 계열 편집 툴처럼 좌측 미디어 패널, 중앙 프리뷰,
 우측 AI 클립 인스펙터, 하단 타임라인 도크 구조로 구성합니다.
 
+현재 데스크톱 편집 기능:
+
+- 프로젝트 상태 저장/불러오기: `.autoedit.json` 파일로 클립, 자막, 파형 상태 저장
+- 오디오 파형 타임라인: 분석 완료 후 하단 타임라인에 파형 표시, 확대/축소 지원
+- 클립 편집: In/Out, 추가, 선택 클립 적용, 삭제, split, 순서 이동
+- 자동 자막: STT transcript 기반 자막 생성, 우측 `Captions` 탭에서 텍스트 수정/비활성화
+- Export 모드: 16:9 유튜브용 mp4, 9:16 쇼츠용 mp4, 자막 burn-in 옵션
+
 데스크톱 모드에서는 Redis/Celery 없이도 실행할 수 있도록 백엔드가
 `TASK_RUNNER=inline` 모드를 지원합니다. Flutter 앱은 `http://localhost:8000/health`
 상태를 확인한 뒤, 엔진이 꺼져 있으면 `scripts/start-desktop-engine.ps1`을 통해
