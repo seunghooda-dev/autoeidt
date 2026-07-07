@@ -22,55 +22,88 @@ class StatusPanel extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
+        color: colorScheme.surface,
         border: Border.all(color: colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: colorScheme.outline),
+                  ),
+                  child: Icon(
+                    Icons.video_library_outlined,
+                    color: colorScheme.primary,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     controller.statusText,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall,
+                    style: Theme.of(context).textTheme.labelLarge,
                   ),
                 ),
                 if (controller.job != null)
-                  Text(
-                    '${controller.job!.progress}%',
-                    style: Theme.of(context).textTheme.labelLarge,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: colorScheme.outline),
+                    ),
+                    child: Text(
+                      '${controller.job!.progress}%',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ),
               ],
             ),
             const SizedBox(height: 12),
-            LinearProgressIndicator(
-              value: isActive && progress == 0 ? null : progress,
-              backgroundColor: colorScheme.surface,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                minHeight: 5,
+                value: isActive && progress == 0 ? null : progress,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+              ),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            const SizedBox(height: 12),
+            Row(
               children: [
-                FilledButton.icon(
-                  onPressed: controller.isUploading
-                      ? null
-                      : controller.pickVideo,
-                  icon: const Icon(Icons.video_file_outlined),
-                  label: const Text('영상 선택'),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: controller.isUploading
+                        ? null
+                        : controller.pickVideo,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Import'),
+                  ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: controller.canStartUpload
-                      ? controller.startUpload
-                      : null,
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('AI 분석 시작'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: controller.canStartUpload
+                        ? controller.startUpload
+                        : null,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Analyze'),
+                  ),
                 ),
               ],
             ),

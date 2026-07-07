@@ -13,7 +13,7 @@ void main() {
       ),
     );
 
-    expect(find.text('AI 하이라이트 편집기'), findsOneWidget);
-    expect(find.text('영상 선택'), findsOneWidget);
+    expect(find.text('AutoEdit'), findsOneWidget);
+    expect(find.text('Import'), findsOneWidget);
   });
 }

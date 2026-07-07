@@ -4,9 +4,11 @@ import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'state/editor_controller.dart';
 import 'widgets/caption_editor.dart';
+import 'widgets/clip_inspector.dart';
 import 'widgets/edit_controls.dart';
 import 'widgets/highlight_cards.dart';
 import 'widgets/status_panel.dart';
+import 'widgets/time_format.dart';
 import 'widgets/timeline_editor.dart';
 import 'widgets/video_preview.dart';
 
@@ -25,7 +27,7 @@ class HighlightEditorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF14B8A6);
+    const seed = Color(0xFF38BDF8);
     return MaterialApp(
       title: 'AI Highlight Editor',
       debugShowCheckedModeBanner: false,
@@ -36,13 +38,15 @@ class HighlightEditorApp extends StatelessWidget {
           seedColor: seed,
           brightness: Brightness.dark,
           primary: seed,
+          secondary: const Color(0xFF34D399),
           tertiary: const Color(0xFFF59E0B),
-          surface: const Color(0xFF1F1F22),
-          surfaceContainerHighest: const Color(0xFF2B2B30),
-          outline: const Color(0xFF45454D),
+          surface: const Color(0xFF17191F),
+          surfaceContainerHighest: const Color(0xFF242832),
+          outline: const Color(0xFF343946),
         ),
-        scaffoldBackgroundColor: const Color(0xFF171719),
-        fontFamily: 'Arial',
+        scaffoldBackgroundColor: const Color(0xFF0E1014),
+        fontFamily: 'Segoe UI',
+        visualDensity: VisualDensity.compact,
       ),
       home: const EditorDashboard(),
     );
@@ -82,11 +86,13 @@ class _DesktopEditorShell extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: const [
-              SizedBox(width: 310, child: _MediaPanel()),
+              SizedBox(width: 56, child: _WorkspaceRail()),
+              _VerticalRule(),
+              SizedBox(width: 304, child: _MediaPanel()),
               _VerticalRule(),
               Expanded(child: _CenterEditor()),
               _VerticalRule(),
-              SizedBox(width: 360, child: _InspectorPanel()),
+              SizedBox(width: 372, child: _InspectorPanel()),
             ],
           ),
         ),
@@ -137,7 +143,7 @@ class _CenterEditor extends StatelessWidget {
       children: const [
         Expanded(child: _PreviewStage()),
         _HorizontalRule(),
-        SizedBox(height: 272, child: _TimelinePanel()),
+        SizedBox(height: 326, child: _TimelinePanel()),
       ],
     );
   }
@@ -152,28 +158,78 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     return Container(
-      height: compact ? 56 : 60,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: compact ? 56 : 58,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF202023),
+        color: const Color(0xFF121419),
         border: Border(
           bottom: BorderSide(color: Theme.of(context).colorScheme.outline),
         ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.auto_awesome_motion, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'AI 하이라이트 편집기',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_motion,
+              size: 19,
+              color: Colors.black,
             ),
           ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: compact ? 140 : 230,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AutoEdit',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                Text(
+                  controller.projectName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!compact) ...[
+            const _WorkspaceTab(label: 'Edit', selected: true),
+            const _WorkspaceTab(label: 'Captions'),
+            const _WorkspaceTab(label: 'Export'),
+            const SizedBox(width: 10),
+            IconButton.outlined(
+              tooltip: '되돌리기',
+              onPressed: controller.canUndo
+                  ? context.read<EditorController>().undo
+                  : null,
+              icon: const Icon(Icons.undo),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '다시 실행',
+              onPressed: controller.canRedo
+                  ? context.read<EditorController>().redo
+                  : null,
+              icon: const Icon(Icons.redo),
+            ),
+          ],
+          const Spacer(),
           if (!compact) ...[
             _EnginePill(stateText: controller.engineState.message),
             const SizedBox(width: 10),
@@ -209,7 +265,7 @@ class _MediaPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: const [
-          _PanelHeader(title: 'Media', icon: Icons.perm_media_outlined),
+          _PanelHeader(title: 'Project Media', icon: Icons.perm_media_outlined),
           SizedBox(height: 10),
           _EngineStatus(),
           SizedBox(height: 10),
@@ -230,24 +286,47 @@ class _PreviewStage extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(14),
       child: _SurfacePanel(
-        padding: const EdgeInsets.all(12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            const aspect = 16 / 9;
-            var width = constraints.maxWidth;
-            var height = width / aspect;
-            if (height > constraints.maxHeight) {
-              height = constraints.maxHeight;
-              width = height * aspect;
-            }
-            return Center(
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: VideoPreview(controller: controller.videoController),
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            _PreviewHeader(
+              timecode: formatSeconds(controller.currentPositionSeconds),
+              duration: formatSeconds(controller.duration),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const aspect = 16 / 9;
+                    var width = constraints.maxWidth;
+                    var height = width / aspect;
+                    if (height > constraints.maxHeight) {
+                      height = constraints.maxHeight;
+                      width = height * aspect;
+                    }
+                    return Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        ),
+                        child: SizedBox(
+                          width: width,
+                          height: height,
+                          child: VideoPreview(
+                            controller: controller.videoController,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -267,49 +346,49 @@ class _TimelinePanel extends StatelessWidget {
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(14, 0, 14, 14),
       child: _SurfacePanel(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.zero,
         child: controller.hasTimeline
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      const _PanelHeader(
-                        title: 'Timeline',
-                        icon: Icons.view_timeline_outlined,
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${controller.segments.length} clips',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                    ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: Row(
+                      children: [
+                        const _PanelHeader(
+                          title: 'Timeline',
+                          icon: Icons.view_timeline_outlined,
+                        ),
+                        const SizedBox(width: 10),
+                        _SmallPill(
+                          label: '${controller.segments.length} clips',
+                        ),
+                        const Spacer(),
+                        _SmallPill(
+                          label:
+                              'Out ${formatSeconds(controller.segments.fold<double>(0, (total, segment) => total + segment.outputDuration))}',
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  const EditControls(),
-                  const SizedBox(height: 10),
-                  TimelineEditor(
-                    duration: controller.duration,
-                    segments: controller.segments,
-                    playheadSeconds: controller.currentPositionSeconds,
-                    selectedSegmentOrder: controller.selectedSegmentOrder,
-                    markIn: controller.markIn,
-                    markOut: controller.markOut,
-                    waveform: controller.waveform,
-                    zoom: controller.timelineZoom,
-                    onSegmentChanged: context
-                        .read<EditorController>()
-                        .updateSegment,
-                    onScrub: (seconds) {
-                      context.read<EditorController>().seekTo(
-                        seconds,
-                        autoplay: false,
-                      );
-                    },
-                    onSegmentSelected: context
-                        .read<EditorController>()
-                        .selectSegment,
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: EditControls(),
                   ),
+                  const SizedBox(height: 8),
+                  if (compact)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                      child: _TimelineEditorBody(controller: controller),
+                    )
+                  else
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                        child: _TimelineEditorBody(controller: controller),
+                      ),
+                    ),
                 ],
               )
             : Center(
@@ -341,17 +420,18 @@ class _InspectorPanel extends StatelessWidget {
       child: _SurfacePanel(
         padding: const EdgeInsets.all(12),
         child: DefaultTabController(
-          length: 2,
+          length: 3,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const TabBar(
                 tabs: [
-                  Tab(icon: Icon(Icons.auto_awesome), text: 'AI Clips'),
+                  Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
                   Tab(
                     icon: Icon(Icons.closed_caption_outlined),
                     text: 'Captions',
                   ),
+                  Tab(icon: Icon(Icons.tune), text: 'Properties'),
                 ],
               ),
               const SizedBox(height: 10),
@@ -379,6 +459,7 @@ class _InspectorPanel extends StatelessWidget {
                       onToggle: context.read<EditorController>().toggleCaption,
                       onSeek: context.read<EditorController>().seekTo,
                     ),
+                    const ClipInspector(),
                   ],
                 ),
               ),
@@ -395,6 +476,31 @@ class _InspectorPanel extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _TimelineEditorBody extends StatelessWidget {
+  const _TimelineEditorBody({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return TimelineEditor(
+      duration: controller.duration,
+      segments: controller.segments,
+      playheadSeconds: controller.currentPositionSeconds,
+      selectedSegmentOrder: controller.selectedSegmentOrder,
+      markIn: controller.markIn,
+      markOut: controller.markOut,
+      waveform: controller.waveform,
+      zoom: controller.timelineZoom,
+      onSegmentChanged: context.read<EditorController>().updateSegment,
+      onScrub: (seconds) {
+        context.read<EditorController>().seekTo(seconds, autoplay: false);
+      },
+      onSegmentSelected: context.read<EditorController>().selectSegment,
     );
   }
 }
@@ -436,6 +542,166 @@ class _EngineStatus extends StatelessWidget {
             icon: const Icon(Icons.refresh),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceRail extends StatelessWidget {
+  const _WorkspaceRail();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFF101217)),
+      child: Column(
+        children: const [
+          SizedBox(height: 10),
+          _RailButton(
+            icon: Icons.perm_media_outlined,
+            label: 'Media',
+            active: true,
+          ),
+          _RailButton(icon: Icons.content_cut, label: 'Edit'),
+          _RailButton(icon: Icons.auto_awesome, label: 'AI'),
+          _RailButton(icon: Icons.closed_caption_outlined, label: 'Text'),
+          Spacer(),
+          _RailButton(icon: Icons.settings_outlined, label: 'Settings'),
+          SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+}
+
+class _RailButton extends StatelessWidget {
+  const _RailButton({
+    required this.icon,
+    required this.label,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = active ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: active
+                ? colorScheme.primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: active
+                ? Border.all(color: colorScheme.primary.withValues(alpha: 0.45))
+                : null,
+          ),
+          child: Icon(icon, size: 21, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceTab extends StatelessWidget {
+  const _WorkspaceTab({required this.label, this.selected = false});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: selected
+            ? colorScheme.primary.withValues(alpha: 0.14)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: selected ? colorScheme.primary : Colors.transparent,
+        ),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewHeader extends StatelessWidget {
+  const _PreviewHeader({required this.timecode, required this.duration});
+
+  final String timecode;
+  final String duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121419),
+        border: Border(bottom: BorderSide(color: colorScheme.outline)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+      ),
+      child: Row(
+        children: [
+          const _PanelHeader(title: 'Program', icon: Icons.live_tv_outlined),
+          const Spacer(),
+          _SmallPill(label: timecode),
+          const SizedBox(width: 8),
+          Text(
+            duration,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallPill extends StatelessWidget {
+  const _SmallPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colorScheme.outline),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: colorScheme.onSurface,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
       ),
     );
   }

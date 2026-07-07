@@ -16,18 +16,22 @@ class VideoPreview extends StatelessWidget {
         aspectRatio: 16 / 9,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFF111827),
-            borderRadius: BorderRadius.circular(8),
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(2),
           ),
-          child: const Center(
-            child: Icon(Icons.movie_outlined, color: Colors.white70, size: 44),
+          child: Center(
+            child: Icon(
+              Icons.movie_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              size: 44,
+            ),
           ),
         ),
       );
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(2),
       child: AspectRatio(
         aspectRatio: player.value.aspectRatio == 0
             ? 16 / 9
@@ -67,16 +71,18 @@ class _VideoControls extends StatelessWidget {
 
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(8),
+            color: Colors.black.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             child: Row(
               children: [
                 IconButton(
                   tooltip: value.isPlaying ? '일시정지' : '재생',
                   color: Colors.white,
+                  visualDensity: VisualDensity.compact,
                   onPressed: () {
                     value.isPlaying ? controller.pause() : controller.play();
                   },
@@ -94,11 +100,17 @@ class _VideoControls extends StatelessWidget {
                     },
                   ),
                 ),
-                Text(
-                  '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelMedium?.copyWith(color: Colors.white),
+                SizedBox(
+                  width: 194,
+                  child: Text(
+                    '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelMedium?.copyWith(color: Colors.white),
+                  ),
                 ),
               ],
             ),
