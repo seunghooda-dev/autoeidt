@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .runlogs/
 .playwright-cli/
+output/
 
 backend/.env
 backend/.venv/

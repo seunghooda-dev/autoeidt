@@ -10,7 +10,7 @@ class YoutubeRetentionSkill:
 
     def analyze(self, window: TranscriptWindow) -> SkillSignal | None:
         text = window.text
-        if re.search(r"(처음|먼저|바로|지금부터|보여드릴게요|비교|차이|전후)", text):
+        if re.search(r"(처음|먼저|바로|지금부터|보여드릴게요|비교|차이|전후|결과부터)", text):
             return SkillSignal(
                 score=2.6,
                 tag="유지율",

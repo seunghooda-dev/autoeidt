@@ -18,7 +18,9 @@ class EditorController extends ChangeNotifier {
     bool autoStartEngine = true,
   }) : _apiClient = apiClient ?? ApiClient(),
        _engineService = engineService ?? LocalEngineService() {
-    if (autoStartEngine) {
+    if (_demoMode) {
+      _loadDemoProject();
+    } else if (autoStartEngine) {
       unawaited(ensureLocalEngine());
     }
   }
@@ -53,12 +55,18 @@ class EditorController extends ChangeNotifier {
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
+  static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
+  static final RegExp _fillerPattern = RegExp(
+    r'(^|\s)(음+|어+|아+|그니까|그러니까|뭐랄까|약간|이제)(\s|$)|you know|um+|uh+',
+    caseSensitive: false,
+  );
 
   bool get hasFile => selectedFile != null;
-  bool get hasTimeline => duration > 0 && jobId != null;
+  bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get canStartUpload =>
       hasFile && !isUploading && job?.status != 'processing';
   bool get canRender =>
+      jobId != null &&
       hasTimeline &&
       segments.isNotEmpty &&
       !isRendering &&
@@ -89,6 +97,53 @@ class EditorController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  double get outputDurationSeconds {
+    return segments.fold<double>(
+      0,
+      (total, segment) => total + segment.outputDuration,
+    );
+  }
+
+  double get averageClipScore {
+    final scored = segments.where((segment) => segment.score > 0).toList();
+    if (scored.isEmpty) {
+      return 0;
+    }
+    return scored.fold<double>(0, (total, item) => total + item.score) /
+        scored.length;
+  }
+
+  int get weakClipCount {
+    final average = averageClipScore;
+    if (average <= 0) {
+      return 0;
+    }
+    final threshold = _weakScoreThreshold(average);
+    return segments
+        .where((segment) => segment.score > 0 && segment.score < threshold)
+        .length;
+  }
+
+  int get fillerCaptionCount {
+    return captions
+        .where(
+          (caption) => caption.enabled && _fillerPattern.hasMatch(caption.text),
+        )
+        .length;
+  }
+
+  Map<String, int> get signalCounts {
+    final counts = <String, int>{};
+    for (final segment in segments) {
+      for (final tag in segment.tags) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Map.fromEntries(entries.take(6));
   }
 
   String get statusText {
@@ -647,6 +702,118 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void condenseTimelineByScore({double targetSeconds = 240}) {
+    if (segments.length <= 1) {
+      return;
+    }
+    _commitHistory();
+    final ranked = [...segments]
+      ..sort((a, b) {
+        final scoreCompare = b.score.compareTo(a.score);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.order.compareTo(b.order);
+      });
+    final selected = <HighlightSegment>[];
+    var total = 0.0;
+    for (final segment in ranked) {
+      if (selected.isNotEmpty && total >= targetSeconds) {
+        break;
+      }
+      selected.add(_directorSegment(segment));
+      total += segment.outputDuration;
+    }
+    selected.sort((a, b) => a.start.compareTo(b.start));
+    segments = _reorderSegments(selected);
+    selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void removeWeakSegments() {
+    if (segments.length <= 1 || averageClipScore <= 0) {
+      return;
+    }
+    final threshold = _weakScoreThreshold(averageClipScore);
+    final filtered = [
+      for (final segment in segments)
+        if (segment.score == 0 || segment.score >= threshold)
+          _directorSegment(segment),
+    ];
+    if (filtered.isEmpty || filtered.length == segments.length) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments(filtered);
+    selectedSegmentOrder = selectedSegmentOrder == null
+        ? segments.first.order
+        : selectedSegmentOrder!.clamp(1, segments.length).toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void padSelectedClipForContext() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    final start = _snapToFrame(_clampProjectTime(selected.start - 1.2));
+    final end = _snapToFrame(_clampProjectTime(selected.end + 0.8));
+    updateSegment(
+      _directorSegment(
+        selected.copyWith(
+          start: start,
+          end: end,
+          audioStart: selected.audioLinked ? start : selected.audioStart,
+          audioEnd: selected.audioLinked ? end : selected.audioEnd,
+        ),
+      ),
+    );
+  }
+
+  void hideFillerCaptions() {
+    if (captions.isEmpty) {
+      return;
+    }
+    final updated = [
+      for (final caption in captions)
+        if (_fillerPattern.hasMatch(caption.text))
+          caption.copyWith(enabled: false)
+        else
+          caption,
+    ];
+    if (_sameCaptionEnabledState(updated, captions)) {
+      return;
+    }
+    _commitHistory();
+    captions = updated;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void applyShortsDirectorPreset() {
+    if (duration <= 0 || segments.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    exportAspectRatio = '9:16';
+    includeCaptions = true;
+    segments = _reorderSegments([
+      for (final segment in segments)
+        _directorSegment(
+          segment.copyWith(
+            audioFadeIn: segment.audioFadeIn == 0 ? 0.12 : segment.audioFadeIn,
+            audioFadeOut: segment.audioFadeOut == 0
+                ? 0.18
+                : segment.audioFadeOut,
+          ),
+        ),
+    ]);
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void updateCaption(CaptionSegment updated) {
     _commitHistory();
     captions = [
@@ -908,6 +1075,33 @@ class EditorController extends ChangeNotifier {
     ];
   }
 
+  double _weakScoreThreshold(double average) {
+    return average <= 0 ? 0 : (average * 0.68).clamp(4.5, 8.0).toDouble();
+  }
+
+  HighlightSegment _directorSegment(HighlightSegment segment) {
+    return segment.copyWith(
+      source: segment.source.contains('director')
+          ? segment.source
+          : '${segment.source}+director',
+    );
+  }
+
+  bool _sameCaptionEnabledState(
+    List<CaptionSegment> next,
+    List<CaptionSegment> current,
+  ) {
+    if (next.length != current.length) {
+      return false;
+    }
+    for (var index = 0; index < next.length; index++) {
+      if (next[index].enabled != current[index].enabled) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _applyProject(
     ProjectState project, {
     required bool keepJob,
@@ -971,6 +1165,78 @@ class EditorController extends ChangeNotifier {
   void _clearHistory() {
     _undoStack.clear();
     _redoStack.clear();
+  }
+
+  void _loadDemoProject() {
+    projectName = 'AI Director Demo';
+    duration = 600;
+    segments = const [
+      HighlightSegment(
+        order: 1,
+        start: 18,
+        end: 52,
+        reason: '초반 후킹과 문제 제시가 명확함',
+        script: '결과부터 보여드리면 이 문제는 세 가지 실수에서 시작됩니다',
+        source: 'skill-engine',
+        score: 9.2,
+        tags: ['유지율', '문제해결', '구체성'],
+      ),
+      HighlightSegment(
+        order: 2,
+        start: 118,
+        end: 162,
+        reason: '핵심 원인과 해결 순서가 이어짐',
+        script: '핵심은 먼저 원인을 확인하고 그 다음 해결 순서를 적용하는 것입니다',
+        source: 'skill-engine',
+        score: 8.7,
+        tags: ['핵심', '전환'],
+      ),
+      HighlightSegment(
+        order: 3,
+        start: 244,
+        end: 286,
+        reason: '구체적인 숫자와 비교가 포함됨',
+        script: '첫 번째 방법과 두 번째 방법의 차이는 실제로 30퍼센트 정도입니다',
+        source: 'skill-engine',
+        score: 7.9,
+        tags: ['구체성', '비교'],
+      ),
+      HighlightSegment(
+        order: 4,
+        start: 384,
+        end: 418,
+        reason: '반복 인사와 CTA 성격이 강함',
+        script: '음 이제 구독 좋아요 알림도 부탁드립니다',
+        source: 'skill-engine',
+        score: 2.8,
+        tags: ['CTA'],
+      ),
+    ];
+    captions = const [
+      CaptionSegment(order: 1, start: 18, end: 23, text: '결과부터 보여드리면'),
+      CaptionSegment(
+        order: 2,
+        start: 23,
+        end: 31,
+        text: '이 문제는 세 가지 실수에서 시작됩니다',
+      ),
+      CaptionSegment(
+        order: 3,
+        start: 118,
+        end: 126,
+        text: '핵심은 먼저 원인을 확인하는 것입니다',
+      ),
+      CaptionSegment(
+        order: 4,
+        start: 384,
+        end: 389,
+        text: '음 이제 구독 좋아요 부탁드립니다',
+      ),
+    ];
+    waveform = [
+      for (var index = 0; index < 180; index++) ((index % 13) + 4) / 17,
+    ];
+    selectedSegmentOrder = 1;
   }
 
   String _safeProjectFileName() {

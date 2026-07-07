@@ -67,3 +67,31 @@ def create_skill():
     )
 
     assert any("외부스킬" in item["tags"] for item in highlights)
+
+
+def test_skill_engine_penalizes_filler_and_cta() -> None:
+    transcript = [
+        {
+            "start": 0.0,
+            "end": 25.0,
+            "text": "음 어 이제 약간 뭐랄까 구독 좋아요 알림 부탁드립니다",
+        },
+        {
+            "start": 25.0,
+            "end": 55.0,
+            "text": "결과부터 보여드리면 가장 중요한 핵심 문제와 해결 방법은 세 가지입니다",
+        },
+        {"start": 55.0, "end": 80.0, "text": "마무리 인사입니다"},
+    ]
+
+    highlights = select_highlights_with_skills(
+        transcript,
+        duration=80.0,
+        target_min_seconds=20.0,
+        target_max_seconds=45.0,
+    )
+
+    joined_text = " ".join(item["script"] for item in highlights)
+    joined_tags = {tag for item in highlights for tag in item["tags"]}
+    assert "구독 좋아요" not in joined_text
+    assert {"유지율", "핵심", "문제해결"} & joined_tags

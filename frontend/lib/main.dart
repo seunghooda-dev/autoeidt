@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'state/editor_controller.dart';
+import 'widgets/ai_director_panel.dart';
 import 'widgets/caption_editor.dart';
 import 'widgets/clip_inspector.dart';
 import 'widgets/edit_controls.dart';
@@ -420,13 +421,15 @@ class _InspectorPanel extends StatelessWidget {
       child: _SurfacePanel(
         padding: const EdgeInsets.all(12),
         child: DefaultTabController(
-          length: 3,
+          length: 4,
+          initialIndex: const bool.fromEnvironment('AUTOEDIT_DEMO') ? 1 : 0,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const TabBar(
                 tabs: [
                   Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
+                  Tab(icon: Icon(Icons.auto_fix_high), text: 'AI'),
                   Tab(
                     icon: Icon(Icons.closed_caption_outlined),
                     text: 'Captions',
@@ -453,6 +456,7 @@ class _InspectorPanel extends StatelessWidget {
                                 .read<EditorController>()
                                 .selectSegment,
                           ),
+                    const AiDirectorPanel(),
                     CaptionEditor(
                       captions: controller.captions,
                       onChanged: context.read<EditorController>().updateCaption,

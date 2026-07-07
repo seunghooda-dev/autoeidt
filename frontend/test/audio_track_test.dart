@@ -117,4 +117,61 @@ void main() {
     expect(controller.segments.length, 2);
     expect(controller.selectedSegmentOrder, 2);
   });
+
+  test('ai director condenses weak clips and applies shorts preset', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 20,
+          reason: 'low',
+          score: 2,
+          tags: ['CTA'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 20,
+          end: 45,
+          reason: 'high',
+          score: 9,
+          tags: ['핵심'],
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 45,
+          end: 75,
+          reason: 'medium',
+          score: 6,
+          tags: ['문제해결'],
+        ),
+      ]
+      ..captions = const [
+        CaptionSegment(order: 1, start: 0, end: 2, text: '음 이제 시작합니다'),
+        CaptionSegment(order: 2, start: 20, end: 22, text: '핵심 내용입니다'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    expect(controller.weakClipCount, 1);
+    expect(controller.fillerCaptionCount, 1);
+
+    controller.removeWeakSegments();
+    expect(controller.segments.length, 2);
+    expect(controller.segments.any((segment) => segment.score == 2), isFalse);
+
+    controller.hideFillerCaptions();
+    expect(controller.captions.first.enabled, isFalse);
+    expect(controller.captions.last.enabled, isTrue);
+
+    controller.applyShortsDirectorPreset();
+    expect(controller.exportAspectRatio, '9:16');
+    expect(controller.includeCaptions, isTrue);
+    expect(
+      controller.segments.every(
+        (segment) => segment.source.contains('director'),
+      ),
+      isTrue,
+    );
+  });
 }

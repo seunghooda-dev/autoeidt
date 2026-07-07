@@ -49,6 +49,8 @@ Rules:
 - Add score from 0 to 10 and 1-4 Korean tags explaining the editing value.
 - Prefer segments with a clear hook, concrete information, conflict/problem,
   solution, emotion, question, or strong conclusion.
+- Avoid filler-heavy chatter, subscribe/like calls, repeated greetings, and
+  setup that does not help the selected clip make sense.
 - Preserve enough context so each clip still makes sense when watched alone.
 - Select enough segments to make a 3-4 minute edit when the source duration allows it.
 

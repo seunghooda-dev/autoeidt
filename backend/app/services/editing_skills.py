@@ -135,6 +135,19 @@ class EmotionSkill:
         return SkillSignal(score=2.2, tag="감정", reason="감정 반응이 있어 시청 유지에 유리함")
 
 
+class RetentionHookSkill:
+    name = "retention_hook"
+
+    def analyze(self, window: TranscriptWindow) -> SkillSignal | None:
+        if re.search(r"(처음|먼저|바로|지금부터|보여드릴게요|비교|차이|전후|결과부터|딱\s*\d+)", window.text):
+            return SkillSignal(
+                score=2.5,
+                tag="유지율",
+                reason="초반 후킹이나 비교 구도가 있어 시청 유지에 유리함",
+            )
+        return None
+
+
 class TransitionSkill:
     name = "transition"
 
@@ -144,13 +157,53 @@ class TransitionSkill:
         return None
 
 
+class FillerWordSkill:
+    name = "filler_word"
+
+    def analyze(self, window: TranscriptWindow) -> SkillSignal | None:
+        matches = re.findall(
+            r"(\b음+\b|\b어+\b|\b아+\b|그니까|그러니까|뭐랄까|약간|이제|사실\s*은?|you know|um+|uh+)",
+            window.text,
+            re.I,
+        )
+        if len(matches) >= 5:
+            return SkillSignal(
+                score=-2.4,
+                tag="말버릇",
+                reason="반복 말버릇이 많아 하이라이트 밀도가 낮음",
+            )
+        if len(matches) >= 2:
+            return SkillSignal(
+                score=-1.0,
+                tag="말버릇",
+                reason="말버릇이 있어 짧은 편집에서는 우선순위가 낮음",
+            )
+        return None
+
+
+class CallToActionSkill:
+    name = "call_to_action"
+
+    def analyze(self, window: TranscriptWindow) -> SkillSignal | None:
+        if re.search(r"(구독|좋아요|알림|댓글|팔로우|subscribe|like and)", window.text, re.I):
+            return SkillSignal(
+                score=-1.8,
+                tag="CTA",
+                reason="하이라이트 본문보다 콜투액션 성격이 강함",
+            )
+        return None
+
+
 BUILT_IN_SKILLS: list[EditingSkill] = [
     KeywordSkill(),
     QuestionSkill(),
     NumberSpecificitySkill(),
     InformationDensitySkill(),
     EmotionSkill(),
+    RetentionHookSkill(),
     TransitionSkill(),
+    FillerWordSkill(),
+    CallToActionSkill(),
 ]
 
 
