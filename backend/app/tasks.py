@@ -281,7 +281,7 @@ def render_video_job(
         )
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.rendered,
             "rendered",
