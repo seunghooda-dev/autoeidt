@@ -233,7 +233,10 @@ def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -
 
 
 def render_highlights(video_path: Path, segments: list[dict], output_path: Path) -> Path:
-    normalized = sorted(segments, key=lambda item: float(item["start"]))
+    normalized = sorted(
+        segments,
+        key=lambda item: int(item.get("order") or 0),
+    )
     if not normalized:
         raise ValueError("at least one segment is required")
 

@@ -64,7 +64,9 @@ class JobStatusResponse {
       renderUrl: json['render_url'] as String?,
       error: json['error'] as String?,
       segments: rawSegments
-          .map((item) => HighlightSegment.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
+          )
           .toList(),
     );
   }
@@ -90,10 +92,14 @@ class TimelineResponse {
       jobId: json['job_id'] as String,
       duration: (json['duration'] as num).toDouble(),
       segments: rawSegments
-          .map((item) => HighlightSegment.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
+          )
           .toList(),
       transcript: rawTranscript
-          .map((item) => TranscriptSegment.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => TranscriptSegment.fromJson(item as Map<String, dynamic>),
+          )
           .toList(),
     );
   }

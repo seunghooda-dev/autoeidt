@@ -49,12 +49,16 @@ class StatusPanel extends StatelessWidget {
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: controller.isUploading ? null : controller.pickVideo,
+                  onPressed: controller.isUploading
+                      ? null
+                      : controller.pickVideo,
                   icon: const Icon(Icons.video_file_outlined),
                   label: const Text('영상 선택'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: controller.canStartUpload ? controller.startUpload : null,
+                  onPressed: controller.canStartUpload
+                      ? controller.startUpload
+                      : null,
                   icon: const Icon(Icons.cloud_upload_outlined),
                   label: const Text('AI 분석 시작'),
                 ),

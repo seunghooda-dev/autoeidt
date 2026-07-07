@@ -4,10 +4,7 @@ import 'package:video_player/video_player.dart';
 import 'time_format.dart';
 
 class VideoPreview extends StatelessWidget {
-  const VideoPreview({
-    super.key,
-    required this.controller,
-  });
+  const VideoPreview({super.key, required this.controller});
 
   final VideoPlayerController? controller;
 
@@ -32,7 +29,9 @@ class VideoPreview extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: AspectRatio(
-        aspectRatio: player.value.aspectRatio == 0 ? 16 / 9 : player.value.aspectRatio,
+        aspectRatio: player.value.aspectRatio == 0
+            ? 16 / 9
+            : player.value.aspectRatio,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -97,9 +96,9 @@ class _VideoControls extends StatelessWidget {
                 ),
                 Text(
                   '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)}',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Colors.white,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: Colors.white),
                 ),
               ],
             ),

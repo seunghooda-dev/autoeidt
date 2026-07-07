@@ -8,10 +8,14 @@ class HighlightCards extends StatelessWidget {
     super.key,
     required this.segments,
     required this.onSeek,
+    required this.selectedOrder,
+    required this.onSelect,
   });
 
   final List<HighlightSegment> segments;
   final ValueChanged<double> onSeek;
+  final int? selectedOrder;
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -24,16 +28,24 @@ class HighlightCards extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final segment = segments[index];
+        final isSelected = segment.order == selectedOrder;
         return Material(
-          color: Colors.white,
+          color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () => onSeek(segment.start),
+            onTap: () {
+              onSelect(segment.order);
+              onSeek(segment.start);
+            },
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : const Color(0xFFE5E7EB),
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -41,7 +53,10 @@ class HighlightCards extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.play_circle_outline, color: Theme.of(context).colorScheme.primary),
+                      Icon(
+                        Icons.play_circle_outline,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -67,8 +82,8 @@ class HighlightCards extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF4B5563),
-                          ),
+                        color: const Color(0xFF4B5563),
+                      ),
                     ),
                   ],
                 ],

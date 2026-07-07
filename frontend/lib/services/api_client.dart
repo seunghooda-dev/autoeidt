@@ -5,15 +5,14 @@ import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 
 class ApiClient {
-  ApiClient({
-    String? baseUrl,
-    Dio? dio,
-  })  : baseUrl = baseUrl ??
-            const String.fromEnvironment(
-              'API_BASE_URL',
-              defaultValue: 'http://localhost:8000',
-            ),
-        _dio = dio ?? Dio();
+  ApiClient({String? baseUrl, Dio? dio})
+    : baseUrl =
+          baseUrl ??
+          const String.fromEnvironment(
+            'API_BASE_URL',
+            defaultValue: 'http://localhost:8000',
+          ),
+      _dio = dio ?? Dio();
 
   final String baseUrl;
   final Dio _dio;
@@ -68,16 +67,10 @@ class ApiClient {
 
   Future<MultipartFile> _multipartFromPlatformFile(PlatformFile file) async {
     if (file.path != null) {
-      return MultipartFile.fromFile(
-        file.path!,
-        filename: file.name,
-      );
+      return MultipartFile.fromFile(file.path!, filename: file.name);
     }
     if (file.bytes != null) {
-      return MultipartFile.fromBytes(
-        file.bytes!,
-        filename: file.name,
-      );
+      return MultipartFile.fromBytes(file.bytes!, filename: file.name);
     }
     if (file.readStream != null && file.size > 0) {
       return MultipartFile.fromStream(

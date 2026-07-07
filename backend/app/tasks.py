@@ -47,16 +47,17 @@ def _set_task_state(
 def _normalize_highlights(
     highlights: list[dict[str, Any]],
     duration: float,
+    preserve_order: bool = False,
 ) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
-    for item in highlights:
+    for index, item in enumerate(highlights, start=1):
         start = max(0.0, min(float(item["start"]), duration))
         end = max(0.0, min(float(item["end"]), duration))
         if end <= start:
             continue
         normalized.append(
             {
-                "order": 0,
+                "order": int(item.get("order") or index),
                 "start": round(start, 1),
                 "end": round(end, 1),
                 "reason": str(item.get("reason", "AI 추천 구간")),
@@ -64,7 +65,7 @@ def _normalize_highlights(
                 "source": str(item.get("source", "ai")),
             }
         )
-    normalized.sort(key=lambda item: item["start"])
+    normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])
     for index, item in enumerate(normalized, start=1):
         item["order"] = index
     return normalized
@@ -216,7 +217,11 @@ def render_video_task(
     try:
         job = store.load(job_id)
         duration = float(job.get("duration") or 0)
-        normalized = _normalize_highlights(segments, duration or 1_000_000.0)
+        normalized = _normalize_highlights(
+            segments,
+            duration or 1_000_000.0,
+            preserve_order=True,
+        )
         if not normalized:
             raise ValueError("렌더링할 하이라이트 구간이 없습니다.")
 
