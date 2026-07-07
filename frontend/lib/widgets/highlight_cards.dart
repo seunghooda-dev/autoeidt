@@ -66,7 +66,7 @@ class HighlightCards extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        formatSeconds(segment.duration),
+                        formatSeconds(segment.outputDuration),
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
                     ],

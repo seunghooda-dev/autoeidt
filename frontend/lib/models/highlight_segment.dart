@@ -11,6 +11,9 @@ class HighlightSegment {
     this.audioMuted = false,
     this.audioVolume = 1.0,
     this.audioLinked = true,
+    this.playbackSpeed = 1.0,
+    this.audioFadeIn = 0.0,
+    this.audioFadeOut = 0.0,
   });
 
   final int order;
@@ -24,8 +27,12 @@ class HighlightSegment {
   final bool audioMuted;
   final double audioVolume;
   final bool audioLinked;
+  final double playbackSpeed;
+  final double audioFadeIn;
+  final double audioFadeOut;
 
   double get duration => end - start;
+  double get outputDuration => duration / playbackSpeed;
   double get effectiveAudioStart => audioStart ?? start;
   double get effectiveAudioEnd => audioEnd ?? end;
   double get audioDuration => effectiveAudioEnd - effectiveAudioStart;
@@ -42,6 +49,9 @@ class HighlightSegment {
     bool? audioMuted,
     double? audioVolume,
     bool? audioLinked,
+    double? playbackSpeed,
+    double? audioFadeIn,
+    double? audioFadeOut,
   }) {
     return HighlightSegment(
       order: order ?? this.order,
@@ -55,6 +65,9 @@ class HighlightSegment {
       audioMuted: audioMuted ?? this.audioMuted,
       audioVolume: audioVolume ?? this.audioVolume,
       audioLinked: audioLinked ?? this.audioLinked,
+      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+      audioFadeIn: audioFadeIn ?? this.audioFadeIn,
+      audioFadeOut: audioFadeOut ?? this.audioFadeOut,
     );
   }
 
@@ -84,6 +97,18 @@ class HighlightSegment {
           (json['audio_linked'] as bool?) ??
           (json['audioLinked'] as bool?) ??
           true,
+      playbackSpeed:
+          (json['playback_speed'] as num?)?.toDouble() ??
+          (json['playbackSpeed'] as num?)?.toDouble() ??
+          1.0,
+      audioFadeIn:
+          (json['audio_fade_in'] as num?)?.toDouble() ??
+          (json['audioFadeIn'] as num?)?.toDouble() ??
+          0.0,
+      audioFadeOut:
+          (json['audio_fade_out'] as num?)?.toDouble() ??
+          (json['audioFadeOut'] as num?)?.toDouble() ??
+          0.0,
     );
   }
 
@@ -100,6 +125,9 @@ class HighlightSegment {
       'audio_muted': audioMuted,
       'audio_volume': audioVolume,
       'audio_linked': audioLinked,
+      'playback_speed': playbackSpeed,
+      'audio_fade_in': audioFadeIn,
+      'audio_fade_out': audioFadeOut,
     };
   }
 }

@@ -15,6 +15,9 @@ void main() {
       audioMuted: true,
       audioVolume: 0.7,
       audioLinked: false,
+      playbackSpeed: 1.5,
+      audioFadeIn: 0.5,
+      audioFadeOut: 1.0,
     );
 
     final json = segment.toJson();
@@ -23,6 +26,9 @@ void main() {
     expect(json['audio_muted'], isTrue);
     expect(json['audio_volume'], 0.7);
     expect(json['audio_linked'], isFalse);
+    expect(json['playback_speed'], 1.5);
+    expect(json['audio_fade_in'], 0.5);
+    expect(json['audio_fade_out'], 1.0);
 
     final restored = HighlightSegment.fromJson(json);
     expect(restored.effectiveAudioStart, 12);
@@ -30,6 +36,10 @@ void main() {
     expect(restored.audioMuted, isTrue);
     expect(restored.audioVolume, 0.7);
     expect(restored.audioLinked, isFalse);
+    expect(restored.playbackSpeed, 1.5);
+    expect(restored.audioFadeIn, 0.5);
+    expect(restored.audioFadeOut, 1.0);
+    expect(restored.outputDuration, closeTo(6.666, 0.01));
   });
 
   test('linked audio follows video trim', () {
@@ -69,5 +79,36 @@ void main() {
     expect(selected.effectiveAudioStart, timecodeFrameToSeconds(151));
     expect(selected.effectiveAudioEnd, timecodeFrameToSeconds(361));
     expect(selected.audioLinked, isFalse);
+  });
+
+  test('speed fade duplicate and undo redo update editor state', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 11, reason: 'test'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setSelectedPlaybackSpeed(2);
+    controller.setSelectedAudioFadeIn(0.5);
+    controller.setSelectedAudioFadeOut(0.5);
+
+    var selected = controller.selectedSegment!;
+    expect(selected.playbackSpeed, 2);
+    expect(selected.outputDuration, closeTo(3, 0.01));
+    expect(selected.audioFadeIn, 0.5);
+    expect(selected.audioFadeOut, 0.5);
+
+    controller.duplicateSelectedSegment();
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegmentOrder, 2);
+
+    controller.undo();
+    expect(controller.segments.length, 1);
+    expect(controller.selectedSegmentOrder, 1);
+
+    controller.redo();
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegmentOrder, 2);
   });
 }

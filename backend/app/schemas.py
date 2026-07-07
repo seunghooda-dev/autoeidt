@@ -46,6 +46,9 @@ class HighlightSegment(BaseModel):
     audio_muted: bool = False
     audio_volume: float = 1.0
     audio_linked: bool = True
+    playback_speed: float = 1.0
+    audio_fade_in: float = 0.0
+    audio_fade_out: float = 0.0
 
     @field_validator("end")
     @classmethod
@@ -59,6 +62,16 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_volume_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 2.0))
+
+    @field_validator("playback_speed")
+    @classmethod
+    def playback_speed_must_be_safe(cls, value: float) -> float:
+        return max(0.25, min(float(value), 4.0))
+
+    @field_validator("audio_fade_in", "audio_fade_out")
+    @classmethod
+    def audio_fade_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 10.0))
 
 
 class UploadJobResponse(BaseModel):

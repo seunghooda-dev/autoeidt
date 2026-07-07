@@ -26,6 +26,8 @@ class EditorController extends ChangeNotifier {
   final ApiClient _apiClient;
   final LocalEngineService _engineService;
   Timer? _pollTimer;
+  final List<_EditorSnapshot> _undoStack = [];
+  final List<_EditorSnapshot> _redoStack = [];
 
   LocalEngineState engineState = LocalEngineState.idle();
   PlatformFile? selectedFile;
@@ -62,6 +64,8 @@ class EditorController extends ChangeNotifier {
       !isRendering &&
       job?.status != 'processing' &&
       job?.status != 'rendering';
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
   bool get hasValidMarks =>
       markIn != null &&
       markOut != null &&
@@ -148,6 +152,7 @@ class EditorController extends ChangeNotifier {
     markIn = null;
     markOut = null;
     uploadProgress = 0;
+    _clearHistory();
     await _disposeVideoController();
     notifyListeners();
   }
@@ -243,7 +248,7 @@ class EditorController extends ChangeNotifier {
     }
     try {
       final project = await _apiClient.saveProject(id, projectState);
-      _applyProject(project, keepJob: true);
+      _applyProject(project, keepJob: true, resetHistory: false);
     } catch (error) {
       if (!silent) {
         errorMessage = '프로젝트 저장 실패: $error';
@@ -308,6 +313,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void updateSegment(HighlightSegment updated) {
+    _commitHistory();
     final normalized = _normalizeSegmentAudio(updated);
     segments = [
       for (final segment in segments)
@@ -331,6 +337,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkInFromPlayhead() {
+    _commitHistory();
     markIn = _snapToFrame(_clampTime(currentPositionSeconds));
     if (markOut != null && markOut! <= markIn!) {
       markOut = null;
@@ -339,6 +346,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkOutFromPlayhead() {
+    _commitHistory();
     markOut = _snapToFrame(_clampTime(currentPositionSeconds));
     if (markIn != null && markOut! <= markIn!) {
       markIn = null;
@@ -347,6 +355,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void clearMarks() {
+    _commitHistory();
     markIn = null;
     markOut = null;
     notifyListeners();
@@ -359,6 +368,7 @@ class EditorController extends ChangeNotifier {
     final start = markIn!;
     final end = markOut!;
     final nextOrder = segments.length + 1;
+    _commitHistory();
     final segment = HighlightSegment(
       order: nextOrder,
       start: start,
@@ -478,11 +488,102 @@ class EditorController extends ChangeNotifier {
     nudgeSelectedAudio(frameDelta * timecodeFrameDurationSeconds);
   }
 
+  void setSelectedPlaybackSpeed(double value) {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        playbackSpeed: value.clamp(0.25, 4.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioFadeIn(double value) {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioFadeIn: value.clamp(0.0, 10.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioFadeOut(double value) {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioFadeOut: value.clamp(0.0, 10.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void duplicateSelectedSegment() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    _commitHistory();
+    final output = <HighlightSegment>[];
+    for (final segment in segments) {
+      output.add(segment);
+      if (segment.order == selected.order) {
+        output.add(
+          selected.copyWith(
+            order: selected.order + 1,
+            reason: '${selected.reason} / copy',
+            source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+          ),
+        );
+      }
+    }
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = (selected.order + 1)
+        .clamp(1, segments.length)
+        .toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void undo() {
+    if (!canUndo) {
+      return;
+    }
+    final current = _captureSnapshot();
+    final previous = _undoStack.removeLast();
+    _redoStack.add(current);
+    _restoreSnapshot(previous);
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void redo() {
+    if (!canRedo) {
+      return;
+    }
+    final current = _captureSnapshot();
+    final next = _redoStack.removeLast();
+    _undoStack.add(current);
+    _restoreSnapshot(next);
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void deleteSelectedSegment() {
     final order = selectedSegmentOrder;
     if (order == null) {
       return;
     }
+    _commitHistory();
     final filtered = [
       for (final segment in segments)
         if (segment.order != order) segment,
@@ -508,6 +609,7 @@ class EditorController extends ChangeNotifier {
         splitAt >= selected.end - timecodeFrameDurationSeconds) {
       return;
     }
+    _commitHistory();
     final output = <HighlightSegment>[];
     for (final segment in segments) {
       if (segment.order != selected.order) {
@@ -535,6 +637,7 @@ class EditorController extends ChangeNotifier {
     if (index < 0 || target < 0 || target >= segments.length) {
       return;
     }
+    _commitHistory();
     final editable = [...segments];
     final item = editable.removeAt(index);
     editable.insert(target, item);
@@ -545,6 +648,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void updateCaption(CaptionSegment updated) {
+    _commitHistory();
     captions = [
       for (final caption in captions)
         if (caption.order == updated.order) updated else caption,
@@ -558,12 +662,14 @@ class EditorController extends ChangeNotifier {
   }
 
   void setIncludeCaptions(bool value) {
+    _commitHistory();
     includeCaptions = value;
     renderUrl = null;
     notifyListeners();
   }
 
   void setExportAspectRatio(String value) {
+    _commitHistory();
     exportAspectRatio = value;
     renderUrl = null;
     notifyListeners();
@@ -641,6 +747,7 @@ class EditorController extends ChangeNotifier {
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.first.order;
     }
+    _clearHistory();
   }
 
   Future<void> _initializePreview(String id) async {
@@ -710,13 +817,25 @@ class EditorController extends ChangeNotifier {
         _clampProjectTime(start + timecodeFrameDurationSeconds),
       );
     }
-    final normalizedSegment = segment.copyWith(start: start, end: end);
+    final playbackSpeed = segment.playbackSpeed.clamp(0.25, 4.0).toDouble();
+    final normalizedSegment = segment.copyWith(
+      start: start,
+      end: end,
+      playbackSpeed: playbackSpeed,
+    );
     final volume = segment.audioVolume.clamp(0.0, 2.0).toDouble();
+    final maxFade = (normalizedSegment.outputDuration / 2)
+        .clamp(0.0, 10.0)
+        .toDouble();
+    final audioFadeIn = segment.audioFadeIn.clamp(0.0, maxFade).toDouble();
+    final audioFadeOut = segment.audioFadeOut.clamp(0.0, maxFade).toDouble();
     if (normalizedSegment.audioLinked) {
       return normalizedSegment.copyWith(
         audioStart: normalizedSegment.start,
         audioEnd: normalizedSegment.end,
         audioVolume: volume,
+        audioFadeIn: audioFadeIn,
+        audioFadeOut: audioFadeOut,
       );
     }
 
@@ -734,6 +853,8 @@ class EditorController extends ChangeNotifier {
       audioStart: audioStart,
       audioEnd: audioEnd,
       audioVolume: volume,
+      audioFadeIn: audioFadeIn,
+      audioFadeOut: audioFadeOut,
     );
   }
 
@@ -787,7 +908,11 @@ class EditorController extends ChangeNotifier {
     ];
   }
 
-  void _applyProject(ProjectState project, {required bool keepJob}) {
+  void _applyProject(
+    ProjectState project, {
+    required bool keepJob,
+    bool resetHistory = true,
+  }) {
     projectName = project.name;
     if (!keepJob && project.jobId != null) {
       jobId = project.jobId;
@@ -801,6 +926,51 @@ class EditorController extends ChangeNotifier {
     waveform = project.waveform;
     selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
     renderUrl = null;
+    if (resetHistory) {
+      _clearHistory();
+    }
+  }
+
+  _EditorSnapshot _captureSnapshot() {
+    return _EditorSnapshot(
+      segments: List<HighlightSegment>.of(segments),
+      captions: List<CaptionSegment>.of(captions),
+      selectedSegmentOrder: selectedSegmentOrder,
+      markIn: markIn,
+      markOut: markOut,
+      includeCaptions: includeCaptions,
+      exportAspectRatio: exportAspectRatio,
+    );
+  }
+
+  void _restoreSnapshot(_EditorSnapshot snapshot) {
+    segments = _reorderSegments(snapshot.segments);
+    captions = [
+      for (var index = 0; index < snapshot.captions.length; index++)
+        snapshot.captions[index].copyWith(order: index + 1),
+    ];
+    selectedSegmentOrder = snapshot.selectedSegmentOrder;
+    if (selectedSegmentOrder != null &&
+        !segments.any((segment) => segment.order == selectedSegmentOrder)) {
+      selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    }
+    markIn = snapshot.markIn;
+    markOut = snapshot.markOut;
+    includeCaptions = snapshot.includeCaptions;
+    exportAspectRatio = snapshot.exportAspectRatio;
+  }
+
+  void _commitHistory() {
+    _undoStack.add(_captureSnapshot());
+    if (_undoStack.length > 50) {
+      _undoStack.removeAt(0);
+    }
+    _redoStack.clear();
+  }
+
+  void _clearHistory() {
+    _undoStack.clear();
+    _redoStack.clear();
   }
 
   String _safeProjectFileName() {
@@ -815,4 +985,24 @@ class EditorController extends ChangeNotifier {
     unawaited(_engineService.dispose());
     super.dispose();
   }
+}
+
+class _EditorSnapshot {
+  const _EditorSnapshot({
+    required this.segments,
+    required this.captions,
+    required this.selectedSegmentOrder,
+    required this.markIn,
+    required this.markOut,
+    required this.includeCaptions,
+    required this.exportAspectRatio,
+  });
+
+  final List<HighlightSegment> segments;
+  final List<CaptionSegment> captions;
+  final int? selectedSegmentOrder;
+  final double? markIn;
+  final double? markOut;
+  final bool includeCaptions;
+  final String exportAspectRatio;
 }

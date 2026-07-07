@@ -13,7 +13,7 @@ class EditControls extends StatelessWidget {
     final selected = controller.selectedSegment;
     final outputSeconds = controller.segments.fold<double>(
       0,
-      (total, segment) => total + segment.duration,
+      (total, segment) => total + segment.outputDuration,
     );
     final canUseMarks = controller.hasValidMarks;
 
@@ -61,6 +61,20 @@ class EditControls extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            IconButton.outlined(
+              tooltip: '되돌리기',
+              onPressed: controller.canUndo
+                  ? context.read<EditorController>().undo
+                  : null,
+              icon: const Icon(Icons.undo),
+            ),
+            IconButton.outlined(
+              tooltip: '다시 실행',
+              onPressed: controller.canRedo
+                  ? context.read<EditorController>().redo
+                  : null,
+              icon: const Icon(Icons.redo),
+            ),
             OutlinedButton.icon(
               onPressed: controller.hasTimeline
                   ? context.read<EditorController>().setMarkInFromPlayhead
@@ -102,6 +116,13 @@ class EditControls extends StatelessWidget {
                   : context.read<EditorController>().deleteSelectedSegment,
               icon: const Icon(Icons.delete_outline),
               label: const Text('선택 클립 삭제'),
+            ),
+            OutlinedButton.icon(
+              onPressed: selected == null
+                  ? null
+                  : context.read<EditorController>().duplicateSelectedSegment,
+              icon: const Icon(Icons.content_copy),
+              label: const Text('복제'),
             ),
             OutlinedButton.icon(
               onPressed: selected == null
@@ -194,10 +215,37 @@ class EditControls extends StatelessWidget {
         if (selected != null) ...[
           const SizedBox(height: 10),
           Text(
-            '선택 클립 ${selected.order}: V1 ${formatSeconds(selected.start)} - ${formatSeconds(selected.end)}  |  A1 ${formatSeconds(selected.effectiveAudioStart)} - ${formatSeconds(selected.effectiveAudioEnd)}',
+            '선택 클립 ${selected.order}: V1 ${formatSeconds(selected.start)} - ${formatSeconds(selected.end)}  |  A1 ${formatSeconds(selected.effectiveAudioStart)} - ${formatSeconds(selected.effectiveAudioEnd)}  |  ${selected.playbackSpeed.toStringAsFixed(2)}x',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.speed, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Slider(
+                  value: selected.playbackSpeed.clamp(0.25, 4.0).toDouble(),
+                  min: 0.25,
+                  max: 4,
+                  divisions: 15,
+                  label: '${selected.playbackSpeed.toStringAsFixed(2)}x',
+                  onChanged: (value) => context
+                      .read<EditorController>()
+                      .setSelectedPlaybackSpeed(value),
+                ),
+              ),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '${selected.playbackSpeed.toStringAsFixed(2)}x',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -274,6 +322,45 @@ class EditControls extends StatelessWidget {
                 width: 48,
                 child: Text(
                   '${(selected.audioVolume * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.tune, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Slider(
+                  value: selected.audioFadeIn.clamp(0.0, 10.0).toDouble(),
+                  min: 0,
+                  max: 10,
+                  divisions: 20,
+                  label: 'In ${selected.audioFadeIn.toStringAsFixed(1)}s',
+                  onChanged: (value) => context
+                      .read<EditorController>()
+                      .setSelectedAudioFadeIn(value),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: selected.audioFadeOut.clamp(0.0, 10.0).toDouble(),
+                  min: 0,
+                  max: 10,
+                  divisions: 20,
+                  label: 'Out ${selected.audioFadeOut.toStringAsFixed(1)}s',
+                  onChanged: (value) => context
+                      .read<EditorController>()
+                      .setSelectedAudioFadeOut(value),
+                ),
+              ),
+              SizedBox(
+                width: 88,
+                child: Text(
+                  '${selected.audioFadeIn.toStringAsFixed(1)} / ${selected.audioFadeOut.toStringAsFixed(1)}s',
                   textAlign: TextAlign.right,
                   style: Theme.of(context).textTheme.labelMedium,
                 ),

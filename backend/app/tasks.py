@@ -96,6 +96,9 @@ def _normalize_highlights(
                 normalized_audio_end = end
                 audio_linked = True
         audio_volume = max(0.0, min(float(item.get("audio_volume", 1.0)), 2.0))
+        playback_speed = max(0.25, min(float(item.get("playback_speed", 1.0)), 4.0))
+        audio_fade_in = max(0.0, min(float(item.get("audio_fade_in", 0.0)), 10.0))
+        audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
         normalized.append(
             {
                 "order": int(item.get("order") or index),
@@ -109,6 +112,9 @@ def _normalize_highlights(
                 "audio_muted": bool(item.get("audio_muted", False)),
                 "audio_volume": round(audio_volume, 2),
                 "audio_linked": audio_linked,
+                "playback_speed": round(playback_speed, 3),
+                "audio_fade_in": round(audio_fade_in, 3),
+                "audio_fade_out": round(audio_fade_out, 3),
             }
         )
     normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])

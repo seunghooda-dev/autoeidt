@@ -258,10 +258,44 @@ def _segment_audio_volume(segment: dict) -> float:
     return max(0.0, min(float(segment.get("audio_volume", 1.0)), 2.0))
 
 
+def _segment_playback_speed(segment: dict) -> float:
+    return max(0.25, min(float(segment.get("playback_speed", 1.0)), 4.0))
+
+
+def _segment_output_duration(segment: dict) -> float:
+    source_duration = max(0.0, float(segment["end"]) - float(segment["start"]))
+    return source_duration / _segment_playback_speed(segment)
+
+
+def _segment_audio_fade_in(segment: dict, output_duration: float) -> float:
+    return max(0.0, min(float(segment.get("audio_fade_in", 0.0)), output_duration / 2))
+
+
+def _segment_audio_fade_out(segment: dict, output_duration: float) -> float:
+    return max(0.0, min(float(segment.get("audio_fade_out", 0.0)), output_duration / 2))
+
+
+def _atempo_filters(speed: float) -> list[str]:
+    factors: list[float] = []
+    remaining = speed
+    while remaining > 2.0:
+        factors.append(2.0)
+        remaining /= 2.0
+    while remaining < 0.5:
+        factors.append(0.5)
+        remaining /= 0.5
+    factors.append(remaining)
+    return [f"atempo={factor:.6f}" for factor in factors]
+
+
 def _segment_uses_default_audio(segment: dict) -> bool:
     if bool(segment.get("audio_muted", False)):
         return False
     if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
+        return False
+    if abs(_segment_playback_speed(segment) - 1.0) > 0.001:
+        return False
+    if segment.get("audio_fade_in", 0.0) or segment.get("audio_fade_out", 0.0):
         return False
     if not bool(segment.get("audio_linked", True)):
         return False
@@ -307,17 +341,18 @@ def _write_caption_srt(
     for segment in segments:
         segment_start = float(segment["start"])
         segment_end = float(segment["end"])
+        speed = _segment_playback_speed(segment)
         for caption in enabled:
             caption_start = float(caption["start"])
             caption_end = float(caption["end"])
             if caption_start >= segment_end or caption_end <= segment_start:
                 continue
-            start = cursor + max(caption_start, segment_start) - segment_start
-            end = cursor + min(caption_end, segment_end) - segment_start
+            start = cursor + (max(caption_start, segment_start) - segment_start) / speed
+            end = cursor + (min(caption_end, segment_end) - segment_start) / speed
             text = str(caption.get("text") or "").strip()
             if text and end > start:
                 entries.append((start, end, text))
-        cursor += max(0.0, segment_end - segment_start)
+        cursor += _segment_output_duration(segment)
 
     if not entries:
         return None
@@ -347,6 +382,8 @@ def _render_reencode_with_video_args(
         start = float(segment["start"])
         end = float(segment["end"])
         video_duration = max(0.000001, end - start)
+        speed = _segment_playback_speed(segment)
+        output_duration = max(0.000001, video_duration / speed)
         audio_start = _segment_audio_start(segment)
         audio_end = _segment_audio_end(segment)
         if audio_end <= audio_start:
@@ -358,15 +395,31 @@ def _render_reencode_with_video_args(
             else _segment_audio_volume(segment)
         )
         filters.append(
-            f"[0:v]trim=start={start:.6f}:end={end:.6f},setpts=PTS-STARTPTS[v{index}]"
+            f"[0:v]trim=start={start:.6f}:end={end:.6f},"
+            f"setpts=(PTS-STARTPTS)/{speed:.6f}[v{index}]"
         )
+        audio_steps = [
+            f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f}",
+            "asetpts=PTS-STARTPTS",
+            f"volume={volume:.3f}",
+            "apad",
+            f"atrim=duration={video_duration:.6f}",
+            "asetpts=PTS-STARTPTS",
+            *_atempo_filters(speed),
+            "apad",
+            f"atrim=duration={output_duration:.6f}",
+            "asetpts=PTS-STARTPTS",
+        ]
+        fade_in = _segment_audio_fade_in(segment, output_duration)
+        fade_out = _segment_audio_fade_out(segment, output_duration)
+        if fade_in > 0:
+            audio_steps.append(f"afade=t=in:st=0:d={fade_in:.6f}")
+        if fade_out > 0:
+            fade_start = max(0.0, output_duration - fade_out)
+            audio_steps.append(f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}")
+        audio_steps[-1] = f"{audio_steps[-1]}[a{index}]"
         filters.append(
-            f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
-            "asetpts=PTS-STARTPTS,"
-            f"volume={volume:.3f},"
-            "apad,"
-            f"atrim=duration={video_duration:.6f},"
-            f"asetpts=PTS-STARTPTS[a{index}]"
+            ",".join(audio_steps)
         )
         concat_inputs.append(f"[v{index}][a{index}]")
 

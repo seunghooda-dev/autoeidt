@@ -288,7 +288,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
   double _totalOutputSeconds() {
     return widget.segments.fold<double>(
       0,
-      (total, segment) => total + math.max(0, segment.duration),
+      (total, segment) => total + math.max(0, segment.outputDuration),
     );
   }
 
