@@ -11,10 +11,6 @@ class EditControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final selected = controller.selectedSegment;
-    final outputSeconds = controller.segments.fold<double>(
-      0,
-      (total, segment) => total + segment.outputDuration,
-    );
     final canUseMarks = controller.hasValidMarks;
 
     return Column(
@@ -46,20 +42,16 @@ class EditControls extends StatelessWidget {
             ),
             _MetricChip(
               icon: Icons.content_cut,
-              label: 'Export',
-              value: formatSeconds(outputSeconds),
-            ),
-            _MetricChip(
-              icon: Icons.zoom_in,
-              label: 'Zoom',
-              value: '${controller.timelineZoom.toStringAsFixed(1)}x',
+              label: 'Out',
+              value: formatSeconds(controller.outputDurationSeconds),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             IconButton.outlined(
               tooltip: '되돌리기',
@@ -80,73 +72,36 @@ class EditControls extends StatelessWidget {
                   ? context.read<EditorController>().setMarkInFromPlayhead
                   : null,
               icon: const Icon(Icons.start),
-              label: const Text('In 지정'),
+              label: const Text('In'),
             ),
             OutlinedButton.icon(
               onPressed: controller.hasTimeline
                   ? context.read<EditorController>().setMarkOutFromPlayhead
                   : null,
               icon: const Icon(Icons.flag_outlined),
-              label: const Text('Out 지정'),
+              label: const Text('Out'),
             ),
             FilledButton.tonalIcon(
               onPressed: canUseMarks
                   ? context.read<EditorController>().addMarkedSegment
                   : null,
               icon: const Icon(Icons.add_box_outlined),
-              label: const Text('클립 추가'),
+              label: const Text('Add'),
             ),
             OutlinedButton.icon(
               onPressed: selected != null && canUseMarks
                   ? context.read<EditorController>().applyMarksToSelectedSegment
                   : null,
               icon: const Icon(Icons.swap_horiz),
-              label: const Text('선택 클립에 적용'),
+              label: const Text('Apply'),
             ),
-            OutlinedButton.icon(
-              onPressed: controller.markIn != null || controller.markOut != null
-                  ? context.read<EditorController>().clearMarks
+            _ContextHint(),
+            IconButton.outlined(
+              tooltip: '타임라인 축소',
+              onPressed: controller.hasTimeline
+                  ? () => context.read<EditorController>().zoomTimeline(-0.5)
                   : null,
-              icon: const Icon(Icons.clear),
-              label: const Text('마크 지우기'),
-            ),
-            OutlinedButton.icon(
-              onPressed: selected == null
-                  ? null
-                  : context.read<EditorController>().deleteSelectedSegment,
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('선택 클립 삭제'),
-            ),
-            OutlinedButton.icon(
-              onPressed: selected == null
-                  ? null
-                  : context.read<EditorController>().duplicateSelectedSegment,
-              icon: const Icon(Icons.content_copy),
-              label: const Text('복제'),
-            ),
-            OutlinedButton.icon(
-              onPressed: selected == null
-                  ? null
-                  : context.read<EditorController>().splitSelectedAtPlayhead,
-              icon: const Icon(Icons.call_split),
-              label: const Text('Split'),
-            ),
-            IconButton.outlined(
-              tooltip: '선택 클립 앞으로',
-              onPressed: selected == null
-                  ? null
-                  : () => context.read<EditorController>().moveSelectedSegment(
-                      -1,
-                    ),
-              icon: const Icon(Icons.keyboard_arrow_up),
-            ),
-            IconButton.outlined(
-              tooltip: '선택 클립 뒤로',
-              onPressed: selected == null
-                  ? null
-                  : () =>
-                        context.read<EditorController>().moveSelectedSegment(1),
-              icon: const Icon(Icons.keyboard_arrow_down),
+              icon: const Icon(Icons.zoom_out),
             ),
             IconButton.outlined(
               tooltip: '타임라인 확대',
@@ -155,64 +110,44 @@ class EditControls extends StatelessWidget {
                   : null,
               icon: const Icon(Icons.zoom_in),
             ),
-            IconButton.outlined(
-              tooltip: '타임라인 축소',
-              onPressed: controller.hasTimeline
-                  ? () => context.read<EditorController>().zoomTimeline(-0.5)
-                  : null,
-              icon: const Icon(Icons.zoom_out),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: '16:9', label: Text('16:9')),
-                ButtonSegment(value: '9:16', label: Text('9:16')),
-              ],
-              selected: {controller.exportAspectRatio},
-              onSelectionChanged: controller.hasTimeline
-                  ? (value) => context
-                        .read<EditorController>()
-                        .setExportAspectRatio(value.first)
-                  : null,
-            ),
-            FilterChip(
-              selected: controller.includeCaptions,
-              onSelected: controller.hasTimeline
-                  ? context.read<EditorController>().setIncludeCaptions
-                  : null,
-              avatar: const Icon(Icons.closed_caption_outlined, size: 18),
-              label: const Text('자막 포함'),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.hasTimeline
-                  ? () =>
-                        context.read<EditorController>().saveProjectToBackend()
-                  : null,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('프로젝트 저장'),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.hasTimeline
-                  ? context.read<EditorController>().exportProjectFile
-                  : null,
-              icon: const Icon(Icons.file_download_outlined),
-              label: const Text('내보내기'),
-            ),
-            OutlinedButton.icon(
-              onPressed: context.read<EditorController>().importProjectFile,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('불러오기'),
-            ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ContextHint extends StatelessWidget {
+  const _ContextHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        border: Border.all(color: colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.mouse_outlined, size: 15, color: colorScheme.primary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Right click: Split · Delete · Audio',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

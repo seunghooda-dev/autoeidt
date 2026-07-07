@@ -118,6 +118,30 @@ void main() {
     expect(controller.selectedSegmentOrder, 2);
   });
 
+  test('timeline context actions split at cursor and toggle audio link', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 13, reason: 'test'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setMarkInAt(5.2);
+    controller.setMarkOutAt(12.8);
+    expect(secondsToTimecodeFrame(controller.markIn!), 156);
+    expect(secondsToTimecodeFrame(controller.markOut!), 384);
+
+    controller.splitSelectedAt(9);
+    expect(controller.segments.length, 2);
+    expect(secondsToTimecodeFrame(controller.segments.first.end), 270);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 270);
+
+    controller.toggleSelectedAudioLink();
+    expect(controller.selectedSegment!.audioLinked, isFalse);
+    controller.toggleSelectedAudioLink();
+    expect(controller.selectedSegment!.audioLinked, isTrue);
+  });
+
   test('ai director condenses weak clips and applies shorts preset', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120

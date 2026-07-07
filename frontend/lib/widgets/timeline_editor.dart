@@ -9,6 +9,19 @@ enum _DragEdge { start, end }
 
 enum _DragTrack { video, audio }
 
+enum _TimelineMenuAction {
+  markIn,
+  markOut,
+  clearMarks,
+  split,
+  duplicate,
+  delete,
+  moveEarlier,
+  moveLater,
+  toggleAudioLink,
+  toggleAudioMute,
+}
+
 class TimelineEditor extends StatefulWidget {
   const TimelineEditor({
     super.key,
@@ -23,6 +36,15 @@ class TimelineEditor extends StatefulWidget {
     required this.onSegmentChanged,
     required this.onScrub,
     required this.onSegmentSelected,
+    this.onSetMarkIn,
+    this.onSetMarkOut,
+    this.onClearMarks,
+    this.onSplitAt,
+    this.onDuplicateSegment,
+    this.onDeleteSegment,
+    this.onMoveSegment,
+    this.onToggleAudioLink,
+    this.onToggleAudioMute,
   });
 
   final double duration;
@@ -36,6 +58,15 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
+  final ValueChanged<double>? onSetMarkIn;
+  final ValueChanged<double>? onSetMarkOut;
+  final VoidCallback? onClearMarks;
+  final ValueChanged<double>? onSplitAt;
+  final VoidCallback? onDuplicateSegment;
+  final VoidCallback? onDeleteSegment;
+  final ValueChanged<int>? onMoveSegment;
+  final VoidCallback? onToggleAudioLink;
+  final VoidCallback? onToggleAudioMute;
 
   @override
   State<TimelineEditor> createState() => _TimelineEditorState();
@@ -74,6 +105,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (details) => _tap(details.localPosition, width),
+              onSecondaryTapDown: (details) => _showContextMenu(details, width),
               onPanStart: (details) => _startDrag(details.localPosition, width),
               onPanUpdate: (details) =>
                   _updateDrag(details.localPosition.dx, width),
@@ -127,6 +159,149 @@ class _TimelineEditorState extends State<TimelineEditor> {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
     widget.onScrub(_snapToFrame(_xToSeconds(position.dx, width)));
+  }
+
+  Future<void> _showContextMenu(TapDownDetails details, double width) async {
+    final position = details.localPosition;
+    final track = _trackAt(position.dy);
+    final hitIndex = _segmentIndexAt(position.dx, width, track);
+    final seconds = _snapToFrame(_xToSeconds(position.dx, width));
+    final segment = hitIndex == null ? null : widget.segments[hitIndex];
+
+    if (segment != null) {
+      widget.onSegmentSelected(segment.order);
+    }
+
+    final action = await showMenu<_TimelineMenuAction>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+      ),
+      items: _contextMenuItems(segment, track),
+    );
+
+    if (!mounted || action == null) {
+      return;
+    }
+
+    switch (action) {
+      case _TimelineMenuAction.markIn:
+        widget.onSetMarkIn?.call(seconds);
+      case _TimelineMenuAction.markOut:
+        widget.onSetMarkOut?.call(seconds);
+      case _TimelineMenuAction.clearMarks:
+        widget.onClearMarks?.call();
+      case _TimelineMenuAction.split:
+        widget.onSplitAt?.call(seconds);
+      case _TimelineMenuAction.duplicate:
+        widget.onDuplicateSegment?.call();
+      case _TimelineMenuAction.delete:
+        widget.onDeleteSegment?.call();
+      case _TimelineMenuAction.moveEarlier:
+        widget.onMoveSegment?.call(-1);
+      case _TimelineMenuAction.moveLater:
+        widget.onMoveSegment?.call(1);
+      case _TimelineMenuAction.toggleAudioLink:
+        widget.onToggleAudioLink?.call();
+      case _TimelineMenuAction.toggleAudioMute:
+        widget.onToggleAudioMute?.call();
+    }
+  }
+
+  List<PopupMenuEntry<_TimelineMenuAction>> _contextMenuItems(
+    HighlightSegment? segment,
+    _DragTrack? track,
+  ) {
+    final trackLabel = track == _DragTrack.audio
+        ? 'A1 Audio'
+        : track == _DragTrack.video
+        ? 'V1 Video'
+        : 'Timeline';
+    return [
+      PopupMenuItem(
+        enabled: false,
+        child: Text(
+          segment == null ? trackLabel : 'Clip ${segment.order} · $trackLabel',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      const PopupMenuDivider(),
+      _menuItem(Icons.start, 'Set In here', _TimelineMenuAction.markIn),
+      _menuItem(
+        Icons.flag_outlined,
+        'Set Out here',
+        _TimelineMenuAction.markOut,
+      ),
+      _menuItem(Icons.clear, 'Clear marks', _TimelineMenuAction.clearMarks),
+      const PopupMenuDivider(),
+      _menuItem(
+        Icons.call_split,
+        'Split at cursor',
+        _TimelineMenuAction.split,
+        enabled: segment != null,
+      ),
+      _menuItem(
+        Icons.content_copy,
+        'Duplicate clip',
+        _TimelineMenuAction.duplicate,
+        enabled: segment != null,
+      ),
+      _menuItem(
+        Icons.delete_outline,
+        'Delete clip',
+        _TimelineMenuAction.delete,
+        enabled: segment != null,
+      ),
+      _menuItem(
+        Icons.keyboard_arrow_up,
+        'Move earlier',
+        _TimelineMenuAction.moveEarlier,
+        enabled: segment != null,
+      ),
+      _menuItem(
+        Icons.keyboard_arrow_down,
+        'Move later',
+        _TimelineMenuAction.moveLater,
+        enabled: segment != null,
+      ),
+      const PopupMenuDivider(),
+      _menuItem(
+        segment?.audioLinked ?? true ? Icons.link_off : Icons.link,
+        segment?.audioLinked ?? true ? 'Detach audio' : 'Relink audio',
+        _TimelineMenuAction.toggleAudioLink,
+        enabled: segment != null,
+      ),
+      _menuItem(
+        segment?.audioMuted ?? false
+            ? Icons.volume_up_outlined
+            : Icons.volume_off_outlined,
+        segment?.audioMuted ?? false ? 'Unmute A1' : 'Mute A1',
+        _TimelineMenuAction.toggleAudioMute,
+        enabled: segment != null,
+      ),
+    ];
+  }
+
+  PopupMenuItem<_TimelineMenuAction> _menuItem(
+    IconData icon,
+    String label,
+    _TimelineMenuAction action, {
+    bool enabled = true,
+  }) {
+    return PopupMenuItem(
+      value: action,
+      enabled: enabled,
+      child: Row(
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      ),
+    );
   }
 
   void _startDrag(Offset position, double width) {

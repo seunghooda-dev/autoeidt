@@ -364,6 +364,10 @@ class _TimelinePanel extends StatelessWidget {
                         _SmallPill(
                           label: '${controller.segments.length} clips',
                         ),
+                        const SizedBox(width: 6),
+                        const _SmallPill(label: 'V1 Video'),
+                        const SizedBox(width: 6),
+                        const _SmallPill(label: 'A1 Audio'),
                         const Spacer(),
                         _SmallPill(
                           label:
@@ -505,6 +509,21 @@ class _TimelineEditorBody extends StatelessWidget {
         context.read<EditorController>().seekTo(seconds, autoplay: false);
       },
       onSegmentSelected: context.read<EditorController>().selectSegment,
+      onSetMarkIn: context.read<EditorController>().setMarkInAt,
+      onSetMarkOut: context.read<EditorController>().setMarkOutAt,
+      onClearMarks: context.read<EditorController>().clearMarks,
+      onSplitAt: context.read<EditorController>().splitSelectedAt,
+      onDuplicateSegment: context
+          .read<EditorController>()
+          .duplicateSelectedSegment,
+      onDeleteSegment: context.read<EditorController>().deleteSelectedSegment,
+      onMoveSegment: context.read<EditorController>().moveSelectedSegment,
+      onToggleAudioLink: context
+          .read<EditorController>()
+          .toggleSelectedAudioLink,
+      onToggleAudioMute: context
+          .read<EditorController>()
+          .toggleSelectedAudioMute,
     );
   }
 }

@@ -392,8 +392,12 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkInFromPlayhead() {
+    setMarkInAt(currentPositionSeconds);
+  }
+
+  void setMarkInAt(double seconds) {
     _commitHistory();
-    markIn = _snapToFrame(_clampTime(currentPositionSeconds));
+    markIn = _snapToFrame(_clampTime(seconds));
     if (markOut != null && markOut! <= markIn!) {
       markOut = null;
     }
@@ -401,8 +405,12 @@ class EditorController extends ChangeNotifier {
   }
 
   void setMarkOutFromPlayhead() {
+    setMarkOutAt(currentPositionSeconds);
+  }
+
+  void setMarkOutAt(double seconds) {
     _commitHistory();
-    markOut = _snapToFrame(_clampTime(currentPositionSeconds));
+    markOut = _snapToFrame(_clampTime(seconds));
     if (markIn != null && markOut! <= markIn!) {
       markIn = null;
     }
@@ -481,6 +489,18 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void toggleSelectedAudioLink() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    if (selected.audioLinked) {
+      detachAudioForSelectedSegment();
+    } else {
+      relinkAudioForSelectedSegment();
+    }
   }
 
   void toggleSelectedAudioMute() {
@@ -655,11 +675,15 @@ class EditorController extends ChangeNotifier {
   }
 
   void splitSelectedAtPlayhead() {
+    splitSelectedAt(currentPositionSeconds);
+  }
+
+  void splitSelectedAt(double seconds) {
     final selected = selectedSegment;
     if (selected == null) {
       return;
     }
-    final splitAt = _snapToFrame(_clampTime(currentPositionSeconds));
+    final splitAt = _snapToFrame(_clampTime(seconds));
     if (splitAt <= selected.start + timecodeFrameDurationSeconds ||
         splitAt >= selected.end - timecodeFrameDurationSeconds) {
       return;
