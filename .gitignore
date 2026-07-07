@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.runlogs/
 
 backend/.env
 backend/.venv/
@@ -13,6 +14,7 @@ backend/data/*.mkv
 backend/data/jobs/
 backend/data/uploads/
 backend/data/outputs/
+test-assets/
 
 frontend/build/
 frontend/.dart_tool/

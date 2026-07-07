@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -78,10 +79,12 @@ class JobStore:
         data["updated_at"] = now_iso()
         path = self.job_file(job_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        temp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        temp_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
+        os.replace(temp_path, path)
         return data
 
     def update(self, job_id: str, **fields: Any) -> dict[str, Any]:
