@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "--loglevel=INFO", "--pool=solo"]
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
