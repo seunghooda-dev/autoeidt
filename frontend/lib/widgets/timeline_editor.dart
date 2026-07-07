@@ -58,7 +58,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
           onPanEnd: (_) => _finishDrag(),
           onPanCancel: _finishDrag,
           child: SizedBox(
-            height: 96,
+            height: 126,
             child: CustomPaint(
               painter: _TimelinePainter(
                 duration: widget.duration,
@@ -74,7 +74,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
               child: Align(
                 alignment: Alignment.bottomLeft,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 68),
+                  padding: const EdgeInsets.only(top: 98),
                   child: Text(
                     '원본 ${formatSeconds(widget.duration)}  |  선택 클립 합계 ${formatSeconds(_totalOutputSeconds())}',
                     style: Theme.of(context).textTheme.labelMedium,
@@ -244,14 +244,14 @@ class _TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final barTop = 22.0;
-    final barHeight = 28.0;
+    final barTop = 44.0;
+    final barHeight = 34.0;
     final radius = Radius.circular(6);
     final track = RRect.fromRectAndRadius(
       Rect.fromLTWH(0, barTop, size.width, barHeight),
       radius,
     );
-    final trackPaint = Paint()..color = const Color(0xFFE5E7EB);
+    final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
     canvas.drawRRect(track, trackPaint);
 
     final inPoint = markIn;
@@ -275,7 +275,7 @@ class _TimelinePainter extends CustomPainter {
     }
 
     final tickPaint = Paint()
-      ..color = const Color(0xFF9CA3AF)
+      ..color = colorScheme.outline
       ..strokeWidth = 1;
     final tickCount = 12;
     for (var i = 0; i <= tickCount; i++) {
@@ -304,9 +304,9 @@ class _TimelinePainter extends CustomPainter {
         ..color = isActive ? colorScheme.tertiary : colorScheme.primary;
       canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), segmentPaint);
 
-      final handlePaint = Paint()..color = Colors.white;
+      final handlePaint = Paint()..color = colorScheme.surface;
       final handleBorder = Paint()
-        ..color = isActive ? colorScheme.tertiary : const Color(0xFF111827)
+        ..color = isActive ? colorScheme.tertiary : colorScheme.onSurface
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2;
       for (final handleX in [left, right]) {
@@ -324,15 +324,15 @@ class _TimelinePainter extends CustomPainter {
     }
 
     if (inPoint != null) {
-      _drawMarker(canvas, size, inPoint, 'IN', const Color(0xFF2563EB));
+      _drawMarker(canvas, size, inPoint, 'IN', colorScheme.primary);
     }
     if (outPoint != null) {
-      _drawMarker(canvas, size, outPoint, 'OUT', const Color(0xFFDC2626));
+      _drawMarker(canvas, size, outPoint, 'OUT', colorScheme.error);
     }
 
     final playheadX = _secondsToX(playheadSeconds, size.width);
     final playheadPaint = Paint()
-      ..color = const Color(0xFF111827)
+      ..color = colorScheme.onSurface
       ..strokeWidth = 2;
     canvas.drawLine(
       Offset(playheadX, 4),
@@ -344,7 +344,7 @@ class _TimelinePainter extends CustomPainter {
       ..lineTo(playheadX - 6, 14)
       ..lineTo(playheadX + 6, 14)
       ..close();
-    canvas.drawPath(triangle, Paint()..color = const Color(0xFF111827));
+    canvas.drawPath(triangle, Paint()..color = colorScheme.onSurface);
   }
 
   void _drawMarker(
@@ -358,7 +358,7 @@ class _TimelinePainter extends CustomPainter {
     final linePaint = Paint()
       ..color = color
       ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(x, 8), Offset(x, 64), linePaint);
+    canvas.drawLine(Offset(x, 22), Offset(x, 88), linePaint);
 
     final textPainter = TextPainter(
       text: TextSpan(

@@ -7,14 +7,25 @@ import 'package:video_player/video_player.dart';
 import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 import '../services/api_client.dart';
+import '../services/local_engine_service.dart';
 
 class EditorController extends ChangeNotifier {
-  EditorController({ApiClient? apiClient})
-    : _apiClient = apiClient ?? ApiClient();
+  EditorController({
+    ApiClient? apiClient,
+    LocalEngineService? engineService,
+    bool autoStartEngine = true,
+  }) : _apiClient = apiClient ?? ApiClient(),
+       _engineService = engineService ?? LocalEngineService() {
+    if (autoStartEngine) {
+      unawaited(ensureLocalEngine());
+    }
+  }
 
   final ApiClient _apiClient;
+  final LocalEngineService _engineService;
   Timer? _pollTimer;
 
+  LocalEngineState engineState = LocalEngineState.idle();
   PlatformFile? selectedFile;
   String? jobId;
   JobStatusResponse? job;
@@ -77,6 +88,18 @@ class EditorController extends ChangeNotifier {
       return selectedFile!.name;
     }
     return '영상 파일을 선택해 주세요';
+  }
+
+  Future<void> ensureLocalEngine() async {
+    engineState = const LocalEngineState(
+      status: 'starting',
+      message: '로컬 편집 엔진 확인 중',
+      isStarting: true,
+    );
+    notifyListeners();
+
+    engineState = await _engineService.ensureRunning();
+    notifyListeners();
   }
 
   Future<void> pickVideo() async {
@@ -383,6 +406,7 @@ class EditorController extends ChangeNotifier {
   void dispose() {
     _pollTimer?.cancel();
     videoController?.dispose();
+    unawaited(_engineService.dispose());
     super.dispose();
   }
 }

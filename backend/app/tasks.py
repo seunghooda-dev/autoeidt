@@ -22,7 +22,7 @@ from app.storage import store
 
 
 def _set_task_state(
-    task: Any,
+    task: Any | None,
     job_id: str,
     status: JobStatus,
     stage: str,
@@ -38,10 +38,11 @@ def _set_task_state(
         **fields,
     }
     store.update(job_id, **payload)
-    try:
-        task.update_state(state=status.value.upper(), meta=payload)
-    except Exception:
-        pass
+    if task is not None:
+        try:
+            task.update_state(state=status.value.upper(), meta=payload)
+        except Exception:
+            pass
 
 
 def _normalize_highlights(
@@ -90,8 +91,7 @@ def _silences_overlapping_highlights(
     return output
 
 
-@celery_app.task(bind=True, name="app.tasks.analyze_video")
-def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
+def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
     settings = get_settings()
     try:
         job = store.load(job_id)
@@ -100,7 +100,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         audio_path = work_dir / "audio.wav"
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "probing",
@@ -110,7 +110,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         duration = probe_duration(video_path)
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "extracting_audio",
@@ -121,7 +121,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         extract_audio(video_path, audio_path)
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "transcribing",
@@ -132,7 +132,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         transcript = transcribe_audio(audio_path, duration)
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "analyzing_highlights",
@@ -146,7 +146,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         )
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "detecting_silence",
@@ -164,7 +164,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         )
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.processing,
             "checking_visual_changes",
@@ -184,7 +184,7 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
             refined = raw_highlights
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.completed,
             "completed",
@@ -208,11 +208,15 @@ def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
         raise
 
 
-@celery_app.task(bind=True, name="app.tasks.render_video")
-def render_video_task(
-    self: Any,
+@celery_app.task(bind=True, name="app.tasks.analyze_video")
+def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
+    return analyze_video_job(job_id, self)
+
+
+def render_video_job(
     job_id: str,
     segments: list[dict[str, Any]],
+    task: Any | None = None,
 ) -> dict[str, Any]:
     try:
         job = store.load(job_id)
@@ -226,7 +230,7 @@ def render_video_task(
             raise ValueError("렌더링할 하이라이트 구간이 없습니다.")
 
         _set_task_state(
-            self,
+            task,
             job_id,
             JobStatus.rendering,
             "rendering",
@@ -260,3 +264,12 @@ def render_video_task(
             error=str(exc),
         )
         raise
+
+
+@celery_app.task(bind=True, name="app.tasks.render_video")
+def render_video_task(
+    self: Any,
+    job_id: str,
+    segments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return render_video_job(job_id, segments, self)

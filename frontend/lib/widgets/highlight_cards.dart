@@ -29,8 +29,11 @@ class HighlightCards extends StatelessWidget {
       itemBuilder: (context, index) {
         final segment = segments[index];
         final isSelected = segment.order == selectedOrder;
+        final colorScheme = Theme.of(context).colorScheme;
         return Material(
-          color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
+          color: isSelected
+              ? colorScheme.primary.withValues(alpha: 0.16)
+              : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -42,9 +45,7 @@ class HighlightCards extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : const Color(0xFFE5E7EB),
+                  color: isSelected ? colorScheme.primary : colorScheme.outline,
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -55,7 +56,7 @@ class HighlightCards extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.play_circle_outline,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: colorScheme.primary,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -82,7 +83,7 @@ class HighlightCards extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF4B5563),
+                        color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],

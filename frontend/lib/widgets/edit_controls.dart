@@ -125,16 +125,18 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: colorScheme.surfaceContainerHighest,
+        border: Border.all(color: colorScheme.outline),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+          Icon(icon, size: 16, color: colorScheme.primary),
           const SizedBox(width: 6),
           Text('$label $value', style: Theme.of(context).textTheme.labelMedium),
         ],

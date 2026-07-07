@@ -8,7 +8,7 @@ void main() {
   testWidgets('renders editor dashboard', (tester) async {
     await tester.pumpWidget(
       ChangeNotifierProvider(
-        create: (_) => EditorController(),
+        create: (_) => EditorController(autoStartEngine: false),
         child: const HighlightEditorApp(),
       ),
     );

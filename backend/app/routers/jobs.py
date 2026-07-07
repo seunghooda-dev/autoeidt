@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -14,7 +14,12 @@ from app.schemas import (
     UploadJobResponse,
 )
 from app.storage import now_iso, safe_filename, store
-from app.tasks import analyze_video_task, render_video_task
+from app.tasks import (
+    analyze_video_job,
+    analyze_video_task,
+    render_video_job,
+    render_video_task,
+)
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -28,7 +33,10 @@ def _load_job_or_404(job_id: str) -> dict:
 
 
 @router.post("/upload", response_model=UploadJobResponse, status_code=status.HTTP_202_ACCEPTED)
-async def upload_video(file: UploadFile = File(...)) -> UploadJobResponse:
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> UploadJobResponse:
     settings = get_settings()
     job_id = uuid.uuid4().hex
     upload_dir = store.upload_dir(job_id)
@@ -67,8 +75,18 @@ async def upload_video(file: UploadFile = File(...)) -> UploadJobResponse:
     }
     store.save(job_id, job)
 
-    task = analyze_video_task.delay(job_id)
-    store.update(job_id, celery_task_id=task.id, message="분석 작업 대기 중")
+    if settings.task_runner == "inline":
+        task_id = f"inline-analyze-{job_id}"
+        store.update(
+            job_id,
+            celery_task_id=task_id,
+            message="로컬 분석 작업 대기 중",
+        )
+        background_tasks.add_task(analyze_video_job, job_id)
+    else:
+        task = analyze_video_task.delay(job_id)
+        task_id = task.id
+        store.update(job_id, celery_task_id=task_id, message="분석 작업 대기 중")
 
     return UploadJobResponse(
         job_id=job_id,
@@ -107,22 +125,32 @@ def stream_source(job_id: str) -> FileResponse:
 
 
 @router.post("/{job_id}/render", response_model=RenderResponse, status_code=status.HTTP_202_ACCEPTED)
-def render_job(job_id: str, payload: RenderRequest) -> RenderResponse:
+def render_job(
+    job_id: str,
+    payload: RenderRequest,
+    background_tasks: BackgroundTasks,
+) -> RenderResponse:
     _load_job_or_404(job_id)
+    settings = get_settings()
     segments = [segment.model_dump() for segment in payload.segments]
-    task = render_video_task.delay(job_id, segments)
+    if settings.task_runner == "inline":
+        task_id = f"inline-render-{job_id}"
+        background_tasks.add_task(render_video_job, job_id, segments)
+    else:
+        task = render_video_task.delay(job_id, segments)
+        task_id = task.id
     store.update(
         job_id,
         status=JobStatus.rendering.value,
         stage="render_queued",
         progress=0,
         message="렌더링 작업 대기 중",
-        render_task_id=task.id,
+        render_task_id=task_id,
         segments=segments,
     )
     return RenderResponse(
         job_id=job_id,
-        render_task_id=task.id,
+        render_task_id=task_id,
         status=JobStatus.rendering,
         stage="render_queued",
     )

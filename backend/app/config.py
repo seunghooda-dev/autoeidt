@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path(__file__).resolve().parents[1] / "data"
     redis_url: str = "redis://localhost:6379/0"
+    task_runner: str = "celery"
 
     openai_api_key: str | None = None
     openai_transcription_model: str = "whisper-1"

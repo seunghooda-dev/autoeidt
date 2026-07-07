@@ -9,14 +9,21 @@ class StatusPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final colorScheme = Theme.of(context).colorScheme;
     final progress = controller.isUploading
         ? controller.uploadProgress
         : ((controller.job?.progress ?? 0) / 100).clamp(0.0, 1.0);
+    final jobStatus = controller.job?.status;
+    final isActive =
+        controller.isUploading ||
+        jobStatus == 'queued' ||
+        jobStatus == 'processing' ||
+        jobStatus == 'rendering';
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        color: colorScheme.surfaceContainerHighest,
+        border: Border.all(color: colorScheme.outline),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
@@ -42,7 +49,10 @@ class StatusPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            LinearProgressIndicator(value: progress == 0 ? null : progress),
+            LinearProgressIndicator(
+              value: isActive && progress == 0 ? null : progress,
+              backgroundColor: colorScheme.surface,
+            ),
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
@@ -68,7 +78,9 @@ class StatusPanel extends StatelessWidget {
               const SizedBox(height: 12),
               SelectableText(
                 controller.renderUrl!,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colorScheme.primary),
               ),
             ],
           ],
