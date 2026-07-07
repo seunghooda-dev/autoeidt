@@ -7,6 +7,8 @@ import 'time_format.dart';
 
 enum _DragEdge { start, end }
 
+enum _DragTrack { video, audio }
+
 class TimelineEditor extends StatefulWidget {
   const TimelineEditor({
     super.key,
@@ -42,9 +44,13 @@ class TimelineEditor extends StatefulWidget {
 class _TimelineEditorState extends State<TimelineEditor> {
   static const double _handleHitWidth = 16;
   static const double _minSegmentSeconds = 1.0;
+  static const double _videoTop = 42;
+  static const double _audioTop = 88;
+  static const double _laneHeight = 30;
 
   int? _activeIndex;
   _DragEdge? _activeEdge;
+  _DragTrack? _activeTrack;
   bool _isScrubbing = false;
   final ScrollController _scrollController = ScrollController();
 
@@ -67,16 +73,15 @@ class _TimelineEditorState extends State<TimelineEditor> {
             scrollDirection: Axis.horizontal,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => _tap(details.localPosition.dx, width),
-              onPanStart: (details) =>
-                  _startDrag(details.localPosition.dx, width),
+              onTapDown: (details) => _tap(details.localPosition, width),
+              onPanStart: (details) => _startDrag(details.localPosition, width),
               onPanUpdate: (details) =>
                   _updateDrag(details.localPosition.dx, width),
               onPanEnd: (_) => _finishDrag(),
               onPanCancel: _finishDrag,
               child: SizedBox(
                 width: width,
-                height: 126,
+                height: 168,
                 child: CustomPaint(
                   painter: _TimelinePainter(
                     duration: widget.duration,
@@ -88,15 +93,21 @@ class _TimelineEditorState extends State<TimelineEditor> {
                     waveform: widget.waveform,
                     activeIndex: _activeIndex,
                     activeEdge: _activeEdge,
+                    activeTrack: _activeTrack,
                     colorScheme: Theme.of(context).colorScheme,
                   ),
                   child: Align(
                     alignment: Alignment.bottomLeft,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 98),
-                      child: Text(
-                        '원본 ${formatSeconds(widget.duration)}  |  선택 클립 합계 ${formatSeconds(_totalOutputSeconds())}',
-                        style: Theme.of(context).textTheme.labelMedium,
+                      padding: const EdgeInsets.only(top: 140),
+                      child: SizedBox(
+                        width: width,
+                        child: Text(
+                          '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1 분리 ${_detachedAudioCount()}개',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
                       ),
                     ),
                   ),
@@ -109,25 +120,38 @@ class _TimelineEditorState extends State<TimelineEditor> {
     );
   }
 
-  void _tap(double x, double width) {
-    final hitIndex = _segmentIndexAt(x, width);
+  void _tap(Offset position, double width) {
+    final track = _trackAt(position.dy);
+    final hitIndex = _segmentIndexAt(position.dx, width, track);
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
-    widget.onScrub(_snapToTenth(_xToSeconds(x, width)));
+    widget.onScrub(_snapToTenth(_xToSeconds(position.dx, width)));
   }
 
-  void _startDrag(double x, double width) {
+  void _startDrag(Offset position, double width) {
+    final track = _trackAt(position.dy);
+    if (track == null) {
+      _beginScrub(position.dx, width);
+      return;
+    }
+
     var closestDistance = double.infinity;
     int? closestIndex;
     _DragEdge? closestEdge;
 
     for (var index = 0; index < widget.segments.length; index++) {
       final segment = widget.segments[index];
-      final startX = _secondsToX(segment.start, width);
-      final endX = _secondsToX(segment.end, width);
-      final startDistance = (x - startX).abs();
-      final endDistance = (x - endX).abs();
+      final startSeconds = track == _DragTrack.video
+          ? segment.start
+          : segment.effectiveAudioStart;
+      final endSeconds = track == _DragTrack.video
+          ? segment.end
+          : segment.effectiveAudioEnd;
+      final startX = _secondsToX(startSeconds, width);
+      final endX = _secondsToX(endSeconds, width);
+      final startDistance = (position.dx - startX).abs();
+      final endDistance = (position.dx - endX).abs();
 
       if (startDistance < closestDistance) {
         closestDistance = startDistance;
@@ -145,6 +169,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       setState(() {
         _activeIndex = closestIndex;
         _activeEdge = closestEdge;
+        _activeTrack = track;
         _isScrubbing = false;
       });
       if (closestIndex != null) {
@@ -153,13 +178,18 @@ class _TimelineEditorState extends State<TimelineEditor> {
       return;
     }
 
-    final hitIndex = _segmentIndexAt(x, width);
+    final hitIndex = _segmentIndexAt(position.dx, width, track);
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
+    _beginScrub(position.dx, width);
+  }
+
+  void _beginScrub(double x, double width) {
     setState(() {
       _activeIndex = null;
       _activeEdge = null;
+      _activeTrack = null;
       _isScrubbing = true;
     });
     widget.onScrub(_snapToTenth(_xToSeconds(x, width)));
@@ -173,7 +203,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
     final index = _activeIndex;
     final edge = _activeEdge;
-    if (index == null || edge == null) {
+    final track = _activeTrack;
+    if (index == null || edge == null || track == null) {
       return;
     }
 
@@ -181,17 +212,35 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final seconds = _snapToTenth(_xToSeconds(x, width));
 
     HighlightSegment updated;
-    if (edge == _DragEdge.start) {
-      final maxStart = math.max(0.0, current.end - _minSegmentSeconds);
-      final start = seconds.clamp(0.0, maxStart).toDouble();
-      updated = current.copyWith(start: start);
+    if (track == _DragTrack.video) {
+      if (edge == _DragEdge.start) {
+        final maxStart = math.max(0.0, current.end - _minSegmentSeconds);
+        final start = seconds.clamp(0.0, maxStart).toDouble();
+        updated = current.copyWith(start: start);
+      } else {
+        final minEnd = math.min(
+          widget.duration,
+          current.start + _minSegmentSeconds,
+        );
+        final end = seconds.clamp(minEnd, widget.duration).toDouble();
+        updated = current.copyWith(end: end);
+      }
     } else {
-      final minEnd = math.min(
-        widget.duration,
-        current.start + _minSegmentSeconds,
-      );
-      final end = seconds.clamp(minEnd, widget.duration).toDouble();
-      updated = current.copyWith(end: end);
+      if (edge == _DragEdge.start) {
+        final maxStart = math.max(
+          0.0,
+          current.effectiveAudioEnd - _minSegmentSeconds,
+        );
+        final start = seconds.clamp(0.0, maxStart).toDouble();
+        updated = current.copyWith(audioStart: start, audioLinked: false);
+      } else {
+        final minEnd = math.min(
+          widget.duration,
+          current.effectiveAudioStart + _minSegmentSeconds,
+        );
+        final end = seconds.clamp(minEnd, widget.duration).toDouble();
+        updated = current.copyWith(audioEnd: end, audioLinked: false);
+      }
     }
     widget.onSegmentChanged(updated);
   }
@@ -200,15 +249,35 @@ class _TimelineEditorState extends State<TimelineEditor> {
     setState(() {
       _activeIndex = null;
       _activeEdge = null;
+      _activeTrack = null;
       _isScrubbing = false;
     });
   }
 
-  int? _segmentIndexAt(double x, double width) {
+  _DragTrack? _trackAt(double y) {
+    if (y >= _videoTop - 10 && y <= _videoTop + _laneHeight + 10) {
+      return _DragTrack.video;
+    }
+    if (y >= _audioTop - 10 && y <= _audioTop + _laneHeight + 10) {
+      return _DragTrack.audio;
+    }
+    return null;
+  }
+
+  int? _segmentIndexAt(double x, double width, _DragTrack? track) {
+    if (track == null) {
+      return null;
+    }
     for (var index = widget.segments.length - 1; index >= 0; index--) {
       final segment = widget.segments[index];
-      final left = _secondsToX(segment.start, width);
-      final right = _secondsToX(segment.end, width);
+      final start = track == _DragTrack.video
+          ? segment.start
+          : segment.effectiveAudioStart;
+      final end = track == _DragTrack.video
+          ? segment.end
+          : segment.effectiveAudioEnd;
+      final left = _secondsToX(start, width);
+      final right = _secondsToX(end, width);
       if (x >= left && x <= right) {
         return index;
       }
@@ -221,6 +290,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
       0,
       (total, segment) => total + math.max(0, segment.duration),
     );
+  }
+
+  int _detachedAudioCount() {
+    return widget.segments.where((segment) => !segment.audioLinked).length;
   }
 
   double _secondsToX(double seconds, double width) {
@@ -251,8 +324,13 @@ class _TimelinePainter extends CustomPainter {
     required this.waveform,
     required this.activeIndex,
     required this.activeEdge,
+    required this.activeTrack,
     required this.colorScheme,
   });
+
+  static const double _videoTop = _TimelineEditorState._videoTop;
+  static const double _audioTop = _TimelineEditorState._audioTop;
+  static const double _laneHeight = _TimelineEditorState._laneHeight;
 
   final double duration;
   final List<HighlightSegment> segments;
@@ -263,121 +341,225 @@ class _TimelinePainter extends CustomPainter {
   final List<double> waveform;
   final int? activeIndex;
   final _DragEdge? activeEdge;
+  final _DragTrack? activeTrack;
   final ColorScheme colorScheme;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final barTop = 44.0;
-    final barHeight = 34.0;
     final radius = Radius.circular(6);
+    final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
+    _drawTrack(canvas, size, _videoTop, radius, trackPaint);
+    _drawTrack(canvas, size, _audioTop, radius, trackPaint);
+    _drawLaneLabel(canvas, 'V1', _videoTop, colorScheme.primary);
+    _drawLaneLabel(canvas, 'A1', _audioTop, colorScheme.secondary);
+
+    _drawWaveform(canvas, size);
+    _drawInOutRange(canvas, size);
+    _drawTicks(canvas, size);
+    _drawSegments(canvas, size, radius);
+    _drawMarkers(canvas, size);
+    _drawPlayhead(canvas, size);
+  }
+
+  void _drawTrack(
+    Canvas canvas,
+    Size size,
+    double top,
+    Radius radius,
+    Paint paint,
+  ) {
     final track = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, barTop, size.width, barHeight),
+      Rect.fromLTWH(0, top, size.width, _laneHeight),
       radius,
     );
-    final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
-    canvas.drawRRect(track, trackPaint);
+    canvas.drawRRect(track, paint);
+  }
 
-    if (waveform.isNotEmpty) {
-      final wavePaint = Paint()
-        ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.48)
-        ..strokeWidth = 1;
-      final step = size.width / waveform.length;
-      final centerY = barTop + barHeight / 2;
-      for (var index = 0; index < waveform.length; index++) {
-        final x = index * step;
-        final peak = waveform[index].clamp(0.0, 1.0).toDouble();
-        final halfHeight = math.max(1.0, peak * barHeight / 2);
-        canvas.drawLine(
-          Offset(x, centerY - halfHeight),
-          Offset(x, centerY + halfHeight),
-          wavePaint,
-        );
-      }
+  void _drawLaneLabel(Canvas canvas, String label, double top, Color color) {
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(8, top + 6, 30, _laneHeight - 12),
+      Radius.circular(5),
+    );
+    canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.92));
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(23 - textPainter.width / 2, top + 15 - textPainter.height / 2),
+    );
+  }
+
+  void _drawWaveform(Canvas canvas, Size size) {
+    if (waveform.isEmpty) {
+      return;
     }
+    final wavePaint = Paint()
+      ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.50)
+      ..strokeWidth = 1;
+    final step = size.width / waveform.length;
+    final centerY = _audioTop + _laneHeight / 2;
+    for (var index = 0; index < waveform.length; index++) {
+      final x = index * step;
+      final peak = waveform[index].clamp(0.0, 1.0).toDouble();
+      final halfHeight = math.max(1.0, peak * _laneHeight / 2);
+      canvas.drawLine(
+        Offset(x, centerY - halfHeight),
+        Offset(x, centerY + halfHeight),
+        wavePaint,
+      );
+    }
+  }
 
+  void _drawInOutRange(Canvas canvas, Size size) {
     final inPoint = markIn;
     final outPoint = markOut;
-    if (inPoint != null && outPoint != null && outPoint > inPoint) {
-      final left = _secondsToX(inPoint, size.width);
-      final right = _secondsToX(outPoint, size.width);
-      final rangeRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          left,
-          barTop - 8,
-          math.max(2, right - left),
-          barHeight + 16,
-        ),
-        Radius.circular(6),
-      );
-      canvas.drawRRect(
-        rangeRect,
-        Paint()..color = colorScheme.tertiary.withValues(alpha: 0.18),
-      );
+    if (inPoint == null || outPoint == null || outPoint <= inPoint) {
+      return;
     }
+    final left = _secondsToX(inPoint, size.width);
+    final right = _secondsToX(outPoint, size.width);
+    final rangeRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        left,
+        _videoTop - 7,
+        math.max(2, right - left),
+        _audioTop - _videoTop + _laneHeight + 14,
+      ),
+      Radius.circular(6),
+    );
+    canvas.drawRRect(
+      rangeRect,
+      Paint()..color = colorScheme.tertiary.withValues(alpha: 0.18),
+    );
+  }
 
+  void _drawTicks(Canvas canvas, Size size) {
     final tickPaint = Paint()
       ..color = colorScheme.outline
       ..strokeWidth = 1;
-    final tickCount = 12;
+    const tickCount = 12;
     for (var i = 0; i <= tickCount; i++) {
       final x = size.width * i / tickCount;
-      final top = i % 3 == 0 ? barTop - 8 : barTop - 4;
+      final top = i % 3 == 0 ? 26.0 : 30.0;
       canvas.drawLine(
         Offset(x, top),
-        Offset(x, barTop + barHeight + 5),
+        Offset(x, _audioTop + _laneHeight + 6),
         tickPaint,
       );
     }
+  }
 
+  void _drawSegments(Canvas canvas, Size size, Radius radius) {
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
-      final left = _secondsToX(segment.start, size.width);
-      final right = _secondsToX(segment.end, size.width);
-      final rect = Rect.fromLTWH(
-        left,
-        barTop,
-        math.max(2, right - left),
-        barHeight,
-      );
       final isActive =
           activeIndex == index || selectedSegmentOrder == segment.order;
-      final segmentPaint = Paint()
-        ..color = isActive ? colorScheme.tertiary : colorScheme.primary;
-      canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), segmentPaint);
 
-      final handlePaint = Paint()..color = colorScheme.surface;
-      final handleBorder = Paint()
-        ..color = isActive ? colorScheme.tertiary : colorScheme.onSurface
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
-      for (final handleX in [left, right]) {
-        final handleRect = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(handleX, barTop + barHeight / 2),
-            width: 8,
-            height: barHeight + 12,
-          ),
-          Radius.circular(4),
-        );
-        canvas.drawRRect(handleRect, handlePaint);
-        canvas.drawRRect(handleRect, handleBorder);
-      }
+      _drawClipBlock(
+        canvas,
+        size,
+        top: _videoTop,
+        start: segment.start,
+        end: segment.end,
+        fill: isActive ? colorScheme.tertiary : colorScheme.primary,
+        border: isActive ? colorScheme.tertiary : colorScheme.onSurface,
+        radius: radius,
+        handlesActive: isActive && activeTrack != _DragTrack.audio,
+      );
+
+      final audioFill = segment.audioLinked
+          ? colorScheme.secondary
+          : colorScheme.tertiary;
+      final audioBorder = segment.audioMuted
+          ? colorScheme.error
+          : (isActive ? colorScheme.tertiary : colorScheme.onSurface);
+      _drawClipBlock(
+        canvas,
+        size,
+        top: _audioTop,
+        start: segment.effectiveAudioStart,
+        end: segment.effectiveAudioEnd,
+        fill: segment.audioMuted
+            ? audioFill.withValues(alpha: 0.26)
+            : audioFill.withValues(alpha: segment.audioLinked ? 0.84 : 0.95),
+        border: audioBorder,
+        radius: radius,
+        handlesActive: isActive && activeTrack != _DragTrack.video,
+      );
     }
+  }
 
+  void _drawClipBlock(
+    Canvas canvas,
+    Size size, {
+    required double top,
+    required double start,
+    required double end,
+    required Color fill,
+    required Color border,
+    required Radius radius,
+    required bool handlesActive,
+  }) {
+    final left = _secondsToX(start, size.width);
+    final right = _secondsToX(end, size.width);
+    final rect = Rect.fromLTWH(
+      left,
+      top,
+      math.max(2, right - left),
+      _laneHeight,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, radius),
+      Paint()..color = fill,
+    );
+
+    final handlePaint = Paint()..color = colorScheme.surface;
+    final handleBorder = Paint()
+      ..color = border
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = handlesActive ? 1.6 : 1.1;
+    for (final handleX in [left, right]) {
+      final handleRect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(handleX, top + _laneHeight / 2),
+          width: 8,
+          height: _laneHeight + 10,
+        ),
+        Radius.circular(4),
+      );
+      canvas.drawRRect(handleRect, handlePaint);
+      canvas.drawRRect(handleRect, handleBorder);
+    }
+  }
+
+  void _drawMarkers(Canvas canvas, Size size) {
+    final inPoint = markIn;
+    final outPoint = markOut;
     if (inPoint != null) {
       _drawMarker(canvas, size, inPoint, 'IN', colorScheme.primary);
     }
     if (outPoint != null) {
       _drawMarker(canvas, size, outPoint, 'OUT', colorScheme.error);
     }
+  }
 
+  void _drawPlayhead(Canvas canvas, Size size) {
     final playheadX = _secondsToX(playheadSeconds, size.width);
     final playheadPaint = Paint()
       ..color = colorScheme.onSurface
       ..strokeWidth = 2;
     canvas.drawLine(
       Offset(playheadX, 4),
-      Offset(playheadX, barTop + barHeight + 12),
+      Offset(playheadX, _audioTop + _laneHeight + 12),
       playheadPaint,
     );
     final triangle = Path()
@@ -399,7 +581,11 @@ class _TimelinePainter extends CustomPainter {
     final linePaint = Paint()
       ..color = color
       ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(x, 22), Offset(x, 88), linePaint);
+    canvas.drawLine(
+      Offset(x, 22),
+      Offset(x, _audioTop + _laneHeight + 10),
+      linePaint,
+    );
 
     final textPainter = TextPainter(
       text: TextSpan(
@@ -436,6 +622,7 @@ class _TimelinePainter extends CustomPainter {
         waveform != oldDelegate.waveform ||
         activeIndex != oldDelegate.activeIndex ||
         activeEdge != oldDelegate.activeEdge ||
+        activeTrack != oldDelegate.activeTrack ||
         colorScheme != oldDelegate.colorScheme;
   }
 }

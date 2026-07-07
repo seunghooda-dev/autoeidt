@@ -240,6 +240,41 @@ def render_stream_copy(video_path: Path, segments: list[dict], output_path: Path
     return output_path
 
 
+def _segment_audio_start(segment: dict) -> float:
+    value = segment.get("audio_start")
+    if value is None:
+        value = segment["start"]
+    return float(value)
+
+
+def _segment_audio_end(segment: dict) -> float:
+    value = segment.get("audio_end")
+    if value is None:
+        value = segment["end"]
+    return float(value)
+
+
+def _segment_audio_volume(segment: dict) -> float:
+    return max(0.0, min(float(segment.get("audio_volume", 1.0)), 2.0))
+
+
+def _segment_uses_default_audio(segment: dict) -> bool:
+    if bool(segment.get("audio_muted", False)):
+        return False
+    if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
+        return False
+    if not bool(segment.get("audio_linked", True)):
+        return False
+    return (
+        abs(_segment_audio_start(segment) - float(segment["start"])) < 0.001
+        and abs(_segment_audio_end(segment) - float(segment["end"])) < 0.001
+    )
+
+
+def _all_segments_use_default_audio(segments: list[dict]) -> bool:
+    return all(_segment_uses_default_audio(segment) for segment in segments)
+
+
 def _subtitle_filter_path(path: Path) -> str:
     normalized = str(path.resolve()).replace("\\", "/")
     normalized = normalized.replace(":", r"\:").replace("'", r"\'")
@@ -311,11 +346,23 @@ def _render_reencode_with_video_args(
     for index, segment in enumerate(segments):
         start = float(segment["start"])
         end = float(segment["end"])
+        video_duration = max(0.001, end - start)
+        audio_start = _segment_audio_start(segment)
+        audio_end = _segment_audio_end(segment)
+        if audio_end <= audio_start:
+            audio_start = start
+            audio_end = end
+        volume = 0.0 if segment.get("audio_muted", False) else _segment_audio_volume(segment)
         filters.append(
             f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]"
         )
         filters.append(
-            f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]"
+            f"[0:a]atrim=start={audio_start:.3f}:end={audio_end:.3f},"
+            "asetpts=PTS-STARTPTS,"
+            f"volume={volume:.3f},"
+            "apad,"
+            f"atrim=duration={video_duration:.3f},"
+            f"asetpts=PTS-STARTPTS[a{index}]"
         )
         concat_inputs.append(f"[v{index}][a{index}]")
 
@@ -426,7 +473,7 @@ def render_highlights(
     if not normalized:
         raise ValueError("at least one segment is required")
 
-    if aspect_ratio == "16:9" and not captions:
+    if aspect_ratio == "16:9" and not captions and _all_segments_use_default_audio(normalized):
         try:
             return render_stream_copy(video_path, normalized, output_path)
         except Exception:

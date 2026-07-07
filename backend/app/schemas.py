@@ -41,6 +41,11 @@ class HighlightSegment(BaseModel):
     reason: str
     script: str = ""
     source: str = "ai"
+    audio_start: float | None = None
+    audio_end: float | None = None
+    audio_muted: bool = False
+    audio_volume: float = 1.0
+    audio_linked: bool = True
 
     @field_validator("end")
     @classmethod
@@ -49,6 +54,11 @@ class HighlightSegment(BaseModel):
         if start is not None and value <= start:
             raise ValueError("end must be greater than start")
         return value
+
+    @field_validator("audio_volume")
+    @classmethod
+    def audio_volume_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 2.0))
 
 
 class UploadJobResponse(BaseModel):

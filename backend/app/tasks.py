@@ -57,6 +57,20 @@ def _normalize_highlights(
         end = max(0.0, min(float(item["end"]), duration))
         if end <= start:
             continue
+        audio_linked = bool(item.get("audio_linked", True))
+        audio_start = item.get("audio_start")
+        audio_end = item.get("audio_end")
+        if audio_linked or audio_start is None or audio_end is None:
+            normalized_audio_start = start
+            normalized_audio_end = end
+        else:
+            normalized_audio_start = max(0.0, min(float(audio_start), duration))
+            normalized_audio_end = max(0.0, min(float(audio_end), duration))
+            if normalized_audio_end <= normalized_audio_start:
+                normalized_audio_start = start
+                normalized_audio_end = end
+                audio_linked = True
+        audio_volume = max(0.0, min(float(item.get("audio_volume", 1.0)), 2.0))
         normalized.append(
             {
                 "order": int(item.get("order") or index),
@@ -65,6 +79,11 @@ def _normalize_highlights(
                 "reason": str(item.get("reason", "AI 추천 구간")),
                 "script": str(item.get("script", "")),
                 "source": str(item.get("source", "ai")),
+                "audio_start": round(normalized_audio_start, 1),
+                "audio_end": round(normalized_audio_end, 1),
+                "audio_muted": bool(item.get("audio_muted", False)),
+                "audio_volume": round(audio_volume, 2),
+                "audio_linked": audio_linked,
             }
         )
     normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])

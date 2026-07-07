@@ -6,6 +6,11 @@ class HighlightSegment {
     required this.reason,
     this.script = '',
     this.source = 'ai',
+    this.audioStart,
+    this.audioEnd,
+    this.audioMuted = false,
+    this.audioVolume = 1.0,
+    this.audioLinked = true,
   });
 
   final int order;
@@ -14,8 +19,16 @@ class HighlightSegment {
   final String reason;
   final String script;
   final String source;
+  final double? audioStart;
+  final double? audioEnd;
+  final bool audioMuted;
+  final double audioVolume;
+  final bool audioLinked;
 
   double get duration => end - start;
+  double get effectiveAudioStart => audioStart ?? start;
+  double get effectiveAudioEnd => audioEnd ?? end;
+  double get audioDuration => effectiveAudioEnd - effectiveAudioStart;
 
   HighlightSegment copyWith({
     int? order,
@@ -24,6 +37,11 @@ class HighlightSegment {
     String? reason,
     String? script,
     String? source,
+    double? audioStart,
+    double? audioEnd,
+    bool? audioMuted,
+    double? audioVolume,
+    bool? audioLinked,
   }) {
     return HighlightSegment(
       order: order ?? this.order,
@@ -32,6 +50,11 @@ class HighlightSegment {
       reason: reason ?? this.reason,
       script: script ?? this.script,
       source: source ?? this.source,
+      audioStart: audioStart ?? this.audioStart,
+      audioEnd: audioEnd ?? this.audioEnd,
+      audioMuted: audioMuted ?? this.audioMuted,
+      audioVolume: audioVolume ?? this.audioVolume,
+      audioLinked: audioLinked ?? this.audioLinked,
     );
   }
 
@@ -43,6 +66,24 @@ class HighlightSegment {
       reason: json['reason'] as String? ?? '',
       script: json['script'] as String? ?? '',
       source: json['source'] as String? ?? 'ai',
+      audioStart:
+          (json['audio_start'] as num?)?.toDouble() ??
+          (json['audioStart'] as num?)?.toDouble(),
+      audioEnd:
+          (json['audio_end'] as num?)?.toDouble() ??
+          (json['audioEnd'] as num?)?.toDouble(),
+      audioMuted:
+          (json['audio_muted'] as bool?) ??
+          (json['audioMuted'] as bool?) ??
+          false,
+      audioVolume:
+          (json['audio_volume'] as num?)?.toDouble() ??
+          (json['audioVolume'] as num?)?.toDouble() ??
+          1.0,
+      audioLinked:
+          (json['audio_linked'] as bool?) ??
+          (json['audioLinked'] as bool?) ??
+          true,
     );
   }
 
@@ -54,6 +95,11 @@ class HighlightSegment {
       'reason': reason,
       'script': script,
       'source': source,
+      'audio_start': effectiveAudioStart,
+      'audio_end': effectiveAudioEnd,
+      'audio_muted': audioMuted,
+      'audio_volume': audioVolume,
+      'audio_linked': audioLinked,
     };
   }
 }

@@ -305,16 +305,17 @@ class EditorController extends ChangeNotifier {
   }
 
   void updateSegment(HighlightSegment updated) {
+    final normalized = _normalizeSegmentAudio(updated);
     segments = [
       for (final segment in segments)
-        if (segment.order == updated.order) updated else segment,
+        if (segment.order == normalized.order) normalized else segment,
     ];
 
     segments = [
       for (var index = 0; index < segments.length; index++)
         segments[index].copyWith(order: index + 1),
     ];
-    selectedSegmentOrder = updated.order.clamp(1, segments.length).toInt();
+    selectedSegmentOrder = normalized.order.clamp(1, segments.length).toInt();
     renderUrl = null;
     notifyListeners();
   }
@@ -384,6 +385,92 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void detachAudioForSelectedSegment() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioLinked: false,
+        audioStart: selected.effectiveAudioStart,
+        audioEnd: selected.effectiveAudioEnd,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void relinkAudioForSelectedSegment() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioLinked: true,
+        audioStart: selected.start,
+        audioEnd: selected.end,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void toggleSelectedAudioMute() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioMuted: !selected.audioMuted,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioVolume(double value) {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioVolume: value.clamp(0.0, 2.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void nudgeSelectedAudio(double delta) {
+    final selected = selectedSegment;
+    if (selected == null || selected.audioLinked) {
+      return;
+    }
+    final audioDuration = selected.audioDuration;
+    if (audioDuration <= 0) {
+      return;
+    }
+    var start = _snapToTenth(selected.effectiveAudioStart + delta);
+    var end = _snapToTenth(selected.effectiveAudioEnd + delta);
+    if (start < 0) {
+      end -= start;
+      start = 0;
+    }
+    if (duration > 0 && end > duration) {
+      final overshoot = end - duration;
+      start = (start - overshoot).clamp(0.0, duration).toDouble();
+      end = duration;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioStart: start,
+        audioEnd: end,
+        audioLinked: false,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void deleteSelectedSegment() {
     final order = selectedSegmentOrder;
     if (order == null) {
@@ -419,20 +506,8 @@ class EditorController extends ChangeNotifier {
         output.add(segment);
         continue;
       }
-      output.add(
-        segment.copyWith(
-          end: splitAt,
-          reason: '${segment.reason} / split A',
-          source: segment.source == 'ai' ? 'ai+manual' : segment.source,
-        ),
-      );
-      output.add(
-        segment.copyWith(
-          start: splitAt,
-          reason: '${segment.reason} / split B',
-          source: segment.source == 'ai' ? 'ai+manual' : segment.source,
-        ),
-      );
+      output.add(_splitSegment(segment, splitAt, firstHalf: true));
+      output.add(_splitSegment(segment, splitAt, firstHalf: false));
     }
     segments = _reorderSegments(output);
     selectedSegmentOrder = (selected.order + 1)
@@ -550,7 +625,7 @@ class EditorController extends ChangeNotifier {
   Future<void> _loadTimeline(String id) async {
     final timeline = await _apiClient.getTimeline(id);
     duration = timeline.duration;
-    segments = timeline.segments;
+    segments = _reorderSegments(timeline.segments);
     transcript = timeline.transcript;
     captions = timeline.captions;
     waveform = timeline.waveform;
@@ -611,10 +686,85 @@ class EditorController extends ChangeNotifier {
 
   double _snapToTenth(double value) => (value * 10).round() / 10;
 
+  double _clampProjectTime(double value) {
+    if (duration <= 0) {
+      return value < 0 ? 0 : value;
+    }
+    return value.clamp(0.0, duration).toDouble();
+  }
+
+  HighlightSegment _normalizeSegmentAudio(HighlightSegment segment) {
+    final volume = segment.audioVolume.clamp(0.0, 2.0).toDouble();
+    if (segment.audioLinked) {
+      return segment.copyWith(
+        audioStart: segment.start,
+        audioEnd: segment.end,
+        audioVolume: volume,
+      );
+    }
+
+    var audioStart = _snapToTenth(
+      _clampProjectTime(segment.effectiveAudioStart),
+    );
+    var audioEnd = _snapToTenth(_clampProjectTime(segment.effectiveAudioEnd));
+    if (audioEnd <= audioStart) {
+      audioStart = segment.start;
+      audioEnd = segment.end;
+    }
+    return segment.copyWith(
+      audioStart: audioStart,
+      audioEnd: audioEnd,
+      audioVolume: volume,
+    );
+  }
+
+  HighlightSegment _splitSegment(
+    HighlightSegment segment,
+    double splitAt, {
+    required bool firstHalf,
+  }) {
+    final source = segment.source == 'ai' ? 'ai+manual' : segment.source;
+    final reasonSuffix = firstHalf ? 'split A' : 'split B';
+    if (segment.audioLinked) {
+      final start = firstHalf ? segment.start : splitAt;
+      final end = firstHalf ? splitAt : segment.end;
+      return _normalizeSegmentAudio(
+        segment.copyWith(
+          start: start,
+          end: end,
+          audioStart: start,
+          audioEnd: end,
+          reason: '${segment.reason} / $reasonSuffix',
+          source: source,
+        ),
+      );
+    }
+
+    final videoDuration = segment.duration;
+    final audioDuration = segment.audioDuration;
+    final splitRatio = videoDuration <= 0
+        ? 0.5
+        : ((splitAt - segment.start) / videoDuration).clamp(0.0, 1.0);
+    final audioSplit = _snapToTenth(
+      segment.effectiveAudioStart + audioDuration * splitRatio,
+    );
+    return _normalizeSegmentAudio(
+      segment.copyWith(
+        start: firstHalf ? segment.start : splitAt,
+        end: firstHalf ? splitAt : segment.end,
+        audioStart: firstHalf ? segment.effectiveAudioStart : audioSplit,
+        audioEnd: firstHalf ? audioSplit : segment.effectiveAudioEnd,
+        audioLinked: false,
+        reason: '${segment.reason} / $reasonSuffix',
+        source: source,
+      ),
+    );
+  }
+
   List<HighlightSegment> _reorderSegments(List<HighlightSegment> input) {
     return [
       for (var index = 0; index < input.length; index++)
-        input[index].copyWith(order: index + 1),
+        _normalizeSegmentAudio(input[index].copyWith(order: index + 1)),
     ];
   }
 
