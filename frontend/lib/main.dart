@@ -83,17 +83,33 @@ class _DesktopEditorShell extends StatelessWidget {
     return Column(
       children: [
         const _TopBar(),
+        const _CommandBar(),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: const [
               SizedBox(width: 56, child: _WorkspaceRail()),
               _VerticalRule(),
-              SizedBox(width: 304, child: _MediaPanel()),
-              _VerticalRule(),
-              Expanded(child: _CenterEditor()),
-              _VerticalRule(),
-              SizedBox(width: 372, child: _InspectorPanel()),
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: 320, child: _MediaPanel()),
+                          _VerticalRule(),
+                          Expanded(child: _PreviewStage()),
+                          _VerticalRule(),
+                          SizedBox(width: 384, child: _InspectorPanel()),
+                        ],
+                      ),
+                    ),
+                    _HorizontalRule(),
+                    SizedBox(height: 330, child: _TimelinePanel()),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -111,6 +127,7 @@ class _CompactEditorShell extends StatelessWidget {
     return Column(
       children: [
         const _TopBar(compact: true),
+        const _CommandBar(compact: true),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.all(14),
@@ -130,21 +147,6 @@ class _CompactEditorShell extends StatelessWidget {
             ],
           ),
         ),
-      ],
-    );
-  }
-}
-
-class _CenterEditor extends StatelessWidget {
-  const _CenterEditor();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: const [
-        Expanded(child: _PreviewStage()),
-        _HorizontalRule(),
-        SizedBox(height: 326, child: _TimelinePanel()),
       ],
     );
   }
@@ -235,23 +237,216 @@ class _TopBar extends StatelessWidget {
             _EnginePill(stateText: controller.engineState.message),
             const SizedBox(width: 10),
           ],
-          FilledButton.icon(
-            onPressed: controller.canRender
-                ? context.read<EditorController>().requestRender
-                : null,
-            icon: const Icon(Icons.file_upload_outlined),
-            label: Text(controller.renderUrl == null ? 'Export' : 'Re-export'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: controller.canRender
-                ? context.read<EditorController>().requestShortsRender
-                : null,
-            icon: const Icon(Icons.phone_iphone),
-            label: const Text('Shorts'),
-          ),
         ],
       ),
+    );
+  }
+}
+
+class _CommandBar extends StatelessWidget {
+  const _CommandBar({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final editor = context.read<EditorController>();
+    final selected = controller.selectedSegment;
+    final canUseMarks = controller.hasValidMarks;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      height: compact ? 54 : 50,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101217),
+        border: Border(bottom: BorderSide(color: colorScheme.outline)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ToolbarButton(
+              icon: Icons.add_to_photos_outlined,
+              label: 'Import',
+              onPressed: controller.isUploading ? null : editor.pickVideo,
+            ),
+            _ToolbarButton(
+              icon: Icons.auto_awesome,
+              label: 'Analyze',
+              onPressed: controller.canStartUpload ? editor.startUpload : null,
+            ),
+            const _ToolbarDivider(),
+            IconButton.outlined(
+              tooltip: '되돌리기',
+              onPressed: controller.canUndo ? editor.undo : null,
+              icon: const Icon(Icons.undo),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '다시 실행',
+              onPressed: controller.canRedo ? editor.redo : null,
+              icon: const Icon(Icons.redo),
+            ),
+            const _ToolbarDivider(),
+            _ToolbarButton(
+              icon: Icons.save_outlined,
+              label: 'Save',
+              onPressed: controller.hasTimeline
+                  ? () => editor.saveProjectToBackend()
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.file_download_outlined,
+              label: 'Project',
+              onPressed: controller.hasTimeline
+                  ? editor.exportProjectFile
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.folder_open,
+              label: 'Open',
+              onPressed: editor.importProjectFile,
+            ),
+            const _ToolbarDivider(),
+            _ToolbarButton(
+              icon: Icons.start,
+              label: 'In',
+              onPressed: controller.hasTimeline
+                  ? editor.setMarkInFromPlayhead
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.flag_outlined,
+              label: 'Out',
+              onPressed: controller.hasTimeline
+                  ? editor.setMarkOutFromPlayhead
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.add_box_outlined,
+              label: 'Add',
+              onPressed: canUseMarks ? editor.addMarkedSegment : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.swap_horiz,
+              label: 'Apply',
+              onPressed: selected != null && canUseMarks
+                  ? editor.applyMarksToSelectedSegment
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.call_split,
+              label: 'Split',
+              onPressed: selected == null
+                  ? null
+                  : editor.splitSelectedAtPlayhead,
+            ),
+            _ToolbarButton(
+              icon: Icons.clear,
+              label: 'Clear',
+              onPressed: controller.markIn != null || controller.markOut != null
+                  ? editor.clearMarks
+                  : null,
+            ),
+            const _ToolbarDivider(),
+            IconButton.outlined(
+              tooltip: '타임라인 축소',
+              onPressed: controller.hasTimeline
+                  ? () => editor.zoomTimeline(-0.5)
+                  : null,
+              icon: const Icon(Icons.zoom_out),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '타임라인 확대',
+              onPressed: controller.hasTimeline
+                  ? () => editor.zoomTimeline(0.5)
+                  : null,
+              icon: const Icon(Icons.zoom_in),
+            ),
+            const SizedBox(width: 10),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: '16:9', label: Text('16:9')),
+                ButtonSegment(value: '9:16', label: Text('9:16')),
+              ],
+              selected: {controller.exportAspectRatio},
+              onSelectionChanged: controller.hasTimeline
+                  ? (value) => editor.setExportAspectRatio(value.first)
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            FilterChip(
+              selected: controller.includeCaptions,
+              onSelected: controller.hasTimeline
+                  ? editor.setIncludeCaptions
+                  : null,
+              avatar: const Icon(Icons.closed_caption_outlined, size: 18),
+              label: const Text('Captions'),
+            ),
+            const _ToolbarDivider(),
+            FilledButton.icon(
+              onPressed: controller.canRender ? editor.requestRender : null,
+              icon: const Icon(Icons.file_upload_outlined),
+              label: Text(
+                controller.renderUrl == null ? 'Export' : 'Re-export',
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: controller.canRender
+                  ? editor.requestShortsRender
+                  : null,
+              icon: const Icon(Icons.phone_iphone),
+              label: const Text('Shorts'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  const _ToolbarButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarDivider extends StatelessWidget {
+  const _ToolbarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 30,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: Theme.of(context).colorScheme.outline,
     );
   }
 }

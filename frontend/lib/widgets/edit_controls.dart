@@ -11,7 +11,6 @@ class EditControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final selected = controller.selectedSegment;
-    final canUseMarks = controller.hasValidMarks;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -42,77 +41,69 @@ class EditControls extends StatelessWidget {
             ),
             _MetricChip(
               icon: Icons.content_cut,
-              label: 'Out',
+              label: 'Export',
               value: formatSeconds(controller.outputDurationSeconds),
             ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            IconButton.outlined(
-              tooltip: '되돌리기',
-              onPressed: controller.canUndo
-                  ? context.read<EditorController>().undo
-                  : null,
-              icon: const Icon(Icons.undo),
+            _MetricChip(
+              icon: Icons.zoom_in,
+              label: 'Zoom',
+              value: '${controller.timelineZoom.toStringAsFixed(1)}x',
             ),
-            IconButton.outlined(
-              tooltip: '다시 실행',
-              onPressed: controller.canRedo
-                  ? context.read<EditorController>().redo
-                  : null,
-              icon: const Icon(Icons.redo),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.hasTimeline
-                  ? context.read<EditorController>().setMarkInFromPlayhead
-                  : null,
-              icon: const Icon(Icons.start),
-              label: const Text('In'),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.hasTimeline
-                  ? context.read<EditorController>().setMarkOutFromPlayhead
-                  : null,
-              icon: const Icon(Icons.flag_outlined),
-              label: const Text('Out'),
-            ),
-            FilledButton.tonalIcon(
-              onPressed: canUseMarks
-                  ? context.read<EditorController>().addMarkedSegment
-                  : null,
-              icon: const Icon(Icons.add_box_outlined),
-              label: const Text('Add'),
-            ),
-            OutlinedButton.icon(
-              onPressed: selected != null && canUseMarks
-                  ? context.read<EditorController>().applyMarksToSelectedSegment
-                  : null,
-              icon: const Icon(Icons.swap_horiz),
-              label: const Text('Apply'),
-            ),
+            if (selected != null)
+              _MetricChip(
+                icon: selected.audioLinked ? Icons.link : Icons.link_off,
+                label: 'Selected',
+                value: 'Clip ${selected.order}',
+              ),
+            if (selected != null)
+              _MetricChip(
+                icon: Icons.speed,
+                label: 'Speed',
+                value: '${selected.playbackSpeed.toStringAsFixed(2)}x',
+              ),
             _ContextHint(),
-            IconButton.outlined(
-              tooltip: '타임라인 축소',
-              onPressed: controller.hasTimeline
-                  ? () => context.read<EditorController>().zoomTimeline(-0.5)
-                  : null,
-              icon: const Icon(Icons.zoom_out),
+            _TrackLegend(
+              color: Theme.of(context).colorScheme.primary,
+              label: 'V1 Video',
             ),
-            IconButton.outlined(
-              tooltip: '타임라인 확대',
-              onPressed: controller.hasTimeline
-                  ? () => context.read<EditorController>().zoomTimeline(0.5)
-                  : null,
-              icon: const Icon(Icons.zoom_in),
+            _TrackLegend(
+              color: Theme.of(context).colorScheme.secondary,
+              label: 'A1 Audio',
             ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _TrackLegend extends StatelessWidget {
+  const _TrackLegend({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 7),
+          Text(label, style: Theme.of(context).textTheme.labelMedium),
+        ],
+      ),
     );
   }
 }

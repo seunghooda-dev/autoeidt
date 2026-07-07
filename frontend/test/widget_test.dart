@@ -14,6 +14,6 @@ void main() {
     );
 
     expect(find.text('AutoEdit'), findsOneWidget);
-    expect(find.text('Import'), findsOneWidget);
+    expect(find.text('Import'), findsWidgets);
   });
 }
