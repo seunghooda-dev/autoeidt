@@ -3,7 +3,10 @@ import re
 import shlex
 import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+
+from app.config import get_settings
 
 
 class FFmpegError(RuntimeError):
@@ -30,6 +33,15 @@ def _run(command: list[str], timeout: int | None = None) -> subprocess.Completed
         pretty = " ".join(shlex.quote(part) for part in command)
         raise FFmpegError(f"command failed: {pretty}\n{result.stderr}")
     return result
+
+
+@lru_cache(maxsize=8)
+def _encoder_available(name: str) -> bool:
+    try:
+        result = _run(["ffmpeg", "-hide_banner", "-encoders"], timeout=30)
+    except Exception:
+        return False
+    return name in result.stdout
 
 
 def probe_duration(video_path: Path) -> float:
@@ -183,7 +195,12 @@ def render_stream_copy(video_path: Path, segments: list[dict], output_path: Path
     return output_path
 
 
-def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -> Path:
+def _render_reencode_with_video_args(
+    video_path: Path,
+    segments: list[dict],
+    output_path: Path,
+    video_args: list[str],
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
     concat_inputs: list[str] = []
@@ -213,12 +230,7 @@ def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -
             "[outv]",
             "-map",
             "[outa]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
+            *video_args,
             "-c:a",
             "aac",
             "-b:a",
@@ -230,6 +242,27 @@ def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -
         timeout=None,
     )
     return output_path
+
+
+def render_reencode(video_path: Path, segments: list[dict], output_path: Path) -> Path:
+    settings = get_settings()
+    if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
+        try:
+            return _render_reencode_with_video_args(
+                video_path,
+                segments,
+                output_path,
+                ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20"],
+            )
+        except FFmpegError:
+            pass
+
+    return _render_reencode_with_video_args(
+        video_path,
+        segments,
+        output_path,
+        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"],
+    )
 
 
 def render_highlights(video_path: Path, segments: list[dict], output_path: Path) -> Path:

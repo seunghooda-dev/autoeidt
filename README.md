@@ -23,17 +23,28 @@ Windows 실행 파일 빌드에는 Visual Studio의 `Desktop development with C+
 워크로드가 필요합니다. Windows 앱의 영상 프리뷰는 `video_player_media_kit`과
 `media_kit_libs_windows_video` 백엔드를 사용합니다.
 
+로컬 PC에서 빌드 도구를 설치하려면 관리자 권한 승인 후 아래 스크립트를 실행합니다.
+
 ```powershell
-cd "C:\Users\seung\auto edit\frontend"
-flutter config --enable-windows-desktop
-flutter build windows --dart-define=API_BASE_URL=http://localhost:8000
+.\scripts\install-windows-build-tools.ps1 -Passive
 ```
 
-빌드가 끝나면 실행 파일은 다음 위치에 생성됩니다.
+Windows 패키지를 만들려면 아래 스크립트를 사용합니다.
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+빌드가 끝나면 실행 파일과 zip 패키지는 다음 위치에 생성됩니다.
 
 ```text
 frontend\build\windows\x64\runner\Release\AutoEdit.exe
+dist\AutoEdit-windows-x64.zip
 ```
+
+로컬에 Visual Studio C++ 빌드 도구를 설치하지 못하는 경우, GitHub Actions의
+`Windows Release Build` 워크플로를 실행하면 `AutoEdit-windows-x64` artifact가
+생성됩니다.
 
 ## 백엔드 API 계약
 

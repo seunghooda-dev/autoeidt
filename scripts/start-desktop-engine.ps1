@@ -10,6 +10,43 @@ $VenvPython = Join-Path $Backend ".venv\Scripts\python.exe"
 $Requirements = Join-Path $Backend "requirements.txt"
 $Stamp = Join-Path $Backend ".venv\.desktop-deps.stamp"
 
+function Get-FirstCommandPath {
+    param([string[]]$Names)
+
+    foreach ($Name in $Names) {
+        $Command = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($Command) {
+            return $Command.Source
+        }
+    }
+
+    return $null
+}
+
+function Add-FFmpegPath {
+    $FFmpeg = Get-FirstCommandPath @("ffmpeg.exe", "ffmpeg")
+    if ($FFmpeg) {
+        $BinDir = Split-Path -Parent $FFmpeg
+        if ($env:Path -notlike "*$BinDir*") {
+            $env:Path = "$BinDir;$env:Path"
+        }
+        return
+    }
+
+    $WingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path $WingetRoot) {
+        $Candidate = Get-ChildItem $WingetRoot -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($Candidate) {
+            $BinDir = Split-Path -Parent $Candidate.FullName
+            $env:Path = "$BinDir;$env:Path"
+            return
+        }
+    }
+
+    throw "FFmpeg을 찾을 수 없습니다. winget install Gyan.FFmpeg 후 다시 실행해 주세요."
+}
+
 function New-BackendVenv {
     Push-Location $Backend
     try {
@@ -18,8 +55,13 @@ function New-BackendVenv {
                 py -3.12 -m venv .venv
                 return
             } catch {
-                py -3 -m venv .venv
-                return
+                try {
+                    py -3.11 -m venv .venv
+                    return
+                } catch {
+                    py -3 -m venv .venv
+                    return
+                }
             }
         }
 
@@ -28,6 +70,8 @@ function New-BackendVenv {
         Pop-Location
     }
 }
+
+Add-FFmpegPath
 
 if (-not (Test-Path $VenvPython)) {
     New-BackendVenv

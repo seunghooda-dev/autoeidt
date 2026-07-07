@@ -1,0 +1,67 @@
+name: Windows Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/windows-release.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "scripts/**"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.38.9"
+          cache: true
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: frontend
+        run: flutter analyze
+
+      - name: Test Flutter
+        working-directory: frontend
+        run: flutter test
+
+      - name: Build Windows app
+        working-directory: frontend
+        run: flutter build windows --release --dart-define=API_BASE_URL=http://localhost:8000
+
+      - name: Smoke check bundle
+        shell: pwsh
+        run: |
+          $exe = "frontend\build\windows\x64\runner\Release\AutoEdit.exe"
+          if (-not (Test-Path $exe)) {
+            throw "AutoEdit.exe was not created."
+          }
+          if (-not (Test-Path "frontend\build\windows\x64\runner\Release\backend\app\main.py")) {
+            throw "Backend engine files were not bundled."
+          }
+          if (-not (Test-Path "frontend\build\windows\x64\runner\Release\scripts\start-desktop-engine.ps1")) {
+            throw "Desktop engine script was not bundled."
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoEdit-windows-x64
+          path: frontend/build/windows/x64/runner/Release/**
+          if-no-files-found: error

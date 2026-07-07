@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     silence_min_duration: float = 0.8
     visual_motion_threshold: float = 1.7
     scene_change_threshold: float = 0.35
+    prefer_gpu_encoding: bool = True
 
     upload_max_mb: int = 4096
 

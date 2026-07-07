@@ -16,6 +16,7 @@ backend/data/jobs/
 backend/data/uploads/
 backend/data/outputs/
 test-assets/
+dist/
 
 frontend/build/
 frontend/.dart_tool/

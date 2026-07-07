@@ -67,6 +67,8 @@ class LocalEngineService {
     if (_process == null) {
       _process = await Process.start('powershell.exe', [
         '-NoProfile',
+        '-WindowStyle',
+        'Hidden',
         '-ExecutionPolicy',
         'Bypass',
         '-File',
