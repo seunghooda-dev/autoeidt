@@ -283,6 +283,7 @@ class TimelineMarker(BaseModel):
     label: str = "Marker"
     color: str = "amber"
     note: str = ""
+    enabled: bool = True
 
     @field_validator("seconds")
     @classmethod

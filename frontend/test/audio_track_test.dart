@@ -94,6 +94,7 @@ void main() {
           label: 'Hook',
           color: 'cyan',
           note: 'opening marker',
+          enabled: false,
         ),
       ],
       includeCaptions: false,
@@ -134,6 +135,7 @@ void main() {
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
+    expect(restored.timelineMarkers.single.enabled, isFalse);
     expect(restored.shortsCandidates.single['label'], 'News 03');
     expect(restored.shortsCandidates.single['quality_score'], 88.0);
     expect(restored.selectedShortsId, 3);
@@ -148,7 +150,13 @@ void main() {
       ..markIn = 10.5
       ..markOut = 88.0
       ..timelineMarkers = const [
-        TimelineMarker(id: 1, seconds: 14, label: 'Fact', color: 'green'),
+        TimelineMarker(
+          id: 1,
+          seconds: 14,
+          label: 'Fact',
+          color: 'green',
+          enabled: false,
+        ),
       ]
       ..shortsCandidates = const [
         ShortsCandidate(
@@ -185,6 +193,7 @@ void main() {
     expect(project.markOut, 88.0);
     expect(project.timelineMarkers.single.label, 'Fact');
     expect(project.timelineMarkers.single.color, 'green');
+    expect(project.timelineMarkers.single.enabled, isFalse);
     expect(project.shortsCandidates.single['id'], 4);
     expect(project.shortsCandidates.single['strategy_kind'], 'hook');
     expect(project.selectedShortsId, 4);
@@ -197,7 +206,13 @@ void main() {
           ..jobId = 'job-1'
           ..duration = 120
           ..timelineMarkers = const [
-            TimelineMarker(id: 2, seconds: 30, label: 'Review', color: 'rose'),
+            TimelineMarker(
+              id: 2,
+              seconds: 30,
+              label: 'Review',
+              color: 'rose',
+              enabled: false,
+            ),
           ]
           ..shortsCandidates = const [
             ShortsCandidate(
@@ -228,6 +243,7 @@ void main() {
 
     expect(apiClient.savedProjectJobId, 'job-1');
     expect(apiClient.savedProject?.timelineMarkers.single.label, 'Review');
+    expect(apiClient.savedProject?.timelineMarkers.single.enabled, isFalse);
     expect(apiClient.savedProject?.shortsCandidates.single['id'], 7);
     expect(apiClient.savedProject?.shortsCandidates.single['label'], 'News 07');
     expect(apiClient.savedProject?.selectedShortsId, 7);
@@ -330,6 +346,35 @@ void main() {
 
     controller.undo();
     expect(controller.timelineMarkers.length, 2);
+  });
+
+  test('disabled timeline markers are skipped by marker rough cut', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..timelineMarkers = const [
+        TimelineMarker(
+          id: 1,
+          seconds: 10,
+          label: 'Skip',
+          color: 'rose',
+          enabled: false,
+        ),
+        TimelineMarker(id: 2, seconds: 20, label: 'Hook', color: 'cyan'),
+        TimelineMarker(id: 3, seconds: 40, label: 'Proof', color: 'green'),
+      ];
+
+    expect(controller.canBuildTimelineFromMarkers, isTrue);
+
+    controller.replaceTimelineWithMarkerSegments();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.segments.length, 2);
+    expect(controller.segments.first.reason, '마커 Hook 구간');
+    expect(controller.segments.last.reason, '마커 Proof 구간');
+    expect(controller.segments.first.start, 20);
+    expect(controller.segments.first.end, 40);
+    expect(controller.segments.last.start, 40);
+    expect(controller.segments.last.end, 70);
   });
 
   test('linked audio follows video trim', () {

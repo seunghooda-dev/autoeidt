@@ -500,6 +500,7 @@ class TimelineMarker {
     required this.label,
     this.color = 'amber',
     this.note = '',
+    this.enabled = true,
   });
 
   final int id;
@@ -507,6 +508,7 @@ class TimelineMarker {
   final String label;
   final String color;
   final String note;
+  final bool enabled;
 
   factory TimelineMarker.fromJson(Map<String, dynamic> json) {
     return TimelineMarker(
@@ -515,6 +517,7 @@ class TimelineMarker {
       label: _stringFromJson(json['label'], 'Marker'),
       color: _stringFromJson(json['color'], 'amber'),
       note: _stringFromJson(json['note'], ''),
+      enabled: _boolFromJson(json['enabled'], true),
     );
   }
 
@@ -524,6 +527,7 @@ class TimelineMarker {
     String? label,
     String? color,
     String? note,
+    bool? enabled,
   }) {
     return TimelineMarker(
       id: id ?? this.id,
@@ -531,6 +535,7 @@ class TimelineMarker {
       label: label ?? this.label,
       color: color ?? this.color,
       note: note ?? this.note,
+      enabled: enabled ?? this.enabled,
     );
   }
 
@@ -541,6 +546,7 @@ class TimelineMarker {
       'label': label,
       'color': color,
       if (note.isNotEmpty) 'note': note,
+      'enabled': enabled,
     };
   }
 }
@@ -568,6 +574,25 @@ int _intFromJson(Object? value, int fallback) {
 String _stringFromJson(Object? value, String fallback) {
   if (value is String && value.trim().isNotEmpty) {
     return value;
+  }
+  return fallback;
+}
+
+bool _boolFromJson(Object? value, bool fallback) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is num) {
+    return value != 0;
+  }
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+      return true;
+    }
+    if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+      return false;
+    }
   }
   return fallback;
 }

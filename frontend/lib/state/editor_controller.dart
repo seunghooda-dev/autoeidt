@@ -131,7 +131,8 @@ class EditorController extends ChangeNotifier {
       comparisonReferenceSegments.isNotEmpty;
   bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
   bool get hasTimelineMarkers => timelineMarkers.isNotEmpty;
-  bool get canBuildTimelineFromMarkers => _timelineMarkerRanges().isNotEmpty;
+  bool get canBuildTimelineFromMarkers =>
+      _timelineMarkerRanges(enabledOnly: true).isNotEmpty;
   bool get canJumpToNextTimelineMarker =>
       _nextTimelineMarkerFrom(currentPositionSeconds) != null;
   bool get canJumpToPreviousTimelineMarker =>
@@ -1129,7 +1130,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void replaceTimelineWithMarkerSegments() {
-    final ranges = _timelineMarkerRanges();
+    final ranges = _timelineMarkerRanges(enabledOnly: true);
     if (ranges.isEmpty) {
       return;
     }
@@ -3889,9 +3890,15 @@ class EditorController extends ChangeNotifier {
     return normalized;
   }
 
-  TimelineMarker? _nextTimelineMarkerFrom(double seconds) {
+  TimelineMarker? _nextTimelineMarkerFrom(
+    double seconds, {
+    bool enabledOnly = false,
+  }) {
     final threshold = seconds + timecodeFrameDurationSeconds / 2;
     for (final marker in timelineMarkers) {
+      if (enabledOnly && !marker.enabled) {
+        continue;
+      }
       if (marker.seconds > threshold) {
         return marker;
       }
@@ -3910,8 +3917,9 @@ class EditorController extends ChangeNotifier {
   }
 
   ({TimelineMarker marker, double start, double end})? _timelineMarkerRange(
-    int id,
-  ) {
+    int id, {
+    bool enabledOnly = false,
+  }) {
     TimelineMarker? marker;
     for (final item in timelineMarkers) {
       if (item.id == id) {
@@ -3922,12 +3930,15 @@ class EditorController extends ChangeNotifier {
     if (marker == null) {
       return null;
     }
+    if (enabledOnly && !marker.enabled) {
+      return null;
+    }
     final sourceDuration = timelineSourceDuration;
     if (sourceDuration <= 0) {
       return null;
     }
     final start = _snapToFrame(_clampProjectTime(marker.seconds));
-    final next = _nextTimelineMarkerFrom(start);
+    final next = _nextTimelineMarkerFrom(start, enabledOnly: enabledOnly);
     final fallbackEnd = math.min(sourceDuration, start + 30.0);
     final end = _snapToFrame(_clampProjectTime(next?.seconds ?? fallbackEnd));
     if (end - start < timecodeFrameDurationSeconds) {
@@ -3937,10 +3948,10 @@ class EditorController extends ChangeNotifier {
   }
 
   List<({TimelineMarker marker, double start, double end})>
-  _timelineMarkerRanges() {
+  _timelineMarkerRanges({bool enabledOnly = false}) {
     final ranges = <({TimelineMarker marker, double start, double end})>[];
     for (final marker in timelineMarkers) {
-      final range = _timelineMarkerRange(marker.id);
+      final range = _timelineMarkerRange(marker.id, enabledOnly: enabledOnly);
       if (range != null) {
         ranges.add(range);
       }

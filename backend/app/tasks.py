@@ -27,8 +27,8 @@ from app.services.reference_style import (
 from app.services.stt_service import transcribe_audio
 from app.storage import now_iso, safe_filename, store
 
-TIMECODE_FRAME_RATE = 30000 / 1001
-TIMECODE_FRAME_DURATION = 1001 / 30000
+TIMECODE_FRAME_RATE = 30.0
+TIMECODE_FRAME_DURATION = 1 / TIMECODE_FRAME_RATE
 
 
 def _normalized_mp4_output_name(output_name: str | None, fallback: str) -> str:

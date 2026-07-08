@@ -1606,10 +1606,13 @@ class _TimelinePainter extends CustomPainter {
 
   void _drawTimelineMarker(Canvas canvas, Size size, TimelineMarker marker) {
     final x = _secondsToX(marker.seconds, size.width);
-    final color = _timelineMarkerColor(marker.color);
+    final markerEnabled = marker.enabled;
+    final color = markerEnabled
+        ? _timelineMarkerColor(marker.color)
+        : colorScheme.onSurfaceVariant;
     final linePaint = Paint()
-      ..color = color.withValues(alpha: 0.62)
-      ..strokeWidth = 1.1;
+      ..color = color.withValues(alpha: markerEnabled ? 0.62 : 0.32)
+      ..strokeWidth = markerEnabled ? 1.1 : 0.8;
     canvas.drawLine(
       Offset(x, 25),
       Offset(x, _audio2Top + _laneHeight + 10),
@@ -1622,7 +1625,10 @@ class _TimelinePainter extends CustomPainter {
       ..lineTo(x, 39)
       ..lineTo(x + 5, 33)
       ..close();
-    canvas.drawPath(head, Paint()..color = color);
+    canvas.drawPath(
+      head,
+      Paint()..color = color.withValues(alpha: markerEnabled ? 1 : 0.55),
+    );
     canvas.drawPath(
       head,
       Paint()
@@ -1637,7 +1643,7 @@ class _TimelinePainter extends CustomPainter {
         style: TextStyle(
           color: color,
           fontSize: 9,
-          fontWeight: FontWeight.w800,
+          fontWeight: markerEnabled ? FontWeight.w800 : FontWeight.w600,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),

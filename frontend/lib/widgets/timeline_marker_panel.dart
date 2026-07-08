@@ -13,6 +13,7 @@ class TimelineMarkerPanel extends StatelessWidget {
     final controller = context.watch<EditorController>();
     final editor = context.read<EditorController>();
     final markers = controller.timelineMarkers;
+    final enabledMarkerCount = markers.where((marker) => marker.enabled).length;
     final colorScheme = Theme.of(context).colorScheme;
 
     if (markers.isEmpty) {
@@ -64,7 +65,7 @@ class TimelineMarkerPanel extends StatelessWidget {
               ),
             ),
             Text(
-              '${markers.length}',
+              '$enabledMarkerCount/${markers.length}',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -150,12 +151,19 @@ class _MarkerTile extends StatelessWidget {
     final controller = context.read<EditorController>();
     final colorScheme = Theme.of(context).colorScheme;
     final markerColor = _timelineMarkerColor(colorScheme, marker.color);
-    final borderColor = isActive ? markerColor : colorScheme.outline;
+    final markerEnabled = marker.enabled;
+    final borderColor = isActive
+        ? markerColor
+        : markerEnabled
+        ? colorScheme.outline
+        : colorScheme.outlineVariant;
 
     return Material(
       color: isActive
           ? markerColor.withValues(alpha: 0.12)
-          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.38),
+          : markerEnabled
+          ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.38)
+          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -171,7 +179,15 @@ class _MarkerTile extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Icon(Icons.bookmark, color: markerColor, size: 18),
+                child: Icon(
+                  markerEnabled
+                      ? Icons.bookmark
+                      : Icons.bookmark_remove_outlined,
+                  color: markerEnabled
+                      ? markerColor
+                      : colorScheme.onSurfaceVariant,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 9),
               Expanded(
@@ -212,6 +228,23 @@ class _MarkerTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 8),
+                    FilterChip(
+                      key: ValueKey('marker-roughcut-${marker.id}'),
+                      selected: markerEnabled,
+                      onSelected: (enabled) => controller.updateTimelineMarker(
+                        marker.copyWith(enabled: enabled),
+                      ),
+                      avatar: Icon(
+                        markerEnabled
+                            ? Icons.playlist_add_check
+                            : Icons.remove_circle_outline,
+                        size: 16,
+                      ),
+                      label: Text(markerEnabled ? '러프컷 포함' : '러프컷 제외'),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ],
                 ),
               ),

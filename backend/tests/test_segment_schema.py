@@ -63,6 +63,7 @@ def test_project_state_accepts_render_settings() -> None:
                 "seconds": -3.0,
                 "label": "Hook",
                 "color": "cyan",
+                "enabled": False,
             }
         ],
         shorts_candidates=[
@@ -84,5 +85,6 @@ def test_project_state_accepts_render_settings() -> None:
     assert project.mark_out == 58.0
     assert project.timeline_markers[0].seconds == 0.0
     assert project.timeline_markers[0].label == "Hook"
+    assert project.timeline_markers[0].enabled is False
     assert project.shorts_candidates[0]["label"] == "Hook 01"
     assert project.selected_shorts_id == 1

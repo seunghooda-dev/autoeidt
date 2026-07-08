@@ -73,4 +73,4 @@ def test_media_probe_warns_for_possible_op_atom_without_audio() -> None:
     assert summary["audio_stream_count"] == 0
     assert summary["mxf_operational_pattern"] == "Possible OP-Atom/separate essence MXF"
     assert any("OP-Atom" in warning for warning in summary["warnings"])
-    assert any("29.97 DF" in warning for warning in summary["warnings"])
+    assert any("30.00fps non-drop" in warning for warning in summary["warnings"])

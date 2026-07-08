@@ -33,6 +33,7 @@ void main() {
     expect(find.text('Hook'), findsOneWidget);
     expect(find.text('Fact'), findsOneWidget);
     expect(find.text('opening beat'), findsOneWidget);
+    expect(find.text('2/2'), findsOneWidget);
 
     await tester.tap(find.text('Hook'));
     await tester.pump();
@@ -40,13 +41,13 @@ void main() {
 
     await tester.tap(find.byTooltip('Hook 구간을 In/Out으로 지정'));
     await tester.pump();
-    expect(controller.markIn, closeTo(5.005, 0.001));
-    expect(controller.markOut, closeTo(12.012, 0.001));
+    expect(controller.markIn, 5);
+    expect(controller.markOut, 12);
 
     await tester.tap(find.byTooltip('Hook 구간을 클립으로 추가'));
     await tester.pump();
-    expect(controller.segments.single.start, closeTo(5.005, 0.001));
-    expect(controller.segments.single.end, closeTo(12.012, 0.001));
+    expect(controller.segments.single.start, 5);
+    expect(controller.segments.single.end, 12);
     expect(controller.segments.single.reason, '마커 Hook 구간');
 
     await tester.tap(find.text('Rough cut'));
@@ -54,6 +55,17 @@ void main() {
     expect(controller.segments.length, 2);
     expect(controller.segments.first.reason, '마커 Hook 구간');
     expect(controller.segments.last.reason, '마커 Fact 구간');
+
+    await tester.tap(find.byKey(const ValueKey('marker-roughcut-1')));
+    await tester.pump();
+    expect(controller.timelineMarkers.first.enabled, isFalse);
+    expect(find.text('1/2'), findsOneWidget);
+    expect(find.text('러프컷 제외'), findsOneWidget);
+
+    await tester.tap(find.text('Rough cut'));
+    await tester.pump();
+    expect(controller.segments.length, 1);
+    expect(controller.segments.single.reason, '마커 Fact 구간');
 
     await tester.tap(find.byTooltip('Hook 마커 편집'));
     await tester.pumpAndSettle();

@@ -155,6 +155,7 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
                     "label": "Hook",
                     "color": "cyan",
                     "note": "opening marker",
+                    "enabled": False,
                 }
             ],
             "include_captions": False,
@@ -185,6 +186,7 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
     assert payload["mark_out"] == 58.0
     assert payload["timeline_markers"][0]["label"] == "Hook"
     assert payload["timeline_markers"][0]["seconds"] == 22.0
+    assert payload["timeline_markers"][0]["enabled"] is False
     assert payload["shorts_candidates"][0]["label"] == "News 02"
     assert payload["selected_shorts_id"] == 2
 
@@ -196,5 +198,6 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
     assert get_payload["caption_style_preset"] == "shorts"
     assert get_payload["export_aspect_ratio"] == "9:16"
     assert get_payload["timeline_markers"][0]["note"] == "opening marker"
+    assert get_payload["timeline_markers"][0]["enabled"] is False
     assert get_payload["shorts_candidates"][0]["quality_score"] == 82.5
     assert get_payload["selected_shorts_id"] == 2

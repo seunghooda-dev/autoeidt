@@ -169,10 +169,10 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         warnings.append("오디오 스트림이 없습니다.")
     if frame_rate <= 0:
         warnings.append("프레임레이트를 확인하지 못했습니다.")
-    elif abs(frame_rate - (30000 / 1001)) > 0.03:
+    elif abs(frame_rate - 30.0) > 0.005:
         warnings.append(
             f"소스 프레임레이트가 {frame_rate:.3f}fps입니다. "
-            "현재 타임라인은 29.97 DF 기준입니다."
+            "현재 타임라인은 30.00fps non-drop 기준입니다."
         )
     if is_mxf and len(audio_streams) >= 8:
         warnings.append(
