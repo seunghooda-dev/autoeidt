@@ -990,6 +990,37 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  String buildSelectedShortsCutListCsv() {
+    final candidates = shortsCandidates
+        .where(
+          (candidate) => candidate.selected && candidate.segments.isNotEmpty,
+        )
+        .toList();
+    return _buildShortsCutListCsv(candidates);
+  }
+
+  Future<void> exportSelectedShortsCutList() async {
+    final csv = buildSelectedShortsCutListCsv();
+    if (csv.isEmpty) {
+      errorMessage = '내보낼 쇼츠 후보를 선택해 주세요';
+      notifyListeners();
+      return;
+    }
+    final bytes = Uint8List.fromList([0xEF, 0xBB, 0xBF, ...utf8.encode(csv)]);
+    try {
+      await FilePicker.platform.saveFile(
+        dialogTitle: '쇼츠 컷 리스트 저장',
+        fileName: '${_safeProjectFileName()}_shorts_cutlist.csv',
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+        bytes: bytes,
+      );
+    } catch (error) {
+      errorMessage = '쇼츠 컷 리스트 저장 실패: $error';
+      notifyListeners();
+    }
+  }
+
   Future<void> importProjectFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -5519,6 +5550,98 @@ class EditorController extends ChangeNotifier {
           'selected': candidate.selected,
         },
     ];
+  }
+
+  String _buildShortsCutListCsv(List<ShortsCandidate> candidates) {
+    if (candidates.isEmpty) {
+      return '';
+    }
+    final rows = <List<String>>[
+      const [
+        'candidate_id',
+        'candidate_label',
+        'selected',
+        'readiness',
+        'quality_grade',
+        'quality_score',
+        'hook_score',
+        'completion_score',
+        'story_score',
+        'story_flow',
+        'strengths',
+        'issues',
+        'clip_order',
+        'source_in_tc',
+        'source_out_tc',
+        'source_in_seconds',
+        'source_out_seconds',
+        'duration_seconds',
+        'audio_in_tc',
+        'audio_out_tc',
+        'story_role',
+        'reason',
+        'script',
+        'tags',
+        'video_enabled',
+        'audio_muted',
+        'audio_channel_1',
+        'audio_channel_2',
+        'playback_speed',
+      ],
+    ];
+    for (final candidate in candidates) {
+      for (final segment in candidate.segments) {
+        final role = _storyLabelForRole(
+          _shortsStoryRole(segment, candidate.strategyKind),
+        );
+        rows.add([
+          candidate.id.toString(),
+          candidate.label,
+          candidate.selected ? 'TRUE' : 'FALSE',
+          candidate.readinessLabel,
+          candidate.qualityGrade,
+          candidate.qualityScore.toStringAsFixed(1),
+          candidate.hookScore.toStringAsFixed(1),
+          candidate.completionScore.toStringAsFixed(1),
+          candidate.storyScore.toStringAsFixed(1),
+          candidate.storyFlow.join(' > '),
+          candidate.strengths.join('; '),
+          candidate.issues.join('; '),
+          segment.order.toString(),
+          formatSeconds(segment.start),
+          formatSeconds(segment.end),
+          segment.start.toStringAsFixed(3),
+          segment.end.toStringAsFixed(3),
+          segment.outputDuration.toStringAsFixed(3),
+          formatSeconds(segment.effectiveAudioStart),
+          formatSeconds(segment.effectiveAudioEnd),
+          role,
+          segment.reason,
+          segment.script,
+          segment.tags.join('; '),
+          segment.videoEnabled ? 'TRUE' : 'FALSE',
+          segment.audioMuted ? 'TRUE' : 'FALSE',
+          segment.audioChannel1Enabled ? 'TRUE' : 'FALSE',
+          segment.audioChannel2Enabled ? 'TRUE' : 'FALSE',
+          segment.playbackSpeed.toStringAsFixed(3),
+        ]);
+      }
+    }
+    return rows.map(_csvRow).join('\r\n');
+  }
+
+  String _csvRow(List<String> cells) {
+    return cells.map(_csvCell).join(',');
+  }
+
+  String _csvCell(String value) {
+    final normalized = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    if (!normalized.contains(',') &&
+        !normalized.contains('"') &&
+        !normalized.contains('\n')) {
+      return normalized;
+    }
+    return '"${normalized.replaceAll('"', '""')}"';
   }
 
   List<ShortsCandidate> _shortsCandidatesFromProject(ProjectState project) {

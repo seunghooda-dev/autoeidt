@@ -267,6 +267,22 @@ class _MultiShortsPanel extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
+                    onPressed: controller.selectedShortsCount == 0
+                        ? null
+                        : context
+                              .read<EditorController>()
+                              .exportSelectedShortsCutList,
+                    icon: const Icon(Icons.table_chart_outlined, size: 17),
+                    label: const Text('Cut List'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
                     onPressed:
                         controller.selectedShortsCount == 0 ||
                             !controller.hasSelectedShortsRenderSafetyIssues

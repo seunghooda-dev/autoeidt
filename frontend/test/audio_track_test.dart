@@ -391,6 +391,61 @@ void main() {
     expect(controller.selectedShortsId, 7);
   });
 
+  test('selected shorts cut list csv exports editorial source ranges', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..shortsCandidates = const [
+        ShortsCandidate(
+          id: 1,
+          label: 'News, 01',
+          reason: 'selected',
+          strategyKind: 'news',
+          strategyLabel: 'News',
+          selected: true,
+          qualityScore: 82,
+          qualityGrade: 'A',
+          hookScore: 76,
+          completionScore: 68,
+          storyScore: 72,
+          storyFlow: ['Hook', 'Evidence'],
+          strengths: ['Story'],
+          issues: ['Missing impact'],
+          segments: [
+            HighlightSegment(
+              order: 2,
+              start: 1,
+              end: 2.5,
+              reason: '공식 보고서, 확인',
+              script: '관계자는 "확인"했다고 말했습니다',
+              tags: ['Story:Evidence', '검증팩트'],
+              audioStart: 1.2,
+              audioEnd: 2.4,
+              audioChannel2Enabled: false,
+              playbackSpeed: 1.25,
+            ),
+          ],
+        ),
+        ShortsCandidate(
+          id: 2,
+          label: 'Skip 02',
+          reason: 'not selected',
+          selected: false,
+          segments: [
+            HighlightSegment(order: 1, start: 10, end: 12, reason: 'skip'),
+          ],
+        ),
+      ];
+
+    final csv = controller.buildSelectedShortsCutListCsv();
+
+    expect(csv, contains('candidate_id,candidate_label,selected'));
+    expect(csv, contains('"News, 01"'));
+    expect(csv, contains('00:00:01:00'));
+    expect(csv, contains('00:00:02:15'));
+    expect(csv, contains('"관계자는 ""확인""했다고 말했습니다"'));
+    expect(csv, contains('Evidence'));
+    expect(csv, isNot(contains('Skip 02')));
+  });
+
   test('timeline markers can be added navigated cleared and undone', () async {
     final controller = EditorController(autoStartEngine: false)..duration = 120;
 

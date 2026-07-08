@@ -54,6 +54,7 @@ void main() {
     expect(find.text('S72'), findsOneWidget);
     expect(find.text('H 88'), findsOneWidget);
     expect(find.text('C 74'), findsOneWidget);
+    expect(find.text('Cut List'), findsOneWidget);
     expect(find.text('Hook'), findsWidgets);
     expect(find.text('Evidence'), findsOneWidget);
     expect(find.text('Impact'), findsOneWidget);
