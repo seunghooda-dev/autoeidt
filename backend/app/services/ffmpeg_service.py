@@ -228,8 +228,11 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
     stat = resolved.stat()
+    proxy_seconds = max(30, min(int(settings.preview_proxy_seconds), 600))
     cache_key = sha1(
-        f"preview-v2|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
+        f"preview-v3|{proxy_seconds}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
+            "utf-8"
+        )
     ).hexdigest()
     preview_dir = settings.data_dir / "preview_proxies"
     preview_dir.mkdir(parents=True, exist_ok=True)
@@ -256,6 +259,8 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
             "-1",
             "-map_chapters",
             "-1",
+            "-t",
+            str(proxy_seconds),
             "-vf",
             "scale=-2:540,format=yuv420p",
             "-c:v",
