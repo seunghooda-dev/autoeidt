@@ -874,6 +874,10 @@ class _QualityReviewPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 9),
+          if (controller.hasOfflineReviewSegments) ...[
+            _OfflineReviewNotice(count: controller.offlineReviewSegmentCount),
+            const SizedBox(height: 8),
+          ],
           for (final check in checks) _CheckRow(check: check),
           const SizedBox(height: 8),
           Container(
@@ -935,6 +939,48 @@ class _QualityReviewPanel extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfflineReviewNotice extends StatelessWidget {
+  const _OfflineReviewNotice({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.55),
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.manage_search_outlined,
+            size: 17,
+            color: Color(0xFFF59E0B),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$count offline review clips · STT/LLM 없이 만든 후보입니다',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],

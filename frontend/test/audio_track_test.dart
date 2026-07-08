@@ -632,6 +632,43 @@ void main() {
     },
   );
 
+  test('offline fallback review clips are surfaced as preflight warnings', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..jobId = 'job-offline'
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 20,
+          end: 55,
+          reason: 'STT 없이 오디오 활동 기반으로 잡은 검토용 후보',
+          source: 'fallback-audio-review',
+          audioNormalize: true,
+          tags: ['검토필요', '오디오활성', 'STT미설정'],
+        ),
+      ];
+
+    expect(controller.offlineReviewSegmentCount, 1);
+    expect(controller.hasOfflineReviewSegments, isTrue);
+    expect(controller.canRender, isTrue);
+    expect(
+      controller.editorialChecklist.any(
+        (item) =>
+            item.label == 'Offline review' &&
+            item.status == EditorialCheckStatus.warn,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.renderSafetyChecklist.any(
+        (item) =>
+            item.label == 'Clip 1 review' &&
+            item.status == EditorialCheckStatus.warn,
+      ),
+      isTrue,
+    );
+  });
+
   test('selected shorts safety repair only updates selected candidates', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120

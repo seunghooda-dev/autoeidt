@@ -260,6 +260,11 @@ class EditorController extends ChangeNotifier {
     return captionCount + segmentCount;
   }
 
+  int get offlineReviewSegmentCount =>
+      segments.where(_isOfflineReviewSegment).length;
+
+  bool get hasOfflineReviewSegments => offlineReviewSegmentCount > 0;
+
   List<EditorialCheckItem> get editorialChecklist {
     final hasNewsSignals = segments.any(
       (segment) => segment.tags.any(
@@ -336,6 +341,15 @@ class EditorController extends ChangeNotifier {
         label: 'Captions',
         detail: includeCaptions ? '$enabledCaptionCount enabled' : 'Off',
         status: includeCaptions && enabledCaptionCount > 0
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+      EditorialCheckItem(
+        label: 'Offline review',
+        detail: offlineReviewSegmentCount == 0
+            ? 'Content analysis'
+            : '$offlineReviewSegmentCount clips need review',
+        status: offlineReviewSegmentCount == 0
             ? EditorialCheckStatus.pass
             : EditorialCheckStatus.warn,
       ),
@@ -2866,6 +2880,16 @@ class EditorController extends ChangeNotifier {
           ),
         );
       }
+      if (_isOfflineReviewSegment(segment)) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel review',
+            detail: 'STT/LLM 내용 분석 없이 생성된 검토용 후보입니다',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
     }
 
     final enabledCaptions = captions
@@ -2959,6 +2983,12 @@ class EditorController extends ChangeNotifier {
         item.label.endsWith('speed') ||
         item.label.endsWith('audio') ||
         item.label.endsWith('fade');
+  }
+
+  bool _isOfflineReviewSegment(HighlightSegment segment) {
+    return segment.source.startsWith('fallback-') ||
+        segment.tags.contains('STT미설정') ||
+        segment.tags.contains('검토필요');
   }
 
   String _shortsGrade(double score) {
