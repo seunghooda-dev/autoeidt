@@ -80,6 +80,7 @@ class EditorController extends ChangeNotifier {
   bool _previewUsesProxy = false;
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
+  double _manualPlayheadSeconds = 0;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
     'mp4',
@@ -130,6 +131,10 @@ class EditorController extends ChangeNotifier {
       comparisonReferenceSegments.isNotEmpty;
   bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
   bool get hasTimelineMarkers => timelineMarkers.isNotEmpty;
+  bool get canJumpToNextTimelineMarker =>
+      _nextTimelineMarkerFrom(currentPositionSeconds) != null;
+  bool get canJumpToPreviousTimelineMarker =>
+      _previousTimelineMarkerFrom(currentPositionSeconds) != null;
   List<BatchRenderItemResult> get renderOutputs {
     final currentRenderUrl = renderUrl;
     if (currentRenderUrl == null || currentRenderUrl.isEmpty) {
@@ -238,7 +243,7 @@ class EditorController extends ChangeNotifier {
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
-      return 0;
+      return _manualPlayheadSeconds;
     }
     return _previewSourceStartSeconds +
         controller.value.position.inMilliseconds / 1000;
@@ -556,6 +561,7 @@ class EditorController extends ChangeNotifier {
     jobId = null;
     job = null;
     duration = 0;
+    _manualPlayheadSeconds = 0;
     segments = [];
     transcript = [];
     captions = [];
@@ -1045,6 +1051,22 @@ class EditorController extends ChangeNotifier {
     _commitHistory();
     timelineMarkers = [];
     notifyListeners();
+  }
+
+  void jumpToNextTimelineMarker() {
+    final marker = _nextTimelineMarkerFrom(currentPositionSeconds);
+    if (marker == null) {
+      return;
+    }
+    unawaited(seekTo(marker.seconds, autoplay: false));
+  }
+
+  void jumpToPreviousTimelineMarker() {
+    final marker = _previousTimelineMarkerFrom(currentPositionSeconds);
+    if (marker == null) {
+      return;
+    }
+    unawaited(seekTo(marker.seconds, autoplay: false));
   }
 
   void markSelectedClip() {
@@ -3441,6 +3463,7 @@ class EditorController extends ChangeNotifier {
   Future<void> seekTo(double seconds, {bool autoplay = true}) async {
     var controller = videoController;
     final clamped = _clampTime(seconds);
+    _manualPlayheadSeconds = clamped;
     if (_previewUsesProxy && !_proxyContainsSourceTime(clamped)) {
       final path = selectedFile?.path;
       if (!kIsWeb && path != null && path.isNotEmpty) {
@@ -3449,6 +3472,7 @@ class EditorController extends ChangeNotifier {
       }
     }
     if (controller == null || !controller.value.isInitialized) {
+      notifyListeners();
       return;
     }
     final localSeconds = _previewLocalSecondsFor(clamped, controller);
@@ -3705,6 +3729,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final seconds = currentPositionSeconds;
+    _manualPlayheadSeconds = seconds;
     final isPlaying = controller.value.isPlaying;
     if ((seconds - _lastNotifiedPosition).abs() >=
             timecodeFrameDurationSeconds ||
@@ -3724,7 +3749,13 @@ class EditorController extends ChangeNotifier {
     return '';
   }
 
-  double _clampTime(double value) => value.clamp(0.0, duration).toDouble();
+  double _clampTime(double value) {
+    final sourceDuration = timelineSourceDuration;
+    if (sourceDuration <= 0) {
+      return value < 0 ? 0 : value;
+    }
+    return value.clamp(0.0, sourceDuration).toDouble();
+  }
 
   double _snapToFrame(double value) => snapSecondsToFrame(value);
 
@@ -3767,6 +3798,26 @@ class EditorController extends ChangeNotifier {
       return a.id.compareTo(b.id);
     });
     return normalized;
+  }
+
+  TimelineMarker? _nextTimelineMarkerFrom(double seconds) {
+    final threshold = seconds + timecodeFrameDurationSeconds / 2;
+    for (final marker in timelineMarkers) {
+      if (marker.seconds > threshold) {
+        return marker;
+      }
+    }
+    return null;
+  }
+
+  TimelineMarker? _previousTimelineMarkerFrom(double seconds) {
+    final threshold = seconds - timecodeFrameDurationSeconds / 2;
+    for (final marker in timelineMarkers.reversed) {
+      if (marker.seconds < threshold) {
+        return marker;
+      }
+    }
+    return null;
   }
 
   String _markerColorFor(int id) {
@@ -4661,6 +4712,7 @@ class EditorController extends ChangeNotifier {
       jobId = project.jobId;
     }
     duration = project.duration;
+    _manualPlayheadSeconds = 0;
     segments = _reorderSegments(project.segments);
     captions = [
       for (var index = 0; index < project.captions.length; index++)

@@ -21,6 +21,8 @@ enum _TimelineMenuAction {
   clearIn,
   clearOut,
   addMarker,
+  previousMarker,
+  nextMarker,
   deleteMarker,
   clearTimelineMarkers,
   addEdit,
@@ -67,6 +69,8 @@ class TimelineEditor extends StatefulWidget {
     this.onClearMarkIn,
     this.onClearMarkOut,
     this.onAddMarkerAt,
+    this.onJumpToPreviousMarker,
+    this.onJumpToNextMarker,
     this.onDeleteMarker,
     this.onClearTimelineMarkers,
     this.onMarkClip,
@@ -113,6 +117,8 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearMarkIn;
   final VoidCallback? onClearMarkOut;
   final ValueChanged<double>? onAddMarkerAt;
+  final VoidCallback? onJumpToPreviousMarker;
+  final VoidCallback? onJumpToNextMarker;
   final ValueChanged<int>? onDeleteMarker;
   final VoidCallback? onClearTimelineMarkers;
   final VoidCallback? onMarkClip;
@@ -347,6 +353,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onClearMarkOut?.call();
       case _TimelineMenuAction.addMarker:
         widget.onAddMarkerAt?.call(seconds);
+      case _TimelineMenuAction.previousMarker:
+        widget.onJumpToPreviousMarker?.call();
+      case _TimelineMenuAction.nextMarker:
+        widget.onJumpToNextMarker?.call();
       case _TimelineMenuAction.deleteMarker:
         if (marker != null) {
           widget.onDeleteMarker?.call(marker.id);
@@ -475,6 +485,20 @@ class _TimelineEditorState extends State<TimelineEditor> {
         enabled: widget.onAddMarkerAt != null,
       ),
       _menuItem(
+        Icons.skip_previous,
+        'Previous marker',
+        _TimelineMenuAction.previousMarker,
+        shortcut: 'Ctrl+Shift+M',
+        enabled: _hasPreviousMarker() && widget.onJumpToPreviousMarker != null,
+      ),
+      _menuItem(
+        Icons.skip_next,
+        'Next marker',
+        _TimelineMenuAction.nextMarker,
+        shortcut: 'Shift+M',
+        enabled: _hasNextMarker() && widget.onJumpToNextMarker != null,
+      ),
+      _menuItem(
         Icons.bookmark_remove_outlined,
         marker == null ? 'Delete nearest marker' : 'Delete ${marker.label}',
         _TimelineMenuAction.deleteMarker,
@@ -484,7 +508,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.bookmarks_outlined,
         'Clear timeline markers',
         _TimelineMenuAction.clearTimelineMarkers,
-        shortcut: 'Ctrl+Shift+M',
+        shortcut: 'Ctrl+Alt+M',
         enabled:
             widget.timelineMarkers.isNotEmpty &&
             widget.onClearTimelineMarkers != null,
@@ -867,6 +891,16 @@ class _TimelineEditorState extends State<TimelineEditor> {
       }
     }
     return closestDistance <= 10 ? closest : null;
+  }
+
+  bool _hasNextMarker() {
+    final threshold = widget.playheadSeconds + timecodeFrameDurationSeconds / 2;
+    return widget.timelineMarkers.any((marker) => marker.seconds > threshold);
+  }
+
+  bool _hasPreviousMarker() {
+    final threshold = widget.playheadSeconds - timecodeFrameDurationSeconds / 2;
+    return widget.timelineMarkers.any((marker) => marker.seconds < threshold);
   }
 
   double _totalOutputSeconds() {

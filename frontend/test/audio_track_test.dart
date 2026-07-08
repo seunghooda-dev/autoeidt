@@ -235,7 +235,7 @@ void main() {
     expect(controller.selectedShortsId, 7);
   });
 
-  test('timeline markers can be added cleared and undone', () {
+  test('timeline markers can be added navigated cleared and undone', () async {
     final controller = EditorController(autoStartEngine: false)..duration = 120;
 
     controller.addTimelineMarkerAt(12.345, label: 'Hook');
@@ -252,6 +252,31 @@ void main() {
       'Hook',
       'Fact',
     ]);
+    expect(controller.canJumpToNextTimelineMarker, isTrue);
+    expect(controller.canJumpToPreviousTimelineMarker, isFalse);
+
+    controller.jumpToNextTimelineMarker();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      controller.currentPositionSeconds,
+      controller.timelineMarkers.first.seconds,
+    );
+
+    controller.jumpToNextTimelineMarker();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      controller.currentPositionSeconds,
+      controller.timelineMarkers.last.seconds,
+    );
+    expect(controller.canJumpToNextTimelineMarker, isFalse);
+    expect(controller.canJumpToPreviousTimelineMarker, isTrue);
+
+    controller.jumpToPreviousTimelineMarker();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      controller.currentPositionSeconds,
+      controller.timelineMarkers.first.seconds,
+    );
 
     final markerId = controller.timelineMarkers.first.id;
     controller.deleteTimelineMarker(markerId);

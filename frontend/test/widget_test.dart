@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/main.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
+import 'package:highlight_editor_app/utils/timecode.dart';
 import 'package:highlight_editor_app/widgets/render_outputs_panel.dart';
 import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:provider/provider.dart';
@@ -67,14 +68,31 @@ void main() {
     expect(controller.selectedSegment!.audioFadeIn, 0.12);
     expect(controller.selectedSegment!.audioFadeOut, 0.12);
 
-    await _pressShortcut(tester, LogicalKeyboardKey.keyM);
-    expect(controller.timelineMarkers.length, 1);
+    controller.addTimelineMarkerAt(5, label: 'A');
+    controller.addTimelineMarkerAt(12, label: 'B');
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyM, shift: true);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyM, shift: true);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 360);
 
     await _pressShortcut(
       tester,
       LogicalKeyboardKey.keyM,
       control: true,
       shift: true,
+    );
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyM);
+    expect(controller.timelineMarkers.length, 3);
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.keyM,
+      control: true,
+      alt: true,
     );
     expect(controller.timelineMarkers, isEmpty);
 
@@ -187,9 +205,13 @@ Future<void> _pressShortcut(
   LogicalKeyboardKey key, {
   bool control = false,
   bool shift = false,
+  bool alt = false,
 }) async {
   if (control) {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  }
+  if (alt) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
   }
   if (shift) {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -198,6 +220,9 @@ Future<void> _pressShortcut(
   await tester.sendKeyUpEvent(key);
   if (shift) {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  }
+  if (alt) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
   }
   if (control) {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);

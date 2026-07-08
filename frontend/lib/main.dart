@@ -123,8 +123,10 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.applyDefaultVideoTransition();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyX) {
       editor.clearMarks();
-    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyM) {
+    } else if (isCtrl && isAlt && key == LogicalKeyboardKey.keyM) {
       editor.clearTimelineMarkers();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyM) {
+      editor.jumpToPreviousTimelineMarker();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyI) {
       editor.clearMarkIn();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyO) {
@@ -149,6 +151,8 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyO) {
       editor.setMarkOutFromPlayhead();
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyM) {
+      editor.jumpToNextTimelineMarker();
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -466,6 +470,22 @@ class _CommandBar extends StatelessWidget {
                   ? editor.addTimelineMarkerAtPlayhead
                   : null,
             ),
+            IconButton.outlined(
+              tooltip: '이전 마커로 이동',
+              onPressed: controller.canJumpToPreviousTimelineMarker
+                  ? editor.jumpToPreviousTimelineMarker
+                  : null,
+              icon: const Icon(Icons.skip_previous),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '다음 마커로 이동',
+              onPressed: controller.canJumpToNextTimelineMarker
+                  ? editor.jumpToNextTimelineMarker
+                  : null,
+              icon: const Icon(Icons.skip_next),
+            ),
+            const SizedBox(width: 6),
             _ToolbarButton(
               icon: Icons.bookmark_remove_outlined,
               label: 'Clear M',
@@ -1022,6 +1042,12 @@ class _TimelineEditorBody extends StatelessWidget {
       onClearMarkIn: context.read<EditorController>().clearMarkIn,
       onClearMarkOut: context.read<EditorController>().clearMarkOut,
       onAddMarkerAt: context.read<EditorController>().addTimelineMarkerAt,
+      onJumpToPreviousMarker: context
+          .read<EditorController>()
+          .jumpToPreviousTimelineMarker,
+      onJumpToNextMarker: context
+          .read<EditorController>()
+          .jumpToNextTimelineMarker,
       onDeleteMarker: context.read<EditorController>().deleteTimelineMarker,
       onClearTimelineMarkers: context
           .read<EditorController>()
