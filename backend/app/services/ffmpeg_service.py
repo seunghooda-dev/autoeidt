@@ -403,6 +403,28 @@ def _write_caption_srt(
     return output_path
 
 
+def _caption_style_force_style(style: dict | None) -> str:
+    style = style or {}
+    font_name = re.sub(r"[^A-Za-z0-9 _.-]", "", str(style.get("font_name") or "Arial")) or "Arial"
+    font_size = max(14, min(int(style.get("font_size") or 24), 72))
+    primary_color = str(style.get("primary_color") or "&H00FFFFFF")
+    outline_color = str(style.get("outline_color") or "&H90000000")
+    if not re.fullmatch(r"&H[0-9A-Fa-f]{8}", primary_color):
+        primary_color = "&H00FFFFFF"
+    if not re.fullmatch(r"&H[0-9A-Fa-f]{8}", outline_color):
+        outline_color = "&H90000000"
+    outline = max(0, min(int(style.get("outline") or 2), 8))
+    shadow = max(0, min(int(style.get("shadow") or 0), 8))
+    alignment = max(1, min(int(style.get("alignment") or 2), 9))
+    margin_v = max(0, min(int(style.get("margin_v") or 72), 360))
+    return (
+        f"FontName={font_name},FontSize={font_size},"
+        f"PrimaryColour={primary_color},OutlineColour={outline_color},"
+        f"BorderStyle=1,Outline={outline},Shadow={shadow},"
+        f"Alignment={alignment},MarginV={margin_v}"
+    )
+
+
 def _render_reencode_with_video_args(
     video_path: Path,
     segments: list[dict],
@@ -410,6 +432,7 @@ def _render_reencode_with_video_args(
     video_args: list[str],
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
+    caption_style: dict | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -517,11 +540,10 @@ def _render_reencode_with_video_args(
             output_path.with_suffix(".srt"),
         )
     if caption_file is not None:
+        force_style = _caption_style_force_style(caption_style)
         filter_complex += (
             f";{video_chain}subtitles='{_subtitle_filter_path(caption_file)}':"
-            "force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H90000000,BorderStyle=1,Outline=2,Shadow=0,"
-            "Alignment=2,MarginV=72'[outv]"
+            f"force_style='{force_style}'[outv]"
         )
     else:
         filter_complex += f";{video_chain}format=yuv420p[outv]"
@@ -562,6 +584,7 @@ def render_highlights_reencoded(
     output_path: Path,
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
+    caption_style: dict | None = None,
 ) -> Path:
     settings = get_settings()
     if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
@@ -573,6 +596,7 @@ def render_highlights_reencoded(
                 ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20"],
                 aspect_ratio=aspect_ratio,
                 captions=captions,
+                caption_style=caption_style,
             )
         except FFmpegError:
             pass
@@ -584,6 +608,7 @@ def render_highlights_reencoded(
         ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"],
         aspect_ratio=aspect_ratio,
         captions=captions,
+        caption_style=caption_style,
     )
 
 
@@ -593,6 +618,7 @@ def render_highlights(
     output_path: Path,
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
+    caption_style: dict | None = None,
 ) -> Path:
     normalized = sorted(
         segments,
@@ -607,4 +633,5 @@ def render_highlights(
         output_path,
         aspect_ratio=aspect_ratio,
         captions=captions,
+        caption_style=caption_style,
     )

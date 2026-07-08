@@ -55,12 +55,16 @@ class EditorController extends ChangeNotifier {
   double? markIn;
   double? markOut;
   bool includeCaptions = true;
+  String captionStylePreset = 'news';
   String exportAspectRatio = '16:9';
   double timelineZoom = 1.0;
   String timelineTool = 'selection';
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
   String projectName = 'AutoEdit Project';
+  List<HighlightSegment> comparisonDefaultSegments = [];
+  List<HighlightSegment> comparisonReferenceSegments = [];
+  String comparisonSelection = 'current';
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
@@ -69,12 +73,21 @@ class EditorController extends ChangeNotifier {
     r'(^|\s)(음+|어+|아+|그니까|그러니까|뭐랄까|약간|이제)(\s|$)|you know|um+|uh+',
     caseSensitive: false,
   );
+  static final RegExp _riskPattern = RegExp(
+    r'루머|카더라|추정|추측|아마도|미확인|확인되지|일각에서는|떠돌|rumor|unconfirmed|allegedly|speculation',
+    caseSensitive: false,
+  );
 
   bool get hasFile => selectedFile != null;
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get canStartUpload =>
       hasFile && !isUploading && job?.status != 'processing';
   bool get hasReadyStyle => activeStyleProfile?.isReady ?? false;
+  bool get hasComparisonVariants =>
+      comparisonDefaultSegments.isNotEmpty &&
+      comparisonReferenceSegments.isNotEmpty;
+  CaptionRenderStyle get captionRenderStyle =>
+      CaptionRenderStyle.preset(captionStylePreset);
   String get styleStatusText {
     final profile = trainingStyleProfile ?? activeStyleProfile;
     if (profile == null) {
@@ -162,6 +175,113 @@ class EditorController extends ChangeNotifier {
         .length;
   }
 
+  int get riskyTextCount {
+    final captionCount = captions
+        .where(
+          (caption) => caption.enabled && _riskPattern.hasMatch(caption.text),
+        )
+        .length;
+    final segmentCount = segments
+        .where(
+          (segment) =>
+              _riskPattern.hasMatch(segment.script) ||
+              _riskPattern.hasMatch(segment.reason) ||
+              segment.tags.any((tag) => _riskPattern.hasMatch(tag)),
+        )
+        .length;
+    return captionCount + segmentCount;
+  }
+
+  List<EditorialCheckItem> get editorialChecklist {
+    final hasNewsSignals = segments.any(
+      (segment) => segment.tags.any(
+        (tag) => {'뉴스핵심', '근거', '영향', '대응', '출처확인', '시간축', '발언'}.contains(tag),
+      ),
+    );
+    final hasAttribution = segments.any(
+      (segment) =>
+          segment.tags.any((tag) => {'근거', '출처확인', '발언'}.contains(tag)),
+    );
+    final enabledCaptionCount = captions
+        .where((caption) => caption.enabled)
+        .length;
+    final audioReady =
+        segments.isNotEmpty &&
+        segments
+            .where((segment) => !segment.audioMuted)
+            .every(
+              (segment) => segment.audioNormalize && segment.audioPan == 0,
+            );
+    final minDurationOk =
+        outputDurationSeconds >= 150 && outputDurationSeconds <= 270;
+
+    return [
+      EditorialCheckItem(
+        label: 'Timeline',
+        detail: segments.isEmpty ? '선택된 컷 없음' : '${segments.length} clips',
+        status: segments.isEmpty
+            ? EditorialCheckStatus.block
+            : EditorialCheckStatus.pass,
+      ),
+      EditorialCheckItem(
+        label: 'Runtime',
+        detail: '${outputDurationSeconds.round()}s',
+        status: minDurationOk
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+      EditorialCheckItem(
+        label: 'Risk',
+        detail: riskyTextCount == 0
+            ? 'No risky wording'
+            : '$riskyTextCount flags',
+        status: riskyTextCount == 0
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.block,
+      ),
+      EditorialCheckItem(
+        label: 'Filler',
+        detail: fillerCaptionCount == 0
+            ? 'Clean'
+            : '$fillerCaptionCount captions',
+        status: fillerCaptionCount == 0
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+      EditorialCheckItem(
+        label: 'Attribution',
+        detail: hasNewsSignals
+            ? (hasAttribution ? 'Sourced' : 'Needs source')
+            : 'Not news',
+        status: !hasNewsSignals || hasAttribution
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+      EditorialCheckItem(
+        label: 'Audio',
+        detail: audioReady ? 'Normalized' : 'Needs mix pass',
+        status: audioReady
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+      EditorialCheckItem(
+        label: 'Captions',
+        detail: includeCaptions ? '$enabledCaptionCount enabled' : 'Off',
+        status: includeCaptions && enabledCaptionCount > 0
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.warn,
+      ),
+    ];
+  }
+
+  int get editorialBlockCount => editorialChecklist
+      .where((item) => item.status == EditorialCheckStatus.block)
+      .length;
+
+  int get editorialWarnCount => editorialChecklist
+      .where((item) => item.status == EditorialCheckStatus.warn)
+      .length;
+
   Map<String, int> get signalCounts {
     final counts = <String, int>{};
     for (final segment in segments) {
@@ -238,6 +358,9 @@ class EditorController extends ChangeNotifier {
     timelineTool = 'selection';
     videoTrackLocked = false;
     audioTrackLocked = false;
+    comparisonDefaultSegments = [];
+    comparisonReferenceSegments = [];
+    comparisonSelection = 'current';
     _clearHistory();
     await _disposeVideoController();
     notifyListeners();
@@ -387,6 +510,7 @@ class EditorController extends ChangeNotifier {
         id,
         segments,
         captions: captions,
+        captionStyle: captionRenderStyle,
         aspectRatio: aspectRatio,
         includeCaptions: includeCaptions,
         outputName: outputName,
@@ -1288,6 +1412,106 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void buildAiComparisonVariants() {
+    if (segments.isEmpty) {
+      return;
+    }
+    comparisonDefaultSegments = _reorderSegments([
+      for (final segment in segments)
+        segment.copyWith(
+          source: segment.source.contains('baseline')
+              ? segment.source
+              : '${segment.source}+baseline',
+        ),
+    ]);
+    comparisonReferenceSegments = _buildReferenceStyleVariant();
+    comparisonSelection = 'compare';
+    notifyListeners();
+  }
+
+  void applyComparisonVariant(String variant) {
+    if (!hasComparisonVariants) {
+      buildAiComparisonVariants();
+    }
+    final source = variant == 'reference'
+        ? comparisonReferenceSegments
+        : comparisonDefaultSegments;
+    if (source.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments(List<HighlightSegment>.of(source));
+    selectedSegmentOrder = segments.first.order;
+    comparisonSelection = variant;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void applyCaptionStylePreset(String preset) {
+    if (captionStylePreset == preset && includeCaptions) {
+      return;
+    }
+    _commitHistory();
+    captionStylePreset = preset;
+    includeCaptions = true;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void applyAudioAutoMix() {
+    if (segments.isEmpty || audioTrackLocked) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments([
+      for (final segment in segments)
+        segment.copyWith(
+          audioNormalize: !segment.audioMuted,
+          audioPan: 0,
+          audioVolume: segment.audioMuted
+              ? segment.audioVolume
+              : segment.audioVolume.clamp(0.85, 1.15).toDouble(),
+          audioFadeIn: segment.audioFadeIn == 0 ? 0.08 : segment.audioFadeIn,
+          audioFadeOut: segment.audioFadeOut == 0 ? 0.16 : segment.audioFadeOut,
+          source: _appendSource(segment.source, 'audio'),
+        ),
+    ]);
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void applyEditorialReviewPass() {
+    if (segments.isEmpty && captions.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    includeCaptions = true;
+    captionStylePreset = captionStylePreset == 'minimal'
+        ? captionStylePreset
+        : 'news';
+    captions = [
+      for (final caption in captions)
+        if (_fillerPattern.hasMatch(caption.text))
+          caption.copyWith(enabled: false)
+        else
+          caption,
+    ];
+    segments = _reorderSegments([
+      for (final segment in segments)
+        segment.copyWith(
+          videoFadeIn: segment.videoFadeIn == 0 ? 0.08 : segment.videoFadeIn,
+          videoFadeOut: segment.videoFadeOut == 0 ? 0.12 : segment.videoFadeOut,
+          audioNormalize: !segment.audioMuted,
+          audioPan: 0,
+          audioFadeIn: segment.audioFadeIn == 0 ? 0.08 : segment.audioFadeIn,
+          audioFadeOut: segment.audioFadeOut == 0 ? 0.16 : segment.audioFadeOut,
+          source: _appendSource(segment.source, 'qa'),
+        ),
+    ]);
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void updateCaption(CaptionSegment updated) {
     _commitHistory();
     captions = [
@@ -1415,6 +1639,9 @@ class EditorController extends ChangeNotifier {
     transcript = timeline.transcript;
     captions = timeline.captions;
     waveform = timeline.waveform;
+    comparisonDefaultSegments = [];
+    comparisonReferenceSegments = [];
+    comparisonSelection = 'current';
     if (segments.isNotEmpty &&
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.first.order;
@@ -1607,6 +1834,67 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  List<HighlightSegment> _buildReferenceStyleVariant() {
+    final profile = activeStyleProfile;
+    final targetMax = profile?.targetSegmentSecondsMax ?? 52.0;
+    final targetTotal = profile?.preferShortsStructure == true ? 75.0 : 240.0;
+    final ranked = [...segments]
+      ..sort((a, b) {
+        final scoreCompare = b.score.compareTo(a.score);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.order.compareTo(b.order);
+      });
+    final selected = <HighlightSegment>[];
+    var total = 0.0;
+    for (final segment in ranked) {
+      if (selected.isNotEmpty && total >= targetTotal) {
+        break;
+      }
+      final fitted = _referenceStyleSegment(segment, targetMax);
+      selected.add(fitted);
+      total += fitted.outputDuration;
+    }
+    if (selected.isEmpty) {
+      selected.addAll(
+        segments.map((segment) => _referenceStyleSegment(segment, targetMax)),
+      );
+    }
+    selected.sort((a, b) => a.start.compareTo(b.start));
+    return _reorderSegments(selected);
+  }
+
+  HighlightSegment _referenceStyleSegment(
+    HighlightSegment segment,
+    double targetMax,
+  ) {
+    var start = segment.start;
+    var end = segment.end;
+    if (segment.duration > targetMax && targetMax >= 6.0) {
+      end = _snapToFrame(_clampProjectTime(start + targetMax));
+    }
+    return segment.copyWith(
+      start: start,
+      end: end,
+      audioStart: segment.audioLinked ? start : segment.audioStart,
+      audioEnd: segment.audioLinked ? end : segment.audioEnd,
+      videoFadeIn: segment.videoFadeIn == 0 ? 0.06 : segment.videoFadeIn,
+      videoFadeOut: segment.videoFadeOut == 0 ? 0.10 : segment.videoFadeOut,
+      audioFadeIn: segment.audioFadeIn == 0 ? 0.08 : segment.audioFadeIn,
+      audioFadeOut: segment.audioFadeOut == 0 ? 0.16 : segment.audioFadeOut,
+      audioNormalize: !segment.audioMuted,
+      audioPan: 0,
+      colorContrast: segment.colorContrast == 1 ? 1.05 : segment.colorContrast,
+      source: _appendSource(segment.source, 'reference'),
+      tags: [...segment.tags, if (!segment.tags.contains('레퍼런스적용')) '레퍼런스적용'],
+    );
+  }
+
+  String _appendSource(String source, String suffix) {
+    return source.contains(suffix) ? source : '$source+$suffix';
+  }
+
   HighlightSegment? _segmentForEditAt(
     double seconds, {
     bool requireInside = true,
@@ -1659,6 +1947,9 @@ class EditorController extends ChangeNotifier {
         project.captions[index].copyWith(order: index + 1),
     ];
     waveform = project.waveform;
+    comparisonDefaultSegments = [];
+    comparisonReferenceSegments = [];
+    comparisonSelection = 'current';
     selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
     renderUrl = null;
     if (resetHistory) {
@@ -1674,6 +1965,7 @@ class EditorController extends ChangeNotifier {
       markIn: markIn,
       markOut: markOut,
       includeCaptions: includeCaptions,
+      captionStylePreset: captionStylePreset,
       exportAspectRatio: exportAspectRatio,
     );
   }
@@ -1692,6 +1984,7 @@ class EditorController extends ChangeNotifier {
     markIn = snapshot.markIn;
     markOut = snapshot.markOut;
     includeCaptions = snapshot.includeCaptions;
+    captionStylePreset = snapshot.captionStylePreset;
     exportAspectRatio = snapshot.exportAspectRatio;
   }
 
@@ -1711,6 +2004,37 @@ class EditorController extends ChangeNotifier {
   void _loadDemoProject() {
     projectName = 'AI Director Demo';
     duration = 600;
+    activeStyleProfile = const StyleProfile(
+      styleId: 'demo-style',
+      name: 'Company Reference Style',
+      status: 'ready',
+      message: 'Demo reference profile',
+      progress: 100,
+      sourceCount: 6,
+      readySourceCount: 6,
+      pace: 'fast',
+      averageCutSeconds: 4.2,
+      hookWindowSeconds: 11.0,
+      silenceAggressiveness: 0.82,
+      visualChangeSensitivity: 0.68,
+      targetSegmentSecondsMin: 12,
+      targetSegmentSecondsIdeal: 24,
+      targetSegmentSecondsMax: 38,
+      preferNewsStructure: true,
+      preferShortsStructure: false,
+      transitionStyle: 'hard_cut',
+      scoringWeights: {'hook': 1.4, 'style_duration': 1.2},
+      sources: [
+        StyleReferenceSource(
+          label: 'company_ref_01.mp4',
+          kind: 'file',
+          duration: 600,
+          sceneCount: 143,
+          averageCutSeconds: 4.2,
+          silenceRatio: 0.09,
+        ),
+      ],
+    );
     segments = const [
       HighlightSegment(
         order: 1,
@@ -1807,6 +2131,20 @@ class EditorController extends ChangeNotifier {
   }
 }
 
+enum EditorialCheckStatus { pass, warn, block }
+
+class EditorialCheckItem {
+  const EditorialCheckItem({
+    required this.label,
+    required this.detail,
+    required this.status,
+  });
+
+  final String label;
+  final String detail;
+  final EditorialCheckStatus status;
+}
+
 class _EditorSnapshot {
   const _EditorSnapshot({
     required this.segments,
@@ -1815,6 +2153,7 @@ class _EditorSnapshot {
     required this.markIn,
     required this.markOut,
     required this.includeCaptions,
+    required this.captionStylePreset,
     required this.exportAspectRatio,
   });
 
@@ -1824,5 +2163,6 @@ class _EditorSnapshot {
   final double? markIn;
   final double? markOut;
   final bool includeCaptions;
+  final String captionStylePreset;
   final String exportAspectRatio;
 }

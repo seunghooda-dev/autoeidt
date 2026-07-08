@@ -235,6 +235,86 @@ class StyleTrainingResponse {
   }
 }
 
+class CaptionRenderStyle {
+  const CaptionRenderStyle({
+    required this.preset,
+    required this.fontName,
+    required this.fontSize,
+    required this.primaryColor,
+    required this.outlineColor,
+    required this.outline,
+    required this.shadow,
+    required this.alignment,
+    required this.marginV,
+  });
+
+  final String preset;
+  final String fontName;
+  final int fontSize;
+  final String primaryColor;
+  final String outlineColor;
+  final int outline;
+  final int shadow;
+  final int alignment;
+  final int marginV;
+
+  factory CaptionRenderStyle.preset(String preset) {
+    switch (preset) {
+      case 'shorts':
+        return const CaptionRenderStyle(
+          preset: 'shorts',
+          fontName: 'Arial',
+          fontSize: 36,
+          primaryColor: '&H00FFFFFF',
+          outlineColor: '&HCC111111',
+          outline: 4,
+          shadow: 1,
+          alignment: 5,
+          marginV: 90,
+        );
+      case 'minimal':
+        return const CaptionRenderStyle(
+          preset: 'minimal',
+          fontName: 'Arial',
+          fontSize: 22,
+          primaryColor: '&H00FFFFFF',
+          outlineColor: '&H70000000',
+          outline: 1,
+          shadow: 0,
+          alignment: 2,
+          marginV: 64,
+        );
+      case 'news':
+      default:
+        return const CaptionRenderStyle(
+          preset: 'news',
+          fontName: 'Arial',
+          fontSize: 28,
+          primaryColor: '&H00FFFFFF',
+          outlineColor: '&HAA000000',
+          outline: 3,
+          shadow: 0,
+          alignment: 2,
+          marginV: 76,
+        );
+    }
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'preset': preset,
+      'font_name': fontName,
+      'font_size': fontSize,
+      'primary_color': primaryColor,
+      'outline_color': outlineColor,
+      'outline': outline,
+      'shadow': shadow,
+      'alignment': alignment,
+      'margin_v': marginV,
+    };
+  }
+}
+
 class TimelineResponse {
   const TimelineResponse({
     required this.jobId,

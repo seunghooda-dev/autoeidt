@@ -103,6 +103,7 @@ class ApiClient {
     String jobId,
     List<HighlightSegment> segments, {
     List<CaptionSegment> captions = const [],
+    CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
     String outputName = 'youtube_highlights.mp4',
@@ -112,6 +113,8 @@ class ApiClient {
       data: {
         'segments': segments.map((item) => item.toJson()).toList(),
         'captions': captions.map((item) => item.toJson()).toList(),
+        'caption_style': (captionStyle ?? CaptionRenderStyle.preset('news'))
+            .toJson(),
         'aspect_ratio': aspectRatio,
         'include_captions': includeCaptions,
         'output_name': outputName,

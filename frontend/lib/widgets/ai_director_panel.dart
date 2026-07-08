@@ -100,6 +100,14 @@ class AiDirectorPanel extends StatelessWidget {
         const SizedBox(height: 14),
         const _ReferenceStylePanel(),
         const SizedBox(height: 14),
+        const _StyleReportPanel(),
+        const SizedBox(height: 14),
+        const _ComparisonPanel(),
+        const SizedBox(height: 14),
+        const _CaptionPresetPanel(),
+        const SizedBox(height: 14),
+        const _QualityReviewPanel(),
+        const SizedBox(height: 14),
         Text(
           'Signal Mix',
           style: Theme.of(
@@ -117,6 +125,341 @@ class AiDirectorPanel extends StatelessWidget {
               maxCount: signals.values.first,
             ),
       ],
+    );
+  }
+}
+
+class _StyleReportPanel extends StatelessWidget {
+  const _StyleReportPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final profile =
+        controller.activeStyleProfile ?? controller.trainingStyleProfile;
+    if (profile == null) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    return _DirectorSection(
+      title: 'Style Report',
+      icon: Icons.analytics_outlined,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _MiniStat(label: 'Pace', value: profile.pace),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MiniStat(
+                  label: 'Cut',
+                  value: '${profile.averageCutSeconds.toStringAsFixed(1)}s',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniStat(
+                  label: 'Hook',
+                  value: '${profile.hookWindowSeconds.toStringAsFixed(0)}s',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MiniStat(
+                  label: 'Silence',
+                  value: '${(profile.silenceAggressiveness * 100).round()}%',
+                ),
+              ),
+            ],
+          ),
+          if (profile.sources.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${profile.readySourceCount}/${profile.sourceCount} references ready',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ComparisonPanel extends StatelessWidget {
+  const _ComparisonPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    return _DirectorSection(
+      title: 'A/B Compare',
+      icon: Icons.compare_arrows,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.segments.isEmpty
+                      ? null
+                      : context
+                            .read<EditorController>()
+                            .buildAiComparisonVariants,
+                  icon: const Icon(Icons.alt_route, size: 17),
+                  label: const Text('Build'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: controller.hasComparisonVariants
+                      ? () => context
+                            .read<EditorController>()
+                            .applyComparisonVariant('reference')
+                      : null,
+                  icon: const Icon(Icons.auto_awesome, size: 17),
+                  label: const Text('Ref B'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: controller.hasComparisonVariants
+                ? () => context.read<EditorController>().applyComparisonVariant(
+                    'default',
+                  )
+                : null,
+            icon: const Icon(Icons.timeline, size: 17),
+            label: Text(
+              controller.hasComparisonVariants
+                  ? 'Apply A · ${controller.comparisonDefaultSegments.length} clips'
+                  : 'Apply A · no variant',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CaptionPresetPanel extends StatelessWidget {
+  const _CaptionPresetPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    return _DirectorSection(
+      title: 'Caption Preset',
+      icon: Icons.closed_caption_outlined,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final item in const [
+            ('news', 'News'),
+            ('shorts', 'Shorts'),
+            ('minimal', 'Minimal'),
+          ])
+            ChoiceChip(
+              selected: controller.captionStylePreset == item.$1,
+              label: Text(item.$2),
+              onSelected: (_) => context
+                  .read<EditorController>()
+                  .applyCaptionStylePreset(item.$1),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QualityReviewPanel extends StatelessWidget {
+  const _QualityReviewPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final checks = controller.editorialChecklist;
+    return _DirectorSection(
+      title: 'Preflight',
+      icon: Icons.fact_check_outlined,
+      trailing:
+          '${controller.editorialBlockCount} block · ${controller.editorialWarnCount} warn',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.segments.isEmpty
+                      ? null
+                      : context.read<EditorController>().applyAudioAutoMix,
+                  icon: const Icon(Icons.graphic_eq, size: 17),
+                  label: const Text('Audio Mix'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed:
+                      controller.segments.isEmpty && controller.captions.isEmpty
+                      ? null
+                      : context
+                            .read<EditorController>()
+                            .applyEditorialReviewPass,
+                  icon: const Icon(Icons.verified_outlined, size: 17),
+                  label: const Text('QA Pass'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          for (final check in checks) _CheckRow(check: check),
+        ],
+      ),
+    );
+  }
+}
+
+class _DirectorSection extends StatelessWidget {
+  const _DirectorSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.trailing,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.44),
+        border: Border.all(color: colorScheme.outline),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (trailing != null)
+                Text(trailing!, style: Theme.of(context).textTheme.labelSmall),
+            ],
+          ),
+          const SizedBox(height: 9),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colorScheme.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({required this.check});
+
+  final EditorialCheckItem check;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = switch (check.status) {
+      EditorialCheckStatus.pass => colorScheme.primary,
+      EditorialCheckStatus.warn => const Color(0xFFF59E0B),
+      EditorialCheckStatus.block => colorScheme.error,
+    };
+    final icon = switch (check.status) {
+      EditorialCheckStatus.pass => Icons.check_circle_outline,
+      EditorialCheckStatus.warn => Icons.error_outline,
+      EditorialCheckStatus.block => Icons.cancel_outlined,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              check.label,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              check.detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

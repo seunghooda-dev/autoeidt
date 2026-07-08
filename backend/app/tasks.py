@@ -463,12 +463,14 @@ def render_video_job(
         captions = options.get("captions") or []
         if not options.get("include_captions", False):
             captions = []
+        caption_style = options.get("caption_style") or {}
         rendered_path = render_highlights(
             video_path,
             normalized,
             output_path,
             aspect_ratio=str(options.get("aspect_ratio") or "16:9"),
             captions=captions,
+            caption_style=caption_style,
         )
 
         _set_task_state(

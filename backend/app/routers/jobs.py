@@ -186,6 +186,7 @@ def render_job(
     segments = [segment.model_dump() for segment in payload.segments]
     render_options = {
         "captions": [caption.model_dump() for caption in payload.captions],
+        "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,
         "include_captions": payload.include_captions,
         "output_name": safe_filename(payload.output_name or "youtube_highlights.mp4"),

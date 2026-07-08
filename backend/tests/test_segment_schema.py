@@ -1,4 +1,4 @@
-from app.schemas import HighlightSegment
+from app.schemas import CaptionStyle, HighlightSegment
 
 
 def test_highlight_segment_accepts_track_controls() -> None:
@@ -27,3 +27,19 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.audio_volume == 2.0
     assert segment.audio_pan == -1.0
     assert segment.audio_normalize is True
+
+
+def test_caption_style_clamps_unsafe_values() -> None:
+    style = CaptionStyle(
+        font_size=200,
+        outline=20,
+        shadow=20,
+        alignment=99,
+        margin_v=999,
+    )
+
+    assert style.font_size == 72
+    assert style.outline == 8
+    assert style.shadow == 8
+    assert style.alignment == 9
+    assert style.margin_v == 360

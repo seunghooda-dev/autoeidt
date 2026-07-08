@@ -41,6 +41,43 @@ class CaptionSegment(BaseModel):
     enabled: bool = True
 
 
+class CaptionStyle(BaseModel):
+    preset: str = "news"
+    font_name: str = "Arial"
+    font_size: int = 24
+    primary_color: str = "&H00FFFFFF"
+    outline_color: str = "&H90000000"
+    outline: int = 2
+    shadow: int = 0
+    alignment: int = 2
+    margin_v: int = 72
+
+    @field_validator("font_size")
+    @classmethod
+    def font_size_must_be_safe(cls, value: int) -> int:
+        return max(14, min(int(value), 72))
+
+    @field_validator("outline")
+    @classmethod
+    def outline_must_be_safe(cls, value: int) -> int:
+        return max(0, min(int(value), 8))
+
+    @field_validator("shadow")
+    @classmethod
+    def shadow_must_be_safe(cls, value: int) -> int:
+        return max(0, min(int(value), 8))
+
+    @field_validator("alignment")
+    @classmethod
+    def alignment_must_be_safe(cls, value: int) -> int:
+        return max(1, min(int(value), 9))
+
+    @field_validator("margin_v")
+    @classmethod
+    def margin_v_must_be_safe(cls, value: int) -> int:
+        return max(0, min(int(value), 360))
+
+
 class HighlightSegment(BaseModel):
     order: int = 0
     start: float
@@ -205,6 +242,7 @@ class TimelineResponse(BaseModel):
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
     captions: list[CaptionSegment] = Field(default_factory=list)
+    caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "16:9"
     include_captions: bool = False
     output_name: str = "youtube_highlights.mp4"

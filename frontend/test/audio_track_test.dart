@@ -336,4 +336,65 @@ void main() {
       isTrue,
     );
   });
+
+  test('director comparison caption audio and QA passes update timeline', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 300
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 80,
+          reason: '결과부터 보여주는 핵심 구간',
+          script: '결과부터 보여드리면 중요한 근거가 있습니다',
+          score: 9,
+          tags: ['뉴스핵심', '근거'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 120,
+          end: 150,
+          reason: '미확인 루머 언급',
+          script: '아직 확인되지 않은 루머가 있습니다',
+          score: 5,
+          tags: ['미확인'],
+        ),
+      ]
+      ..captions = const [
+        CaptionSegment(order: 1, start: 0, end: 3, text: '음 이제 시작합니다'),
+        CaptionSegment(order: 2, start: 120, end: 123, text: '미확인 루머입니다'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    expect(controller.editorialBlockCount, 1);
+    expect(controller.editorialWarnCount, greaterThanOrEqualTo(1));
+
+    controller.buildAiComparisonVariants();
+    expect(controller.hasComparisonVariants, isTrue);
+    expect(controller.comparisonReferenceSegments.first.duration <= 52, isTrue);
+
+    controller.applyComparisonVariant('reference');
+    expect(controller.segments.first.source.contains('reference'), isTrue);
+
+    controller.applyCaptionStylePreset('shorts');
+    expect(controller.captionStylePreset, 'shorts');
+    expect(controller.includeCaptions, isTrue);
+    expect(controller.captionRenderStyle.fontSize, 36);
+
+    controller.applyAudioAutoMix();
+    expect(
+      controller.segments
+          .where((segment) => !segment.audioMuted)
+          .every((segment) => segment.audioNormalize && segment.audioPan == 0),
+      isTrue,
+    );
+
+    controller.applyEditorialReviewPass();
+    expect(controller.captions.first.enabled, isFalse);
+    expect(controller.includeCaptions, isTrue);
+    expect(
+      controller.segments.every((segment) => segment.audioFadeOut > 0),
+      isTrue,
+    );
+  });
 }
