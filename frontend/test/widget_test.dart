@@ -303,6 +303,57 @@ void main() {
     );
   });
 
+  testWidgets('timeline context menu exposes audio bus commands', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 35, reason: 'test'),
+        HighlightSegment(order: 2, start: 45, end: 70, reason: 'test 2'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    final timelineBox = tester.renderObject<RenderBox>(
+      find.byType(TimelineEditor).first,
+    );
+    final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
+    final menuPoint = timelineTopLeft + const Offset(170, 98);
+
+    await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Audio Track Bus'), findsOneWidget);
+    expect(find.text('Disable all A1'), findsOneWidget);
+    expect(find.text('Disable all A2'), findsOneWidget);
+    expect(find.text('Solo A2 track'), findsOneWidget);
+
+    await tester.tap(find.text('Solo A2 track'));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.segments.every((segment) => !segment.audioChannel1Enabled),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => segment.audioChannel2Enabled),
+      isTrue,
+    );
+  });
+
   testWidgets('render output panel can reveal local file location', (
     tester,
   ) async {

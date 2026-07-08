@@ -57,6 +57,10 @@ enum _TimelineMenuAction {
   toggleAudioMute,
   toggleAudioChannel1,
   toggleAudioChannel2,
+  toggleAllAudioChannel1,
+  toggleAllAudioChannel2,
+  soloAudioChannel1,
+  soloAudioChannel2,
   toggleVideoEnabled,
   resetAudioPan,
 }
@@ -117,6 +121,10 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleAudioMute,
     this.onToggleAudioChannel1,
     this.onToggleAudioChannel2,
+    this.onToggleAllAudioChannel1,
+    this.onToggleAllAudioChannel2,
+    this.onSoloAudioChannel1,
+    this.onSoloAudioChannel2,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onZoomDelta,
@@ -175,6 +183,10 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleAudioMute;
   final VoidCallback? onToggleAudioChannel1;
   final VoidCallback? onToggleAudioChannel2;
+  final VoidCallback? onToggleAllAudioChannel1;
+  final VoidCallback? onToggleAllAudioChannel2;
+  final VoidCallback? onSoloAudioChannel1;
+  final VoidCallback? onSoloAudioChannel2;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final ValueChanged<double>? onZoomDelta;
@@ -463,6 +475,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onToggleAudioChannel1?.call();
       case _TimelineMenuAction.toggleAudioChannel2:
         widget.onToggleAudioChannel2?.call();
+      case _TimelineMenuAction.toggleAllAudioChannel1:
+        widget.onToggleAllAudioChannel1?.call();
+      case _TimelineMenuAction.toggleAllAudioChannel2:
+        widget.onToggleAllAudioChannel2?.call();
+      case _TimelineMenuAction.soloAudioChannel1:
+        widget.onSoloAudioChannel1?.call();
+      case _TimelineMenuAction.soloAudioChannel2:
+        widget.onSoloAudioChannel2?.call();
       case _TimelineMenuAction.toggleVideoEnabled:
         widget.onToggleVideoEnabled?.call();
       case _TimelineMenuAction.resetAudioPan:
@@ -495,6 +515,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.segments.any(
           (item) => item.start < widget.markOut! && item.end > widget.markIn!,
         );
+    final showAudioBus = _isAudioTrack(track) && widget.segments.isNotEmpty;
+    final allA1Enabled =
+        widget.segments.isNotEmpty &&
+        widget.segments.every((segment) => segment.audioChannel1Enabled);
+    final allA2Enabled =
+        widget.segments.isNotEmpty &&
+        widget.segments.every((segment) => segment.audioChannel2Enabled);
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -534,6 +561,38 @@ class _TimelineEditorState extends State<TimelineEditor> {
           'Move detached audio later 10f',
           _TimelineMenuAction.nudgeAudioLaterTenFrames,
           shortcut: 'Ctrl+Alt+Shift+Right',
+        ),
+        const PopupMenuDivider(),
+      ],
+      if (showAudioBus) ...[
+        _menuHeader('Audio Track Bus'),
+        _menuItem(
+          allA1Enabled
+              ? Icons.check_box_outlined
+              : Icons.check_box_outline_blank,
+          allA1Enabled ? 'Disable all A1' : 'Enable all A1',
+          _TimelineMenuAction.toggleAllAudioChannel1,
+          enabled: !audioLocked && widget.onToggleAllAudioChannel1 != null,
+        ),
+        _menuItem(
+          allA2Enabled
+              ? Icons.check_box_outlined
+              : Icons.check_box_outline_blank,
+          allA2Enabled ? 'Disable all A2' : 'Enable all A2',
+          _TimelineMenuAction.toggleAllAudioChannel2,
+          enabled: !audioLocked && widget.onToggleAllAudioChannel2 != null,
+        ),
+        _menuItem(
+          Icons.filter_1_outlined,
+          'Solo A1 track',
+          _TimelineMenuAction.soloAudioChannel1,
+          enabled: !audioLocked && widget.onSoloAudioChannel1 != null,
+        ),
+        _menuItem(
+          Icons.filter_2_outlined,
+          'Solo A2 track',
+          _TimelineMenuAction.soloAudioChannel2,
+          enabled: !audioLocked && widget.onSoloAudioChannel2 != null,
         ),
         const PopupMenuDivider(),
       ],
