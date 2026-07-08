@@ -39,6 +39,10 @@ enum _TimelineMenuAction {
   rippleTrimEnd,
   extendStart,
   extendEnd,
+  rollIncomingEarlierFrame,
+  rollIncomingLaterFrame,
+  rollOutgoingEarlierFrame,
+  rollOutgoingLaterFrame,
   slipEarlierFrame,
   slipLaterFrame,
   slipEarlierTenFrames,
@@ -117,6 +121,8 @@ class TimelineEditor extends StatefulWidget {
     this.onRippleTrimEndTo,
     this.onExtendStartTo,
     this.onExtendEndTo,
+    this.onRollIncomingEditFrames,
+    this.onRollOutgoingEditFrames,
     this.onApplyVideoTransition,
     this.onApplyAudioTransition,
     this.onSetSelectionTool,
@@ -187,6 +193,8 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<double>? onRippleTrimEndTo;
   final ValueChanged<double>? onExtendStartTo;
   final ValueChanged<double>? onExtendEndTo;
+  final ValueChanged<int>? onRollIncomingEditFrames;
+  final ValueChanged<int>? onRollOutgoingEditFrames;
   final VoidCallback? onApplyVideoTransition;
   final VoidCallback? onApplyAudioTransition;
   final VoidCallback? onSetSelectionTool;
@@ -466,6 +474,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onExtendStartTo?.call(seconds);
       case _TimelineMenuAction.extendEnd:
         widget.onExtendEndTo?.call(seconds);
+      case _TimelineMenuAction.rollIncomingEarlierFrame:
+        widget.onRollIncomingEditFrames?.call(-1);
+      case _TimelineMenuAction.rollIncomingLaterFrame:
+        widget.onRollIncomingEditFrames?.call(1);
+      case _TimelineMenuAction.rollOutgoingEarlierFrame:
+        widget.onRollOutgoingEditFrames?.call(-1);
+      case _TimelineMenuAction.rollOutgoingLaterFrame:
+        widget.onRollOutgoingEditFrames?.call(1);
       case _TimelineMenuAction.slipEarlierFrame:
         widget.onSlipSelectedSegmentFrames?.call(-1);
       case _TimelineMenuAction.slipLaterFrame:
@@ -563,6 +579,18 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.videoTrackTargeted || widget.audioTrack2Targeted;
     final canDisableAudio2Target =
         widget.videoTrackTargeted || widget.audioTrack1Targeted;
+    final segmentIndex = segment == null
+        ? -1
+        : widget.segments.indexWhere((item) => item.order == segment.order);
+    final canRollIncoming =
+        clipEditable &&
+        segmentIndex > 0 &&
+        widget.onRollIncomingEditFrames != null;
+    final canRollOutgoing =
+        clipEditable &&
+        segmentIndex >= 0 &&
+        segmentIndex < widget.segments.length - 1 &&
+        widget.onRollOutgoingEditFrames != null;
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -868,6 +896,34 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.extendEnd,
         shortcut: 'Shift+W',
         enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.compare_arrows,
+        'Roll incoming earlier 1f',
+        _TimelineMenuAction.rollIncomingEarlierFrame,
+        shortcut: 'Alt+,',
+        enabled: canRollIncoming,
+      ),
+      _menuItem(
+        Icons.compare_arrows,
+        'Roll incoming later 1f',
+        _TimelineMenuAction.rollIncomingLaterFrame,
+        shortcut: 'Alt+.',
+        enabled: canRollIncoming,
+      ),
+      _menuItem(
+        Icons.swap_horizontal_circle_outlined,
+        'Roll outgoing earlier 1f',
+        _TimelineMenuAction.rollOutgoingEarlierFrame,
+        shortcut: 'Alt+Shift+,',
+        enabled: canRollOutgoing,
+      ),
+      _menuItem(
+        Icons.swap_horizontal_circle_outlined,
+        'Roll outgoing later 1f',
+        _TimelineMenuAction.rollOutgoingLaterFrame,
+        shortcut: 'Alt+Shift+.',
+        enabled: canRollOutgoing,
       ),
       _menuItem(
         Icons.swap_horiz,

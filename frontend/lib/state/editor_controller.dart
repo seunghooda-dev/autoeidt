@@ -2202,6 +2202,78 @@ class EditorController extends ChangeNotifier {
     updateSegment(next);
   }
 
+  void rollSelectedIncomingEditFrames(int frameDelta) {
+    _rollSelectedEditFrames(frameDelta, incoming: true);
+  }
+
+  void rollSelectedOutgoingEditFrames(int frameDelta) {
+    _rollSelectedEditFrames(frameDelta, incoming: false);
+  }
+
+  void _rollSelectedEditFrames(int frameDelta, {required bool incoming}) {
+    if (frameDelta == 0 || videoTrackLocked || audioTrackLocked) {
+      return;
+    }
+    final order = selectedSegmentOrder;
+    if (order == null || segments.length < 2) {
+      return;
+    }
+    final index = segments.indexWhere((segment) => segment.order == order);
+    if (index < 0 ||
+        (incoming && index == 0) ||
+        (!incoming && index >= segments.length - 1)) {
+      return;
+    }
+
+    final sourceFrames = secondsToTimecodeFrame(timelineSourceDuration);
+    if (sourceFrames <= 1) {
+      return;
+    }
+    final leftIndex = incoming ? index - 1 : index;
+    final rightIndex = incoming ? index : index + 1;
+    final left = segments[leftIndex];
+    final right = segments[rightIndex];
+    final leftStartFrame = secondsToTimecodeFrame(left.start);
+    final leftEndFrame = secondsToTimecodeFrame(left.end);
+    final rightStartFrame = secondsToTimecodeFrame(right.start);
+    final rightEndFrame = secondsToTimecodeFrame(right.end);
+    const minimumClipFrames = 1;
+    final minDelta = math.max(
+      leftStartFrame + minimumClipFrames - leftEndFrame,
+      -rightStartFrame,
+    );
+    final maxDelta = math.min(
+      sourceFrames - leftEndFrame,
+      rightEndFrame - minimumClipFrames - rightStartFrame,
+    );
+    final actualDelta = frameDelta.clamp(minDelta, maxDelta).toInt();
+    if (actualDelta == 0) {
+      return;
+    }
+
+    final nextLeftEnd = timecodeFrameToSeconds(leftEndFrame + actualDelta);
+    final nextRightStart = timecodeFrameToSeconds(
+      rightStartFrame + actualDelta,
+    );
+    final nextSegments = List<HighlightSegment>.of(segments);
+    nextSegments[leftIndex] = left.copyWith(
+      end: nextLeftEnd,
+      audioEnd: left.audioLinked ? nextLeftEnd : left.audioEnd,
+      source: _appendSource(left.source, 'roll'),
+    );
+    nextSegments[rightIndex] = right.copyWith(
+      start: nextRightStart,
+      audioStart: right.audioLinked ? nextRightStart : right.audioStart,
+      source: _appendSource(right.source, 'roll'),
+    );
+
+    _commitHistory();
+    segments = _reorderSegments(nextSegments);
+    selectedSegmentOrder = order.clamp(1, segments.length).toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void setSelectedPlaybackSpeed(double value) {
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked || audioTrackLocked) {

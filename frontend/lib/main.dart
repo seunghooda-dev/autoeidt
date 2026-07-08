@@ -213,6 +213,23 @@ class _EditorDashboardState extends State<EditorDashboard> {
         isShift &&
         key == LogicalKeyboardKey.arrowRight) {
       editor.slipSelectedSegmentFrames(10);
+    } else if (!isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.comma) {
+      editor.rollSelectedIncomingEditFrames(-1);
+    } else if (!isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.period) {
+      editor.rollSelectedIncomingEditFrames(1);
+    } else if (!isCtrl && isAlt && isShift && key == LogicalKeyboardKey.comma) {
+      editor.rollSelectedOutgoingEditFrames(-1);
+    } else if (!isCtrl &&
+        isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.period) {
+      editor.rollSelectedOutgoingEditFrames(1);
     } else if (isCtrl &&
         isAlt &&
         !isShift &&
@@ -1337,6 +1354,12 @@ class _TimelineEditorBody extends StatelessWidget {
           .rippleTrimSelectedEndTo,
       onExtendStartTo: context.read<EditorController>().extendSelectedStartTo,
       onExtendEndTo: context.read<EditorController>().extendSelectedEndTo,
+      onRollIncomingEditFrames: context
+          .read<EditorController>()
+          .rollSelectedIncomingEditFrames,
+      onRollOutgoingEditFrames: context
+          .read<EditorController>()
+          .rollSelectedOutgoingEditFrames,
       onApplyVideoTransition: context
           .read<EditorController>()
           .applyDefaultVideoTransition,

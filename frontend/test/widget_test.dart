@@ -231,6 +231,40 @@ void main() {
     expect(controller.segments, isEmpty);
   });
 
+  testWidgets('rolling trim shortcuts adjust adjacent edit boundaries', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'first'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'second'),
+        HighlightSegment(order: 3, start: 40, end: 50, reason: 'third'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.period, alt: true);
+    expect(secondsToTimecodeFrame(controller.segments[0].end), 301);
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 601);
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.comma,
+      alt: true,
+      shift: true,
+    );
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 899);
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 1199);
+  });
+
   testWidgets('mouse wheel zooms the timeline track', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -378,6 +412,10 @@ void main() {
     expect(find.text('Ctrl+Alt+Left'), findsOneWidget);
     expect(find.text('Move detached audio later 10f'), findsOneWidget);
     expect(find.text('Ctrl+Alt+Shift+Right'), findsOneWidget);
+    expect(find.text('Roll incoming later 1f'), findsOneWidget);
+    expect(find.text('Alt+.'), findsOneWidget);
+    expect(find.text('Roll outgoing earlier 1f'), findsOneWidget);
+    expect(find.text('Alt+Shift+,'), findsOneWidget);
 
     await tester.tap(find.text('Move detached audio later 1f'));
     await tester.pumpAndSettle();

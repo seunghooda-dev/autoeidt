@@ -1001,6 +1001,46 @@ void main() {
     expect(secondsToTimecodeFrame(controller.segments.last.start), 240);
   });
 
+  test('rolling trim preserves total timeline duration across edit points', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'first'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'second'),
+        HighlightSegment(order: 3, start: 40, end: 50, reason: 'third'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    final originalOutputFrames = secondsToTimecodeFrame(
+      controller.outputDurationSeconds,
+    );
+
+    controller.rollSelectedIncomingEditFrames(5);
+
+    expect(secondsToTimecodeFrame(controller.segments[0].end), 305);
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 605);
+    expect(
+      secondsToTimecodeFrame(controller.outputDurationSeconds),
+      originalOutputFrames,
+    );
+    expect(controller.segments[0].source, contains('roll'));
+    expect(controller.segments[1].source, contains('roll'));
+
+    controller.rollSelectedOutgoingEditFrames(-10);
+
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 890);
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 1190);
+    expect(
+      secondsToTimecodeFrame(controller.outputDurationSeconds),
+      originalOutputFrames,
+    );
+
+    controller.toggleVideoTrackLock();
+    controller.rollSelectedIncomingEditFrames(10);
+    expect(secondsToTimecodeFrame(controller.segments[0].end), 305);
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 605);
+  });
+
   test('video visibility audio pan and track locks update editor state', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30
