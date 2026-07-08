@@ -126,6 +126,7 @@ void main() {
     tester,
   ) async {
     String? revealedPath;
+    String? openedPath;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -143,16 +144,25 @@ void main() {
             onRevealPath: (path) async {
               revealedPath = path;
             },
+            onOpenPath: (path) async {
+              openedPath = path;
+            },
           ),
         ),
       ),
     );
 
+    await tester.tap(find.byTooltip('Open rendered file'));
+    await tester.pump();
+
+    expect(openedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
+    expect(find.text('shorts_01.mp4 opened'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+
     await tester.tap(find.byTooltip('Show in folder'));
     await tester.pump();
 
     expect(revealedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
-    expect(find.text('shorts_01.mp4 location opened'), findsOneWidget);
   });
 }
 

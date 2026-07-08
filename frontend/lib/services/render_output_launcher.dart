@@ -42,10 +42,49 @@ class RenderOutputLauncher {
     };
   }
 
+  static RenderOutputOpenCommand? openCommandForPath(
+    String path, {
+    String? platform,
+  }) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final currentPlatform =
+        platform ?? (kIsWeb ? 'web' : io.Platform.operatingSystem);
+    return switch (currentPlatform) {
+      'windows' => RenderOutputOpenCommand(
+        executable: 'cmd.exe',
+        arguments: ['/c', 'start', '', trimmed],
+      ),
+      'macos' => RenderOutputOpenCommand(
+        executable: 'open',
+        arguments: [trimmed],
+      ),
+      'linux' => RenderOutputOpenCommand(
+        executable: 'xdg-open',
+        arguments: [trimmed],
+      ),
+      _ => null,
+    };
+  }
+
   static Future<void> reveal(String path) async {
     final command = commandForPath(path);
     if (command == null) {
       throw UnsupportedError('render output location is not available');
+    }
+    await io.Process.start(
+      command.executable,
+      command.arguments,
+      mode: io.ProcessStartMode.detached,
+    );
+  }
+
+  static Future<void> open(String path) async {
+    final command = openCommandForPath(path);
+    if (command == null) {
+      throw UnsupportedError('render output file is not available');
     }
     await io.Process.start(
       command.executable,

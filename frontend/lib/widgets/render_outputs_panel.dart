@@ -10,11 +10,13 @@ class RenderOutputsPanel extends StatelessWidget {
     required this.outputs,
     this.compact = false,
     this.onRevealPath,
+    this.onOpenPath,
   });
 
   final List<BatchRenderItemResult> outputs;
   final bool compact;
   final Future<void> Function(String path)? onRevealPath;
+  final Future<void> Function(String path)? onOpenPath;
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +62,7 @@ class RenderOutputsPanel extends StatelessWidget {
               output: outputs[index],
               compact: compact,
               onRevealPath: onRevealPath,
+              onOpenPath: onOpenPath,
             ),
             if (index != outputs.length - 1) const SizedBox(height: 6),
           ],
@@ -74,11 +77,13 @@ class _RenderOutputRow extends StatelessWidget {
     required this.output,
     required this.compact,
     required this.onRevealPath,
+    required this.onOpenPath,
   });
 
   final BatchRenderItemResult output;
   final bool compact;
   final Future<void> Function(String path)? onRevealPath;
+  final Future<void> Function(String path)? onOpenPath;
 
   @override
   Widget build(BuildContext context) {
@@ -137,6 +142,13 @@ class _RenderOutputRow extends StatelessWidget {
             ),
             if (output.path.isNotEmpty)
               IconButton(
+                tooltip: 'Open rendered file',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _openFile(context, output.path, label),
+                icon: const Icon(Icons.play_circle_outline, size: 16),
+              ),
+            if (output.path.isNotEmpty)
+              IconButton(
                 tooltip: 'Show in folder',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _revealFile(context, output.path, label),
@@ -185,6 +197,31 @@ class _RenderOutputRow extends StatelessWidget {
       messenger.showSnackBar(
         SnackBar(
           content: Text('Could not open $label location: $error'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openFile(
+    BuildContext context,
+    String path,
+    String label,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final openPath = onOpenPath ?? RenderOutputLauncher.open;
+    try {
+      await openPath(path);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('$label opened'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not open $label: $error'),
           duration: const Duration(seconds: 2),
         ),
       );
