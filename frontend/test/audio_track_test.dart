@@ -1033,6 +1033,87 @@ void main() {
     },
   );
 
+  test('render safety blocks news timelines without verification evidence', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..jobId = 'job-news-unverified'
+      ..duration = 220
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 82,
+          reason: '속보 정부 대책',
+          script: '정부가 새 대책을 발표했습니다',
+          tags: ['뉴스핵심'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 86,
+          end: 172,
+          reason: '피해 영향',
+          script: '현장 피해 규모와 후속 대응을 정리합니다',
+          tags: ['영향', '대응'],
+          audioNormalize: true,
+        ),
+      ];
+
+    expect(
+      controller.renderSafetyChecklist.any(
+        (item) =>
+            item.label == 'News verification' &&
+            item.status == EditorialCheckStatus.block,
+      ),
+      isTrue,
+    );
+    expect(controller.hasManualRenderSafetyBlock, isTrue);
+    expect(controller.canPassRenderSafety, isFalse);
+    expect(
+      controller.autoFixQueue.any(
+        (item) =>
+            item.title == 'Needs verification' &&
+            item.severity == AutoFixSeverity.block &&
+            item.action == AutoFixAction.selectForReview,
+      ),
+      isTrue,
+    );
+  });
+
+  test('verified fact tags clear the news render verification gate', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..jobId = 'job-news-verified'
+      ..duration = 220
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 82,
+          reason: '공식 발표 핵심',
+          script: '공식 브리핑에서 확인된 수치를 설명합니다',
+          tags: ['뉴스핵심', '검증팩트'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 86,
+          end: 172,
+          reason: '영향과 대응',
+          script: '현장 영향과 후속 대응을 정리합니다',
+          tags: ['영향', '대응'],
+          audioNormalize: true,
+        ),
+      ];
+
+    expect(
+      controller.renderSafetyChecklist.any(
+        (item) => item.label == 'News verification',
+      ),
+      isFalse,
+    );
+    expect(controller.renderSafetyBlockCount, 0);
+    expect(controller.canPassRenderSafety, isTrue);
+  });
+
   test('render safety auto repair fixes mechanical export blockers', () {
     final controller = EditorController(autoStartEngine: false)
       ..jobId = 'job-2'

@@ -107,6 +107,26 @@ class EditorController extends ChangeNotifier {
     r'루머|카더라|추정|추측|아마도|미확인|확인되지|일각에서는|떠돌|rumor|unconfirmed|allegedly|speculation',
     caseSensitive: false,
   );
+  static const Set<String> _newsSignalTags = {
+    '뉴스핵심',
+    '근거',
+    '검증팩트',
+    '영향',
+    '대응',
+    '출처확인',
+    '시간축',
+    '발언',
+    'Story:Evidence',
+    'Story:Impact',
+    'Story:Resolution',
+  };
+  static const Set<String> _verificationTags = {
+    '근거',
+    '검증팩트',
+    '출처확인',
+    '발언',
+    'Story:Evidence',
+  };
 
   bool get hasFile => selectedFile != null;
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
@@ -329,24 +349,8 @@ class EditorController extends ChangeNotifier {
   bool get hasOfflineReviewSegments => offlineReviewSegmentCount > 0;
 
   List<EditorialCheckItem> get editorialChecklist {
-    final hasNewsSignals = segments.any(
-      (segment) => segment.tags.any(
-        (tag) => {
-          '뉴스핵심',
-          '근거',
-          '검증팩트',
-          '영향',
-          '대응',
-          '출처확인',
-          '시간축',
-          '발언',
-        }.contains(tag),
-      ),
-    );
-    final hasAttribution = segments.any(
-      (segment) =>
-          segment.tags.any((tag) => {'근거', '검증팩트', '출처확인', '발언'}.contains(tag)),
-    );
+    final hasNewsSignals = segments.any(_segmentHasNewsSignal);
+    final hasAttribution = segments.any(_segmentHasVerificationSignal);
     final enabledCaptionCount = captions
         .where((caption) => caption.enabled)
         .length;
@@ -2749,6 +2753,20 @@ class EditorController extends ChangeNotifier {
         segment.tags.any((tag) => _riskPattern.hasMatch(tag));
   }
 
+  bool _segmentHasNewsSignal(HighlightSegment segment) {
+    final text =
+        '${segment.reason} ${segment.script} ${segment.tags.join(' ')}';
+    return _segmentHasAnyTag(segment, _newsSignalTags) ||
+        _containsAny(text, const ['뉴스', '속보', '단독', '공식', '발표', '확인']);
+  }
+
+  bool _segmentHasVerificationSignal(HighlightSegment segment) {
+    final text =
+        '${segment.reason} ${segment.script} ${segment.tags.join(' ')}';
+    return _segmentHasAnyTag(segment, _verificationTags) ||
+        _containsAny(text, const ['공식', '출처', '근거', '검증', '확인', '발언']);
+  }
+
   bool _segmentHasAnyTag(HighlightSegment segment, Set<String> tags) {
     return segment.tags.any(tags.contains);
   }
@@ -3281,6 +3299,18 @@ class EditorController extends ChangeNotifier {
           label: 'Program runtime',
           detail: '${totalDuration.round()}s · 권장 45-420s',
           status: status,
+        ),
+      );
+    }
+
+    final hasNewsSignals = input.any(_segmentHasNewsSignal);
+    final hasVerificationSignals = input.any(_segmentHasVerificationSignal);
+    if (hasNewsSignals && !hasVerificationSignals) {
+      checks.add(
+        const RenderSafetyItem(
+          label: 'News verification',
+          detail: '뉴스형 렌더에는 검증팩트, 근거, 출처확인 또는 발언 태그가 필요합니다',
+          status: EditorialCheckStatus.block,
         ),
       );
     }
@@ -4498,6 +4528,9 @@ class EditorController extends ChangeNotifier {
           _riskPattern.hasMatch(segment.script) ||
           _riskPattern.hasMatch(segment.reason) ||
           segment.tags.any((tag) => _riskPattern.hasMatch(tag));
+      final hasUnverifiedNewsSignal =
+          _segmentHasNewsSignal(segment) &&
+          !_segmentHasVerificationSignal(segment);
 
       if (!_segmentVideoReady(segment)) {
         output.add(
@@ -4527,6 +4560,17 @@ class EditorController extends ChangeNotifier {
             segmentOrder: segment.order,
             title: 'Risk wording',
             detail: '루머/미확인 표현이 있어 직접 확인이 필요합니다.',
+            severity: AutoFixSeverity.block,
+            action: AutoFixAction.selectForReview,
+          ),
+        );
+      }
+      if (hasUnverifiedNewsSignal) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Needs verification',
+            detail: '뉴스형 컷에 검증팩트/근거/출처확인 태그가 없어 수동 확인이 필요합니다.',
             severity: AutoFixSeverity.block,
             action: AutoFixAction.selectForReview,
           ),
