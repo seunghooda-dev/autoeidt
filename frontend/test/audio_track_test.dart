@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
+import 'package:highlight_editor_app/models/job_models.dart';
+import 'package:highlight_editor_app/services/api_client.dart';
 import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
 
@@ -571,7 +573,7 @@ void main() {
       ];
 
     expect(controller.renderSafetyBlockCount, greaterThan(0));
-    expect(controller.canRender, isFalse);
+    expect(controller.canRender, isTrue);
 
     controller.applyRenderSafetyAutoRepair();
 
@@ -588,6 +590,47 @@ void main() {
       lessThan(controller.segments.first.duration),
     );
   });
+
+  test(
+    'render request auto repairs mechanical blockers before API call',
+    () async {
+      final apiClient = _RecordingApiClient();
+      final controller =
+          EditorController(apiClient: apiClient, autoStartEngine: false)
+            ..jobId = 'job-3'
+            ..duration = 120
+            ..segments = const [
+              HighlightSegment(
+                order: 1,
+                start: 10,
+                end: 10.4,
+                reason: '검증된 짧은 설명',
+                script: '출처가 확인된 짧은 설명입니다',
+                videoEnabled: false,
+                audioStart: 12,
+                audioEnd: 11,
+                audioMuted: true,
+              ),
+            ];
+
+      expect(controller.renderSafetyBlockCount, greaterThan(0));
+      expect(controller.canRender, isTrue);
+
+      await controller.requestRender();
+
+      expect(apiClient.renderRequested, isTrue);
+      expect(controller.renderSafetyBlockCount, 0);
+      expect(apiClient.renderSegments.single.videoEnabled, isTrue);
+      expect(apiClient.renderSegments.single.audioMuted, isFalse);
+      expect(apiClient.renderSegments.single.audioNormalize, isTrue);
+      expect(
+        apiClient.renderSegments.single.duration,
+        greaterThanOrEqualTo(2.0),
+      );
+      await Future<void>.delayed(Duration.zero);
+      controller.dispose();
+    },
+  );
 
   test('selected shorts safety repair only updates selected candidates', () {
     final controller = EditorController(autoStartEngine: false)
@@ -647,6 +690,53 @@ void main() {
     expect(untouched.segments.first.audioMuted, isTrue);
     expect(controller.segments.first.videoEnabled, isTrue);
   });
+
+  test(
+    'selected shorts render auto repairs candidates before batch API call',
+    () async {
+      final apiClient = _RecordingApiClient();
+      final controller =
+          EditorController(apiClient: apiClient, autoStartEngine: false)
+            ..jobId = 'job-4'
+            ..duration = 120
+            ..selectedShortsId = 1
+            ..shortsCandidates = const [
+              ShortsCandidate(
+                id: 1,
+                label: 'Shorts 01',
+                reason: 'selected',
+                selected: true,
+                segments: [
+                  HighlightSegment(
+                    order: 1,
+                    start: 10,
+                    end: 10.4,
+                    reason: '검증된 짧은 설명',
+                    script: '출처가 확인된 짧은 설명입니다',
+                    videoEnabled: false,
+                    audioStart: 12,
+                    audioEnd: 11,
+                    audioMuted: true,
+                  ),
+                ],
+              ),
+            ];
+
+      expect(controller.selectedShortsRenderBlockCount, greaterThan(0));
+
+      await controller.requestSelectedShortsRender();
+
+      expect(apiClient.batchRenderRequested, isTrue);
+      expect(controller.selectedShortsRenderBlockCount, 0);
+      final rawSegments = apiClient.batchRenderItems.single['segments'] as List;
+      final renderedSegment = rawSegments.single as Map<String, dynamic>;
+      expect(renderedSegment['video_enabled'], isTrue);
+      expect(renderedSegment['audio_muted'], isFalse);
+      expect(renderedSegment['audio_normalize'], isTrue);
+      await Future<void>.delayed(Duration.zero);
+      controller.dispose();
+    },
+  );
 
   test('multi shorts candidates can be built edited and selected', () {
     final controller = EditorController(autoStartEngine: false)
@@ -749,4 +839,56 @@ void main() {
       isFalse,
     );
   });
+}
+
+class _RecordingApiClient extends ApiClient {
+  _RecordingApiClient() : super(baseUrl: 'http://127.0.0.1:1');
+
+  bool renderRequested = false;
+  bool batchRenderRequested = false;
+  List<HighlightSegment> renderSegments = const [];
+  List<Map<String, dynamic>> batchRenderItems = const [];
+
+  @override
+  Future<ProjectState> saveProject(String jobId, ProjectState project) async {
+    return project;
+  }
+
+  @override
+  Future<void> requestRender(
+    String jobId,
+    List<HighlightSegment> segments, {
+    List<CaptionSegment> captions = const [],
+    CaptionRenderStyle? captionStyle,
+    String aspectRatio = '16:9',
+    bool includeCaptions = false,
+    String outputName = 'youtube_highlights.mp4',
+  }) async {
+    renderRequested = true;
+    renderSegments = List<HighlightSegment>.of(segments);
+  }
+
+  @override
+  Future<void> requestBatchRender(
+    String jobId,
+    List<Map<String, dynamic>> items, {
+    List<CaptionSegment> captions = const [],
+    CaptionRenderStyle? captionStyle,
+    String aspectRatio = '9:16',
+    bool includeCaptions = true,
+  }) async {
+    batchRenderRequested = true;
+    batchRenderItems = List<Map<String, dynamic>>.of(items);
+  }
+
+  @override
+  Future<JobStatusResponse> getJob(String jobId) async {
+    return JobStatusResponse(
+      jobId: jobId,
+      status: 'rendering',
+      stage: 'rendering',
+      progress: 1,
+      message: 'Rendering',
+    );
+  }
 }

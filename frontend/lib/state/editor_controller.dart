@@ -169,7 +169,7 @@ class EditorController extends ChangeNotifier {
       jobId != null &&
       hasTimeline &&
       segments.isNotEmpty &&
-      canPassRenderSafety &&
+      !hasManualRenderSafetyBlock &&
       !isRendering &&
       job?.status != 'processing' &&
       job?.status != 'rendering';
@@ -366,6 +366,12 @@ class EditorController extends ChangeNotifier {
       .length;
 
   bool get canPassRenderSafety => renderSafetyBlockCount == 0;
+
+  bool get hasManualRenderSafetyBlock => renderSafetyChecklist.any(
+    (item) =>
+        item.status == EditorialCheckStatus.block &&
+        !_isAutoRepairableRenderSafetyItem(item),
+  );
 
   List<AutoFixReviewItem> get autoFixQueue =>
       _buildAutoFixQueue(segments, captions);
@@ -730,6 +736,13 @@ class EditorController extends ChangeNotifier {
     if (id == null || segments.isEmpty) {
       return;
     }
+    exportAspectRatio = aspectRatio;
+    final repaired = _repairSegmentsForRenderSafety(segments);
+    if (repaired.$2) {
+      _commitHistory();
+      segments = repaired.$1;
+      renderUrl = null;
+    }
     final safetyBlocks = _buildRenderSafetyChecklist(
       segments,
       aspectRatio: aspectRatio,
@@ -746,7 +759,6 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      exportAspectRatio = aspectRatio;
       await saveProjectToBackend(silent: true);
       await _apiClient.requestRender(
         id,
@@ -2934,6 +2946,21 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
+  bool _isAutoRepairableRenderSafetyItem(RenderSafetyItem item) {
+    if (item.status != EditorialCheckStatus.block) {
+      return false;
+    }
+    if (item.segmentOrder == null) {
+      return false;
+    }
+    return item.label.endsWith('range') ||
+        item.label.endsWith('cut') ||
+        item.label.endsWith('video') ||
+        item.label.endsWith('speed') ||
+        item.label.endsWith('audio') ||
+        item.label.endsWith('fade');
+  }
+
   String _shortsGrade(double score) {
     if (score >= 86) {
       return 'S';
@@ -3106,7 +3133,34 @@ class EditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    for (final candidate in selected) {
+    var repairedCandidates = false;
+    shortsCandidates = [
+      for (final candidate in shortsCandidates)
+        if (candidate.selected && candidate.segments.isNotEmpty)
+          _repairShortsCandidateForRenderSafety(
+            candidate,
+            onApplied: () {
+              repairedCandidates = true;
+            },
+          )
+        else
+          candidate,
+    ];
+    if (repairedCandidates) {
+      renderUrl = null;
+      final active = selectedShortsId == null
+          ? null
+          : _shortsCandidateById(selectedShortsId!);
+      if (active != null) {
+        _loadShortsCandidateToTimeline(active);
+      }
+    }
+    final renderItems = shortsCandidates
+        .where(
+          (candidate) => candidate.selected && candidate.segments.isNotEmpty,
+        )
+        .toList();
+    for (final candidate in renderItems) {
       final safetyBlocks = _buildRenderSafetyChecklist(
         candidate.segments,
         aspectRatio: '9:16',
@@ -3127,12 +3181,12 @@ class EditorController extends ChangeNotifier {
       await _apiClient.requestBatchRender(
         id,
         [
-          for (var index = 0; index < selected.length; index++)
+          for (var index = 0; index < renderItems.length; index++)
             {
-              'label': selected[index].label,
+              'label': renderItems[index].label,
               'output_name':
                   'shorts_${(index + 1).toString().padLeft(2, '0')}.mp4',
-              'segments': selected[index].segments
+              'segments': renderItems[index].segments
                   .map((segment) => segment.toJson())
                   .toList(),
             },
