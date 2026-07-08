@@ -317,6 +317,8 @@ class _ShortsCandidateTile extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _CandidateQualityBadge(candidate: candidate),
+                  const SizedBox(width: 6),
                   Text(
                     formatSeconds(candidate.durationSeconds),
                     style: Theme.of(context).textTheme.labelSmall,
@@ -329,6 +331,34 @@ class _ShortsCandidateTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall,
               ),
+              if (candidate.strengths.isNotEmpty ||
+                  candidate.issues.isNotEmpty) ...[
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 5,
+                  children: [
+                    for (final item in candidate.strengths)
+                      _CandidateChip(
+                        label: item,
+                        color: colorScheme.primary,
+                        icon: Icons.check_circle_outline,
+                      ),
+                    for (final item in candidate.issues)
+                      _CandidateChip(
+                        label: item,
+                        color: colorScheme.tertiary,
+                        icon: Icons.warning_amber_outlined,
+                      ),
+                    if (candidate.riskCount > 0)
+                      _CandidateChip(
+                        label: 'Risk ${candidate.riskCount}',
+                        color: colorScheme.error,
+                        icon: Icons.report_gmailerrorred_outlined,
+                      ),
+                  ],
+                ),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -353,6 +383,82 @@ class _ShortsCandidateTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CandidateQualityBadge extends StatelessWidget {
+  const _CandidateQualityBadge({required this.candidate});
+
+  final ShortsCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = _gradeColor(colorScheme, candidate.qualityGrade);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        border: Border.all(color: color.withValues(alpha: 0.65)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '${candidate.qualityGrade} ${candidate.qualityScore.round()}',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+
+  Color _gradeColor(ColorScheme colorScheme, String grade) {
+    return switch (grade) {
+      'S' => colorScheme.primary,
+      'A' => colorScheme.primary,
+      'B' => colorScheme.tertiary,
+      'C' => colorScheme.outline,
+      _ => colorScheme.error,
+    };
+  }
+}
+
+class _CandidateChip extends StatelessWidget {
+  const _CandidateChip({
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

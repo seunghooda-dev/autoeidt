@@ -1919,31 +1919,305 @@ class EditorController extends ChangeNotifier {
           ).copyWith(source: _appendSource(segment.source, 'shorts')),
       ]);
       output.add(
-        ShortsCandidate(
-          id: nextId,
-          label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
-          reason: _shortsReason(normalized),
-          segments: normalized,
-          selected: true,
+        _scoreShortsCandidate(
+          ShortsCandidate(
+            id: nextId,
+            label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
+            reason: _shortsReason(normalized),
+            segments: normalized,
+            selected: true,
+          ),
         ),
       );
       nextId += 1;
     }
     if (output.isEmpty) {
       output.add(
-        ShortsCandidate(
-          id: 1,
-          label: 'Shorts 01',
-          reason: '현재 타임라인 기반 기본 쇼츠 후보',
-          segments: _reorderSegments(segments.take(4).toList()),
-          selected: true,
+        _scoreShortsCandidate(
+          ShortsCandidate(
+            id: 1,
+            label: 'Shorts 01',
+            reason: '현재 타임라인 기반 기본 쇼츠 후보',
+            segments: _reorderSegments(segments.take(4).toList()),
+            selected: true,
+          ),
         ),
       );
     }
-    shortsCandidates = output;
-    selectedShortsId = output.first.id;
-    _loadShortsCandidateToTimeline(output.first);
+    output.sort((a, b) {
+      final scoreCompare = b.qualityScore.compareTo(a.qualityScore);
+      if (scoreCompare != 0) {
+        return scoreCompare;
+      }
+      return a.durationSeconds.compareTo(b.durationSeconds);
+    });
+    final rankedOutput = [
+      for (var index = 0; index < output.length; index++)
+        output[index].copyWith(
+          id: index + 1,
+          label: 'Shorts ${(index + 1).toString().padLeft(2, '0')}',
+        ),
+    ];
+    shortsCandidates = rankedOutput;
+    selectedShortsId = rankedOutput.first.id;
+    _loadShortsCandidateToTimeline(rankedOutput.first);
     notifyListeners();
+  }
+
+  ShortsCandidate _scoreShortsCandidate(ShortsCandidate candidate) {
+    final candidateSegments = candidate.segments;
+    if (candidateSegments.isEmpty) {
+      return candidate.copyWith(
+        qualityScore: 0,
+        qualityGrade: 'D',
+        riskCount: 0,
+        strengths: const [],
+        issues: const ['No clips'],
+      );
+    }
+
+    final duration = candidate.durationSeconds;
+    final durationScore = _shortsDurationScore(duration);
+    final scored = candidateSegments
+        .where((segment) => segment.score > 0)
+        .toList();
+    final averageScore = scored.isEmpty
+        ? 5.5
+        : scored.fold<double>(0, (total, segment) => total + segment.score) /
+              scored.length;
+    final highlightScore = (averageScore * 10).clamp(0.0, 100.0).toDouble();
+    final first = candidateSegments.first;
+    final hookScore = _shortsHookScore(first);
+    final signalScore = _shortsSignalScore(candidateSegments);
+    final audioScore = _shortsAudioScore(candidateSegments);
+    final captionScore = _shortsCaptionScore(candidateSegments);
+    final riskCount = _shortsRiskCount(candidateSegments);
+    final fillerCount = _shortsFillerCaptionCount(candidateSegments);
+    final riskPenalty = (riskCount * 12 + fillerCount * 3)
+        .clamp(0, 35)
+        .toDouble();
+    final quality =
+        (durationScore * 0.18) +
+        (highlightScore * 0.26) +
+        (hookScore * 0.18) +
+        (signalScore * 0.16) +
+        (audioScore * 0.12) +
+        (captionScore * 0.10) -
+        riskPenalty;
+    final score = quality.clamp(0.0, 100.0).toDouble();
+    return candidate.copyWith(
+      qualityScore: score,
+      qualityGrade: _shortsGrade(score),
+      riskCount: riskCount,
+      strengths: _shortsStrengths(
+        durationScore: durationScore,
+        hookScore: hookScore,
+        signalScore: signalScore,
+        audioScore: audioScore,
+        captionScore: captionScore,
+      ),
+      issues: _shortsIssues(
+        duration: duration,
+        riskCount: riskCount,
+        fillerCount: fillerCount,
+        audioScore: audioScore,
+        captionScore: captionScore,
+      ),
+      reason: _shortsReason(
+        candidateSegments,
+        score: score,
+        riskCount: riskCount,
+      ),
+    );
+  }
+
+  double _shortsDurationScore(double duration) {
+    const ideal = 150.0;
+    if (duration <= 0) {
+      return 0;
+    }
+    final distance = (duration - ideal).abs();
+    var score = 100 - distance * 0.9;
+    if (duration < 90) {
+      score -= (90 - duration) * 0.35;
+    }
+    if (duration > 210) {
+      score -= (duration - 210) * 0.35;
+    }
+    return score.clamp(0.0, 100.0).toDouble();
+  }
+
+  double _shortsHookScore(HighlightSegment first) {
+    var score = first.score > 0 ? (first.score * 8).clamp(35.0, 82.0) : 55.0;
+    final text = '${first.reason} ${first.script} ${first.tags.join(' ')}';
+    final hookPattern = RegExp(
+      r'결과|핵심|충격|문제|원인|비밀|공개|논란|단독|속보|후킹|유지율|impact|hook',
+      caseSensitive: false,
+    );
+    if (hookPattern.hasMatch(text)) {
+      score += 16;
+    }
+    if (first.start <= 45) {
+      score += 6;
+    }
+    return score.clamp(0.0, 100.0).toDouble();
+  }
+
+  double _shortsSignalScore(List<HighlightSegment> input) {
+    final tags = <String>{};
+    for (final segment in input) {
+      tags.addAll(segment.tags);
+    }
+    final strongSignals = {
+      '뉴스핵심',
+      '근거',
+      '영향',
+      '문제해결',
+      '구체성',
+      '비교',
+      '대응',
+      '발언',
+      '유지율',
+    };
+    final strongCount = tags.where(strongSignals.contains).length;
+    final density = input.isEmpty ? 0.0 : tags.length / input.length;
+    return (45 + strongCount * 10 + density * 9).clamp(0.0, 100.0).toDouble();
+  }
+
+  double _shortsAudioScore(List<HighlightSegment> input) {
+    if (input.isEmpty) {
+      return 0;
+    }
+    final readyCount = input
+        .where(
+          (segment) =>
+              !segment.audioMuted &&
+              segment.hasActiveAudioChannel &&
+              segment.audioNormalize &&
+              segment.audioPan.abs() <= 0.001,
+        )
+        .length;
+    return (readyCount / input.length * 100).clamp(0.0, 100.0).toDouble();
+  }
+
+  double _shortsCaptionScore(List<HighlightSegment> input) {
+    if (input.isEmpty) {
+      return 0;
+    }
+    if (captions.isEmpty) {
+      return includeCaptions ? 45 : 25;
+    }
+    var covered = 0;
+    for (final segment in input) {
+      final hasCaption = captions.any(
+        (caption) =>
+            caption.enabled &&
+            caption.start < segment.end &&
+            caption.end > segment.start,
+      );
+      if (hasCaption) {
+        covered += 1;
+      }
+    }
+    return (covered / input.length * 100).clamp(0.0, 100.0).toDouble();
+  }
+
+  int _shortsRiskCount(List<HighlightSegment> input) {
+    var count = 0;
+    for (final segment in input) {
+      if (_riskPattern.hasMatch(segment.reason) ||
+          _riskPattern.hasMatch(segment.script) ||
+          segment.tags.any((tag) => _riskPattern.hasMatch(tag))) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  int _shortsFillerCaptionCount(List<HighlightSegment> input) {
+    var count = 0;
+    for (final segment in input) {
+      count += captions
+          .where(
+            (caption) =>
+                caption.enabled &&
+                caption.start < segment.end &&
+                caption.end > segment.start &&
+                _fillerPattern.hasMatch(caption.text),
+          )
+          .length;
+    }
+    return count;
+  }
+
+  String _shortsGrade(double score) {
+    if (score >= 86) {
+      return 'S';
+    }
+    if (score >= 74) {
+      return 'A';
+    }
+    if (score >= 62) {
+      return 'B';
+    }
+    if (score >= 50) {
+      return 'C';
+    }
+    return 'D';
+  }
+
+  List<String> _shortsStrengths({
+    required double durationScore,
+    required double hookScore,
+    required double signalScore,
+    required double audioScore,
+    required double captionScore,
+  }) {
+    final strengths = <String>[];
+    if (hookScore >= 78) {
+      strengths.add('Hook');
+    }
+    if (durationScore >= 78) {
+      strengths.add('Runtime');
+    }
+    if (signalScore >= 72) {
+      strengths.add('Signals');
+    }
+    if (audioScore >= 90) {
+      strengths.add('Audio');
+    }
+    if (captionScore >= 80) {
+      strengths.add('Captions');
+    }
+    return strengths.take(4).toList();
+  }
+
+  List<String> _shortsIssues({
+    required double duration,
+    required int riskCount,
+    required int fillerCount,
+    required double audioScore,
+    required double captionScore,
+  }) {
+    final issues = <String>[];
+    if (duration < 90) {
+      issues.add('Short runtime');
+    } else if (duration > 210) {
+      issues.add('Long runtime');
+    }
+    if (riskCount > 0) {
+      issues.add('Risk review');
+    }
+    if (fillerCount > 0) {
+      issues.add('Filler captions');
+    }
+    if (audioScore < 75) {
+      issues.add('Audio mix');
+    }
+    if (captionScore < 60) {
+      issues.add('Captions');
+    }
+    return issues.take(4).toList();
   }
 
   void selectShortsCandidate(int id) {
@@ -1964,9 +2238,10 @@ class EditorController extends ChangeNotifier {
     shortsCandidates = [
       for (final candidate in shortsCandidates)
         if (candidate.id == id)
-          candidate.copyWith(
-            segments: _reorderSegments(List<HighlightSegment>.of(segments)),
-            reason: _shortsReason(segments),
+          _scoreShortsCandidate(
+            candidate.copyWith(
+              segments: _reorderSegments(List<HighlightSegment>.of(segments)),
+            ),
           )
         else
           candidate,
@@ -2014,9 +2289,11 @@ class EditorController extends ChangeNotifier {
         1;
     shortsCandidates = [
       ...shortsCandidates,
-      source.copyWith(
-        id: nextId,
-        label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
+      _scoreShortsCandidate(
+        source.copyWith(
+          id: nextId,
+          label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
+        ),
       ),
     ];
     notifyListeners();
@@ -2968,7 +3245,11 @@ class EditorController extends ChangeNotifier {
     return group;
   }
 
-  String _shortsReason(List<HighlightSegment> input) {
+  String _shortsReason(
+    List<HighlightSegment> input, {
+    double? score,
+    int riskCount = 0,
+  }) {
     final tags = <String>{};
     for (final segment in input) {
       tags.addAll(segment.tags.take(3));
@@ -2977,9 +3258,11 @@ class EditorController extends ChangeNotifier {
     final durationText = input
         .fold<double>(0, (total, segment) => total + segment.outputDuration)
         .round();
+    final scoreText = score == null ? '' : ' · Q${score.round()}';
+    final riskText = riskCount <= 0 ? '' : ' · Risk $riskCount';
     return tagText.isEmpty
-        ? '${durationText}s 쇼츠 후보'
-        : '${durationText}s · $tagText';
+        ? '${durationText}s 쇼츠 후보$scoreText$riskText'
+        : '${durationText}s · $tagText$scoreText$riskText';
   }
 
   void _loadShortsCandidateToTimeline(ShortsCandidate candidate) {
@@ -3280,6 +3563,11 @@ class ShortsCandidate {
     required this.label,
     required this.reason,
     required this.segments,
+    this.qualityScore = 0,
+    this.qualityGrade = 'C',
+    this.riskCount = 0,
+    this.strengths = const [],
+    this.issues = const [],
     this.selected = true,
   });
 
@@ -3287,6 +3575,11 @@ class ShortsCandidate {
   final String label;
   final String reason;
   final List<HighlightSegment> segments;
+  final double qualityScore;
+  final String qualityGrade;
+  final int riskCount;
+  final List<String> strengths;
+  final List<String> issues;
   final bool selected;
 
   double get durationSeconds => segments.fold<double>(
@@ -3299,6 +3592,11 @@ class ShortsCandidate {
     String? label,
     String? reason,
     List<HighlightSegment>? segments,
+    double? qualityScore,
+    String? qualityGrade,
+    int? riskCount,
+    List<String>? strengths,
+    List<String>? issues,
     bool? selected,
   }) {
     return ShortsCandidate(
@@ -3306,6 +3604,11 @@ class ShortsCandidate {
       label: label ?? this.label,
       reason: reason ?? this.reason,
       segments: segments ?? this.segments,
+      qualityScore: qualityScore ?? this.qualityScore,
+      qualityGrade: qualityGrade ?? this.qualityGrade,
+      riskCount: riskCount ?? this.riskCount,
+      strengths: strengths ?? this.strengths,
+      issues: issues ?? this.issues,
       selected: selected ?? this.selected,
     );
   }

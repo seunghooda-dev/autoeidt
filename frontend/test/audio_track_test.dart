@@ -533,21 +533,35 @@ void main() {
     expect(controller.selectedShortsCandidate, isNotNull);
     expect(controller.exportAspectRatio, '9:16');
     expect(controller.captionStylePreset, 'shorts');
+    expect(
+      controller.shortsCandidates.every(
+        (candidate) => candidate.qualityScore >= 0,
+      ),
+      isTrue,
+    );
+    expect(controller.shortsCandidates.first.qualityGrade, isNotEmpty);
+    expect(
+      controller.shortsCandidates.first.qualityScore,
+      greaterThanOrEqualTo(controller.shortsCandidates.last.qualityScore),
+    );
+    expect(
+      controller.shortsCandidates.first.strengths.isNotEmpty ||
+          controller.shortsCandidates.first.issues.isNotEmpty,
+      isTrue,
+    );
 
     final selectedId = controller.selectedShortsId!;
     controller.updateSegment(controller.segments.first.copyWith(end: 60));
     controller.updateSelectedShortsFromTimeline();
-    expect(
-      controller.shortsCandidates
-          .firstWhere((candidate) => candidate.id == selectedId)
-          .segments
-          .first
-          .end,
-      closeTo(60, 0.01),
+    final updatedCandidate = controller.shortsCandidates.firstWhere(
+      (candidate) => candidate.id == selectedId,
     );
+    expect(updatedCandidate.segments.first.end, closeTo(60, 0.01));
+    expect(updatedCandidate.qualityScore, greaterThan(0));
 
     controller.duplicateShortsCandidate(selectedId);
     expect(controller.shortsCandidates.length, greaterThan(1));
+    expect(controller.shortsCandidates.last.qualityScore, greaterThan(0));
 
     controller.toggleShortsCandidate(selectedId);
     expect(
