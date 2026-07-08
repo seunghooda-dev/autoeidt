@@ -115,3 +115,59 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
     assert payload["batch_render_items"][1]["warnings"] == [
         "렌더 파일 크기가 매우 작습니다."
     ]
+
+
+def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
+    class FakeStore:
+        def __init__(self) -> None:
+            self.data = {
+                "job_id": "job-1",
+                "status": "completed",
+                "stage": "completed",
+                "progress": 100,
+                "message": "done",
+                "original_filename": "source.mp4",
+            }
+
+        def load(self, job_id: str) -> dict:
+            assert job_id == "job-1"
+            return dict(self.data)
+
+        def update(self, job_id: str, **fields) -> dict:
+            assert job_id == "job-1"
+            self.data.update(fields)
+            return dict(self.data)
+
+    monkeypatch.setattr(jobs, "store", FakeStore())
+
+    response = client.post(
+        "/api/jobs/job-1/project",
+        json={
+            "name": "Shorts Project",
+            "duration": 120,
+            "segments": [],
+            "captions": [],
+            "waveform": [],
+            "include_captions": False,
+            "caption_style_preset": "shorts",
+            "export_aspect_ratio": "9:16",
+            "mark_in": 12.5,
+            "mark_out": 58.0,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["include_captions"] is False
+    assert payload["caption_style_preset"] == "shorts"
+    assert payload["export_aspect_ratio"] == "9:16"
+    assert payload["mark_in"] == 12.5
+    assert payload["mark_out"] == 58.0
+
+    get_response = client.get("/api/jobs/job-1/project")
+
+    assert get_response.status_code == 200
+    get_payload = get_response.json()
+    assert get_payload["include_captions"] is False
+    assert get_payload["caption_style_preset"] == "shorts"
+    assert get_payload["export_aspect_ratio"] == "9:16"

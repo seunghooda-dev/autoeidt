@@ -80,6 +80,47 @@ void main() {
     expect(restored.outputDuration, closeTo(6.666, 0.01));
   });
 
+  test('project state preserves render settings and marks', () {
+    const project = ProjectState(
+      name: 'Shorts Project',
+      duration: 120,
+      segments: [],
+      captions: [],
+      waveform: [],
+      includeCaptions: false,
+      captionStylePreset: 'shorts',
+      exportAspectRatio: '9:16',
+      markIn: 10.5,
+      markOut: 88.0,
+    );
+
+    final restored = ProjectState.fromJson(project.toJson());
+
+    expect(restored.includeCaptions, isFalse);
+    expect(restored.captionStylePreset, 'shorts');
+    expect(restored.exportAspectRatio, '9:16');
+    expect(restored.markIn, 10.5);
+    expect(restored.markOut, 88.0);
+  });
+
+  test('editor project state captures current render settings', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..includeCaptions = false
+      ..captionStylePreset = 'shorts'
+      ..exportAspectRatio = '9:16'
+      ..markIn = 10.5
+      ..markOut = 88.0;
+
+    final project = controller.projectState;
+
+    expect(project.includeCaptions, isFalse);
+    expect(project.captionStylePreset, 'shorts');
+    expect(project.exportAspectRatio, '9:16');
+    expect(project.markIn, 10.5);
+    expect(project.markOut, 88.0);
+  });
+
   test('linked audio follows video trim', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30

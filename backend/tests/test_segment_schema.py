@@ -1,4 +1,4 @@
-from app.schemas import CaptionStyle, HighlightSegment
+from app.schemas import CaptionStyle, HighlightSegment, ProjectState
 
 
 def test_highlight_segment_accepts_track_controls() -> None:
@@ -46,3 +46,21 @@ def test_caption_style_clamps_unsafe_values() -> None:
     assert style.shadow == 8
     assert style.alignment == 9
     assert style.margin_v == 360
+
+
+def test_project_state_accepts_render_settings() -> None:
+    project = ProjectState(
+        name="shorts project",
+        duration=120,
+        include_captions=False,
+        caption_style_preset="shorts",
+        export_aspect_ratio="9:16",
+        mark_in=12.5,
+        mark_out=58.0,
+    )
+
+    assert project.include_captions is False
+    assert project.caption_style_preset == "shorts"
+    assert project.export_aspect_ratio == "9:16"
+    assert project.mark_in == 12.5
+    assert project.mark_out == 58.0

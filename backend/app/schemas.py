@@ -344,6 +344,11 @@ class ProjectState(BaseModel):
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
+    include_captions: bool = True
+    caption_style_preset: str = "news"
+    export_aspect_ratio: str = "16:9"
+    mark_in: float | None = None
+    mark_out: float | None = None
 
 
 class ProjectResponse(ProjectState):

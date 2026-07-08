@@ -272,6 +272,11 @@ def get_project(job_id: str) -> ProjectResponse:
         segments=job.get("segments") or [],
         captions=job.get("captions") or [],
         waveform=job.get("waveform") or [],
+        include_captions=bool(job.get("include_captions", True)),
+        caption_style_preset=str(job.get("caption_style_preset") or "news"),
+        export_aspect_ratio=str(job.get("export_aspect_ratio") or "16:9"),
+        mark_in=job.get("mark_in"),
+        mark_out=job.get("mark_out"),
     )
 
 
@@ -285,6 +290,11 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         segments=[segment.model_dump() for segment in payload.segments],
         captions=[caption.model_dump() for caption in payload.captions],
         waveform=payload.waveform,
+        include_captions=payload.include_captions,
+        caption_style_preset=payload.caption_style_preset,
+        export_aspect_ratio=payload.export_aspect_ratio,
+        mark_in=payload.mark_in,
+        mark_out=payload.mark_out,
     )
     return ProjectResponse(
         job_id=job_id,
@@ -294,6 +304,11 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         segments=updated.get("segments") or [],
         captions=updated.get("captions") or [],
         waveform=updated.get("waveform") or [],
+        include_captions=bool(updated.get("include_captions", True)),
+        caption_style_preset=str(updated.get("caption_style_preset") or "news"),
+        export_aspect_ratio=str(updated.get("export_aspect_ratio") or "16:9"),
+        mark_in=updated.get("mark_in"),
+        mark_out=updated.get("mark_out"),
     )
 
 

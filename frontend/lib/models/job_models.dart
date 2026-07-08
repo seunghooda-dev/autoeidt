@@ -500,6 +500,11 @@ class ProjectState {
     required this.segments,
     required this.captions,
     required this.waveform,
+    this.includeCaptions = true,
+    this.captionStylePreset = 'news',
+    this.exportAspectRatio = '16:9',
+    this.markIn,
+    this.markOut,
     this.jobId,
     this.originalFilename,
   });
@@ -511,6 +516,11 @@ class ProjectState {
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
   final List<double> waveform;
+  final bool includeCaptions;
+  final String captionStylePreset;
+  final String exportAspectRatio;
+  final double? markIn;
+  final double? markOut;
 
   factory ProjectState.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
@@ -530,6 +540,11 @@ class ProjectState {
           .map((item) => CaptionSegment.fromJson(item as Map<String, dynamic>))
           .toList(),
       waveform: rawWaveform.map((item) => (item as num).toDouble()).toList(),
+      includeCaptions: json['include_captions'] as bool? ?? true,
+      captionStylePreset: json['caption_style_preset'] as String? ?? 'news',
+      exportAspectRatio: json['export_aspect_ratio'] as String? ?? '16:9',
+      markIn: (json['mark_in'] as num?)?.toDouble(),
+      markOut: (json['mark_out'] as num?)?.toDouble(),
     );
   }
 
@@ -542,6 +557,11 @@ class ProjectState {
       'segments': segments.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
+      'include_captions': includeCaptions,
+      'caption_style_preset': captionStylePreset,
+      'export_aspect_ratio': exportAspectRatio,
+      if (markIn != null) 'mark_in': markIn,
+      if (markOut != null) 'mark_out': markOut,
     };
   }
 }

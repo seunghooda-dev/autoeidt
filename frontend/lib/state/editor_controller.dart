@@ -492,6 +492,11 @@ class EditorController extends ChangeNotifier {
       segments: segments,
       captions: captions,
       waveform: waveform,
+      includeCaptions: includeCaptions,
+      captionStylePreset: captionStylePreset,
+      exportAspectRatio: exportAspectRatio,
+      markIn: markIn,
+      markOut: markOut,
     );
   }
 
@@ -4438,6 +4443,11 @@ class EditorController extends ChangeNotifier {
     comparisonSelection = 'current';
     shortsCandidates = [];
     selectedShortsId = null;
+    includeCaptions = project.includeCaptions;
+    captionStylePreset = project.captionStylePreset;
+    exportAspectRatio = project.exportAspectRatio;
+    markIn = project.markIn;
+    markOut = project.markOut;
     selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
     renderUrl = null;
     if (resetHistory) {
