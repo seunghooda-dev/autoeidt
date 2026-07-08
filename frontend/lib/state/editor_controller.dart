@@ -145,6 +145,7 @@ class EditorController extends ChangeNotifier {
                   ? _outputNameFromUrl(item.url)
                   : item.outputName,
               url: _apiClient.absoluteUrl(item.url),
+              path: item.path,
             ),
       ];
     }
@@ -154,6 +155,7 @@ class EditorController extends ChangeNotifier {
         label: 'Export',
         outputName: _outputNameFromUrl(currentRenderUrl),
         url: currentRenderUrl,
+        path: job?.renderPath ?? '',
       ),
     ];
   }

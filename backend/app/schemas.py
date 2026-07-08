@@ -268,21 +268,6 @@ class StyleTrainingResponse(BaseModel):
     profile: StyleProfile | None = None
 
 
-class JobStatusResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    stage: str
-    progress: int
-    message: str = ""
-    duration: float | None = None
-    original_filename: str | None = None
-    segments: list[HighlightSegment] = Field(default_factory=list)
-    render_url: str | None = None
-    error: str | None = None
-    style_profile: StyleProfile | None = None
-    analysis_warnings: list[str] = Field(default_factory=list)
-
-
 class TimelineResponse(BaseModel):
     job_id: str
     duration: float
@@ -305,6 +290,31 @@ class BatchRenderItem(BaseModel):
     label: str = "shorts"
     segments: list[HighlightSegment]
     output_name: str = "shorts.mp4"
+
+
+class BatchRenderItemResult(BaseModel):
+    label: str = "Shorts"
+    path: str | None = None
+    url: str = ""
+    output_name: str = ""
+    segments: list[HighlightSegment] = Field(default_factory=list)
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    stage: str
+    progress: int
+    message: str = ""
+    duration: float | None = None
+    original_filename: str | None = None
+    segments: list[HighlightSegment] = Field(default_factory=list)
+    render_path: str | None = None
+    render_url: str | None = None
+    batch_render_items: list[BatchRenderItemResult] = Field(default_factory=list)
+    error: str | None = None
+    style_profile: StyleProfile | None = None
+    analysis_warnings: list[str] = Field(default_factory=list)
 
 
 class BatchRenderRequest(BaseModel):

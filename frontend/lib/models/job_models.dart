@@ -108,6 +108,7 @@ class JobStatusResponse {
     required this.message,
     this.duration,
     this.originalFilename,
+    this.renderPath,
     this.renderUrl,
     this.error,
     this.styleProfile,
@@ -123,6 +124,7 @@ class JobStatusResponse {
   final String message;
   final double? duration;
   final String? originalFilename;
+  final String? renderPath;
   final String? renderUrl;
   final String? error;
   final StyleProfile? styleProfile;
@@ -143,6 +145,7 @@ class JobStatusResponse {
       message: json['message'] as String? ?? '',
       duration: (json['duration'] as num?)?.toDouble(),
       originalFilename: json['original_filename'] as String?,
+      renderPath: json['render_path'] as String?,
       renderUrl: json['render_url'] as String?,
       error: json['error'] as String?,
       styleProfile: json['style_profile'] == null
@@ -171,17 +174,20 @@ class BatchRenderItemResult {
     required this.label,
     required this.outputName,
     required this.url,
+    this.path = '',
   });
 
   final String label;
   final String outputName;
   final String url;
+  final String path;
 
   factory BatchRenderItemResult.fromJson(Map<String, dynamic> json) {
     return BatchRenderItemResult(
       label: json['label'] as String? ?? 'Shorts',
       outputName: json['output_name'] as String? ?? '',
       url: json['url'] as String? ?? '',
+      path: json['path'] as String? ?? '',
     );
   }
 }

@@ -100,25 +100,50 @@ class _RenderOutputRow extends StatelessWidget {
                   context,
                 ).textTheme.bodySmall?.copyWith(color: colorScheme.primary),
               ),
+              if (output.path.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                SelectableText(
+                  output.path,
+                  maxLines: compact ? 1 : 2,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
         const SizedBox(width: 6),
-        IconButton(
-          tooltip: 'Copy render link',
-          visualDensity: VisualDensity.compact,
-          onPressed: () {
-            Clipboard.setData(ClipboardData(text: output.url));
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('$label link copied'),
-                duration: const Duration(seconds: 1),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Copy render link',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _copyValue(context, output.url, '$label link'),
+              icon: const Icon(Icons.link, size: 16),
+            ),
+            if (output.path.isNotEmpty)
+              IconButton(
+                tooltip: 'Copy local file path',
+                visualDensity: VisualDensity.compact,
+                onPressed: () =>
+                    _copyValue(context, output.path, '$label file path'),
+                icon: const Icon(Icons.folder_copy_outlined, size: 16),
               ),
-            );
-          },
-          icon: const Icon(Icons.copy, size: 16),
+          ],
         ),
       ],
+    );
+  }
+
+  void _copyValue(BuildContext context, String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied'),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 }
