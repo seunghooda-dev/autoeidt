@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../models/job_models.dart';
 import '../services/render_output_launcher.dart';
+import 'time_format.dart';
 
 class RenderOutputsPanel extends StatelessWidget {
   const RenderOutputsPanel({
@@ -110,6 +111,16 @@ class _RenderOutputRow extends StatelessWidget {
                   context,
                 ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
+              if (_metadataText.isNotEmpty)
+                Text(
+                  _metadataText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               SelectableText(
                 output.url,
                 maxLines: compact ? 1 : 2,
@@ -166,6 +177,29 @@ class _RenderOutputRow extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String get _metadataText {
+    final parts = <String>[];
+    if (output.durationSeconds > 0) {
+      parts.add(formatSeconds(output.durationSeconds));
+    }
+    if (output.sizeBytes > 0) {
+      parts.add(_formatBytes(output.sizeBytes));
+    }
+    return parts.join(' · ');
+  }
+
+  String _formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    var size = bytes.toDouble();
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    final precision = unitIndex == 0 || size >= 10 ? 0 : 1;
+    return '${size.toStringAsFixed(precision)} ${units[unitIndex]}';
   }
 
   void _copyValue(BuildContext context, String value, String label) {

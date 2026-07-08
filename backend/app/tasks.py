@@ -61,6 +61,23 @@ def _unique_render_output_path(
     raise RuntimeError("사용 가능한 렌더 출력 파일명을 만들 수 없습니다.")
 
 
+def _render_output_duration_seconds(segments: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for segment in segments:
+        start = float(segment.get("start", 0.0))
+        end = float(segment.get("end", start))
+        speed = max(0.25, float(segment.get("playback_speed", 1.0) or 1.0))
+        total += max(0.0, end - start) / speed
+    return round(total, 3)
+
+
+def _render_file_size_bytes(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def _snap_to_timecode_frame(seconds: float) -> float:
     if seconds <= 0:
         return 0.0
@@ -647,6 +664,8 @@ def render_video_job(
             captions=captions,
             caption_style=caption_style,
         )
+        render_duration_seconds = _render_output_duration_seconds(normalized)
+        render_size_bytes = _render_file_size_bytes(rendered_path)
 
         _set_task_state(
             task,
@@ -657,6 +676,8 @@ def render_video_job(
             "최종 영상 렌더링 완료",
             render_path=str(rendered_path),
             render_url=f"/api/jobs/{job_id}/download",
+            render_duration_seconds=render_duration_seconds,
+            render_size_bytes=render_size_bytes,
         )
         return store.load(job_id)
     except Exception as exc:
@@ -721,12 +742,16 @@ def render_batch_video_job(
                 captions=captions,
                 caption_style=caption_style,
             )
+            render_duration_seconds = _render_output_duration_seconds(normalized)
+            render_size_bytes = _render_file_size_bytes(rendered_path)
             rendered_items.append(
                 {
                     "label": str(item.get("label") or f"Shorts {index:02}"),
                     "path": str(rendered_path),
                     "url": f"/api/jobs/{job_id}/download/{rendered_path.name}",
                     "output_name": rendered_path.name,
+                    "duration_seconds": render_duration_seconds,
+                    "size_bytes": render_size_bytes,
                     "segments": normalized,
                 }
             )
@@ -743,6 +768,8 @@ def render_batch_video_job(
             batch_render_items=rendered_items,
             render_path=rendered_items[0]["path"],
             render_url=rendered_items[0]["url"],
+            render_duration_seconds=rendered_items[0]["duration_seconds"],
+            render_size_bytes=rendered_items[0]["size_bytes"],
         )
         return store.load(job_id)
     except Exception as exc:

@@ -93,6 +93,8 @@ def test_render_video_job_does_not_overwrite_existing_output(
     )
 
     assert Path(result["render_path"]).name == "youtube_highlights_002.mp4"
+    assert result["render_duration_seconds"] == 10.01
+    assert result["render_size_bytes"] == 3
     assert (fake_store.output / "youtube_highlights.mp4").read_text(
         encoding="utf-8",
     ) == "previous"
@@ -155,7 +157,15 @@ def test_batch_render_job_deduplicates_output_names(
             {
                 "label": "Shorts 02",
                 "output_name": "shorts.mp4",
-                "segments": [{"order": 1, "start": 20, "end": 30, "reason": "b"}],
+                "segments": [
+                    {
+                        "order": 1,
+                        "start": 20,
+                        "end": 30,
+                        "reason": "b",
+                        "playback_speed": 2,
+                    }
+                ],
             },
         ],
         {},
@@ -165,3 +175,6 @@ def test_batch_render_job_deduplicates_output_names(
     assert [
         item["output_name"] for item in result["batch_render_items"]
     ] == rendered_names
+    assert result["batch_render_items"][0]["duration_seconds"] == 10.01
+    assert result["batch_render_items"][1]["duration_seconds"] == 5.005
+    assert result["batch_render_items"][0]["size_bytes"] == len("shorts.mp4")

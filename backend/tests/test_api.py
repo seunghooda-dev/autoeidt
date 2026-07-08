@@ -71,12 +71,16 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                 "segments": [],
                 "render_path": "C:/AutoEdit/outputs/shorts_01.mp4",
                 "render_url": "/api/jobs/rendered-job/download/shorts_01.mp4",
+                "render_duration_seconds": 45.5,
+                "render_size_bytes": 123456,
                 "batch_render_items": [
                     {
                         "label": "Shorts 01",
                         "path": "C:/AutoEdit/outputs/shorts_01.mp4",
                         "url": "/api/jobs/rendered-job/download/shorts_01.mp4",
                         "output_name": "shorts_01.mp4",
+                        "duration_seconds": 45.5,
+                        "size_bytes": 123456,
                         "segments": [],
                     },
                     {
@@ -84,6 +88,8 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                         "path": "C:/AutoEdit/outputs/shorts_02.mp4",
                         "url": "/api/jobs/rendered-job/download/shorts_02.mp4",
                         "output_name": "shorts_02.mp4",
+                        "duration_seconds": 61.2,
+                        "size_bytes": 234567,
                         "segments": [],
                     },
                 ],
@@ -96,5 +102,9 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
     assert response.status_code == 200
     payload = response.json()
     assert payload["render_path"] == "C:/AutoEdit/outputs/shorts_01.mp4"
+    assert payload["render_duration_seconds"] == 45.5
+    assert payload["render_size_bytes"] == 123456
     assert len(payload["batch_render_items"]) == 2
     assert payload["batch_render_items"][1]["path"].endswith("shorts_02.mp4")
+    assert payload["batch_render_items"][1]["duration_seconds"] == 61.2
+    assert payload["batch_render_items"][1]["size_bytes"] == 234567

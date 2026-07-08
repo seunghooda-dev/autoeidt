@@ -110,6 +110,8 @@ class JobStatusResponse {
     this.originalFilename,
     this.renderPath,
     this.renderUrl,
+    this.renderDurationSeconds,
+    this.renderSizeBytes,
     this.error,
     this.styleProfile,
     this.analysisWarnings = const [],
@@ -126,6 +128,8 @@ class JobStatusResponse {
   final String? originalFilename;
   final String? renderPath;
   final String? renderUrl;
+  final double? renderDurationSeconds;
+  final int? renderSizeBytes;
   final String? error;
   final StyleProfile? styleProfile;
   final List<String> analysisWarnings;
@@ -147,6 +151,9 @@ class JobStatusResponse {
       originalFilename: json['original_filename'] as String?,
       renderPath: json['render_path'] as String?,
       renderUrl: json['render_url'] as String?,
+      renderDurationSeconds: (json['render_duration_seconds'] as num?)
+          ?.toDouble(),
+      renderSizeBytes: (json['render_size_bytes'] as num?)?.toInt(),
       error: json['error'] as String?,
       styleProfile: json['style_profile'] == null
           ? null
@@ -175,12 +182,16 @@ class BatchRenderItemResult {
     required this.outputName,
     required this.url,
     this.path = '',
+    this.durationSeconds = 0,
+    this.sizeBytes = 0,
   });
 
   final String label;
   final String outputName;
   final String url;
   final String path;
+  final double durationSeconds;
+  final int sizeBytes;
 
   factory BatchRenderItemResult.fromJson(Map<String, dynamic> json) {
     return BatchRenderItemResult(
@@ -188,6 +199,8 @@ class BatchRenderItemResult {
       outputName: json['output_name'] as String? ?? '',
       url: json['url'] as String? ?? '',
       path: json['path'] as String? ?? '',
+      durationSeconds: (json['duration_seconds'] as num?)?.toDouble() ?? 0,
+      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
     );
   }
 }

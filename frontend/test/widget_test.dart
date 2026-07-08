@@ -139,6 +139,8 @@ void main() {
                 url:
                     'http://127.0.0.1:8000/api/jobs/job/download/shorts_01.mp4',
                 path: r'C:\AutoEdit outputs\shorts_01.mp4',
+                durationSeconds: 61.2,
+                sizeBytes: 234567,
               ),
             ],
             onRevealPath: (path) async {
@@ -155,6 +157,7 @@ void main() {
     await tester.tap(find.byTooltip('Open rendered file'));
     await tester.pump();
 
+    expect(find.textContaining('229 KB'), findsOneWidget);
     expect(openedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
     expect(find.text('shorts_01.mp4 opened'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));

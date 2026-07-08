@@ -146,6 +146,8 @@ class EditorController extends ChangeNotifier {
                   : item.outputName,
               url: _apiClient.absoluteUrl(item.url),
               path: item.path,
+              durationSeconds: item.durationSeconds,
+              sizeBytes: item.sizeBytes,
             ),
       ];
     }
@@ -156,6 +158,8 @@ class EditorController extends ChangeNotifier {
         outputName: _outputNameFromUrl(currentRenderUrl),
         url: currentRenderUrl,
         path: job?.renderPath ?? '',
+        durationSeconds: job?.renderDurationSeconds ?? 0,
+        sizeBytes: job?.renderSizeBytes ?? 0,
       ),
     ];
   }

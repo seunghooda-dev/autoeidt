@@ -894,6 +894,8 @@ void main() {
             progress: 100,
             message: 'done',
             renderPath: 'C:/AutoEdit/outputs/shorts_01.mp4',
+            renderDurationSeconds: 45.5,
+            renderSizeBytes: 123456,
             renderUrl: '/api/jobs/job-4/download/shorts_01.mp4',
             batchRenderItems: [
               BatchRenderItemResult(
@@ -901,12 +903,16 @@ void main() {
                 outputName: 'shorts_01.mp4',
                 url: '/api/jobs/job-4/download/shorts_01.mp4',
                 path: 'C:/AutoEdit/outputs/shorts_01.mp4',
+                durationSeconds: 45.5,
+                sizeBytes: 123456,
               ),
               BatchRenderItemResult(
                 label: 'Shorts 02',
                 outputName: 'shorts_02.mp4',
                 url: '/api/jobs/job-4/download/shorts_02.mp4',
                 path: 'C:/AutoEdit/outputs/shorts_02.mp4',
+                durationSeconds: 61.2,
+                sizeBytes: 234567,
               ),
             ],
           );
@@ -924,6 +930,8 @@ void main() {
       'http://127.0.0.1:1/api/jobs/job-4/download/shorts_02.mp4',
     );
     expect(outputs.last.path, 'C:/AutoEdit/outputs/shorts_02.mp4');
+    expect(outputs.last.durationSeconds, 61.2);
+    expect(outputs.last.sizeBytes, 234567);
   });
 
   test('multi shorts candidates can be built edited and selected', () {
