@@ -1840,6 +1840,101 @@ void main() {
     }
   });
 
+  test('shorts builder fills missing story roles from non adjacent clips', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 900
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 25,
+          reason: '결과부터 보는 핵심 문제',
+          script: '오늘 핵심 문제를 먼저 보여드립니다',
+          score: 9,
+          tags: ['Story:Hook', '유지율'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 40,
+          end: 65,
+          reason: '반복 인사와 CTA',
+          script: '좋아요와 구독 부탁드립니다',
+          score: 3,
+          tags: ['CTA'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 120,
+          end: 145,
+          reason: '잡담',
+          script: '잠깐 다른 이야기를 덧붙입니다',
+          score: 4,
+          tags: ['구체성'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 4,
+          start: 260,
+          end: 290,
+          reason: '공식 보고서에 따른 근거',
+          script: '공식 보고서에 따르면 수치가 확인됐습니다',
+          score: 8.5,
+          tags: ['Story:Evidence', '근거', '검증팩트'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 5,
+          start: 520,
+          end: 550,
+          reason: '시청자에게 미치는 영향',
+          script: '주민 피해와 현장 영향이 이어졌습니다',
+          score: 8,
+          tags: ['Story:Impact', '영향'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 6,
+          start: 700,
+          end: 730,
+          reason: '후속 대응과 결론',
+          script: '정부는 다음 대응과 결론을 발표했습니다',
+          score: 7.8,
+          tags: ['Story:Resolution', '대응'],
+          audioNormalize: true,
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 4,
+      minSeconds: 90,
+      maxSeconds: 130,
+    );
+
+    final complete = controller.shortsCandidates.firstWhere(
+      (candidate) => const [
+        'Hook',
+        'Evidence',
+        'Impact',
+        'Resolution',
+      ].every(candidate.storyFlow.contains),
+    );
+    final reasons = complete.segments
+        .map((segment) => segment.reason)
+        .join(' ');
+
+    expect(complete.completionScore, greaterThanOrEqualTo(90));
+    expect(reasons, contains('핵심 문제'));
+    expect(reasons, contains('공식 보고서'));
+    expect(reasons, contains('미치는 영향'));
+    expect(reasons, contains('후속 대응'));
+    expect(
+      complete.segments.any((segment) => segment.tags.contains('CTA')),
+      isFalse,
+    );
+  });
+
   test('backend story arc tags drive shorts flow scoring', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 900

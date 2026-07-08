@@ -2645,6 +2645,7 @@ class EditorController extends ChangeNotifier {
         final group = _buildShortsGroup(
           seed,
           strategyUsed,
+          strategyKind: strategy.kind,
           minSeconds: minSeconds,
           maxSeconds: maxSeconds,
         );
@@ -5565,13 +5566,14 @@ class EditorController extends ChangeNotifier {
   List<HighlightSegment> _buildShortsGroup(
     HighlightSegment seed,
     Set<int> used, {
+    required String strategyKind,
     required double minSeconds,
     required double maxSeconds,
   }) {
-    final neighbors =
+    final available =
         segments.where((segment) => !used.contains(segment.order)).toList()
           ..sort((a, b) => a.start.compareTo(b.start));
-    final seedIndex = neighbors.indexWhere(
+    final seedIndex = available.indexWhere(
       (segment) => segment.order == seed.order,
     );
     if (seedIndex < 0) {
@@ -5579,26 +5581,278 @@ class EditorController extends ChangeNotifier {
     }
     final group = <HighlightSegment>[seed];
     var total = seed.outputDuration;
-    var left = seedIndex - 1;
-    var right = seedIndex + 1;
-    while (total < minSeconds && (left >= 0 || right < neighbors.length)) {
-      HighlightSegment? next;
-      if (right < neighbors.length) {
-        next = neighbors[right++];
-      } else if (left >= 0) {
-        next = neighbors[left--];
-      }
-      if (next == null || used.contains(next.order)) {
-        continue;
-      }
-      if (group.isNotEmpty && total + next.outputDuration > maxSeconds) {
-        continue;
-      }
-      group.add(next);
-      total += next.outputDuration;
-    }
+    total = _addMissingShortsStoryRoles(
+      group,
+      available,
+      strategyKind,
+      total: total,
+      minSeconds: minSeconds,
+      maxSeconds: maxSeconds,
+    );
+    total = _fillShortsGroupToMinimum(
+      group,
+      available,
+      strategyKind,
+      total: total,
+      minSeconds: minSeconds,
+      maxSeconds: maxSeconds,
+    );
     group.sort((a, b) => a.start.compareTo(b.start));
     return group;
+  }
+
+  double _addMissingShortsStoryRoles(
+    List<HighlightSegment> group,
+    List<HighlightSegment> available,
+    String strategyKind, {
+    required double total,
+    required double minSeconds,
+    required double maxSeconds,
+  }) {
+    var nextTotal = total;
+    for (final role in _shortsTargetRolesForStrategy(strategyKind)) {
+      if (!_shortsGroupNeedsLengthFill(
+        group,
+        strategyKind,
+        total: nextTotal,
+        minSeconds: minSeconds,
+      )) {
+        break;
+      }
+      if (_shortsGroupContainsRole(group, role, strategyKind)) {
+        continue;
+      }
+      final candidate = _bestShortsRoleCandidate(
+        group,
+        available,
+        role,
+        strategyKind,
+        total: nextTotal,
+        maxSeconds: maxSeconds,
+      );
+      if (candidate == null) {
+        continue;
+      }
+      group.add(candidate);
+      nextTotal += candidate.outputDuration;
+    }
+    return nextTotal;
+  }
+
+  double _fillShortsGroupToMinimum(
+    List<HighlightSegment> group,
+    List<HighlightSegment> available,
+    String strategyKind, {
+    required double total,
+    required double minSeconds,
+    required double maxSeconds,
+  }) {
+    var nextTotal = total;
+    while (_shortsGroupNeedsLengthFill(
+      group,
+      strategyKind,
+      total: nextTotal,
+      minSeconds: minSeconds,
+    )) {
+      final candidates = available
+          .where(
+            (candidate) =>
+                !_shortsGroupContainsSegment(group, candidate) &&
+                candidate.outputDuration > 0 &&
+                nextTotal + candidate.outputDuration <= maxSeconds + 0.001,
+          )
+          .toList();
+      if (candidates.isEmpty) {
+        break;
+      }
+      candidates.sort((a, b) {
+        final scoreCompare = _shortsFillerCandidateScore(
+          b,
+          group,
+          strategyKind,
+        ).compareTo(_shortsFillerCandidateScore(a, group, strategyKind));
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.start.compareTo(b.start);
+      });
+      final next = candidates.first;
+      group.add(next);
+      nextTotal += next.outputDuration;
+    }
+    return nextTotal;
+  }
+
+  bool _shortsGroupNeedsLengthFill(
+    List<HighlightSegment> group,
+    String strategyKind, {
+    required double total,
+    required double minSeconds,
+  }) {
+    if (total >= minSeconds) {
+      return false;
+    }
+    if (total >= minSeconds * 0.95 &&
+        _shortsGroupHasSupportRole(group, strategyKind)) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _shortsGroupHasSupportRole(
+    List<HighlightSegment> group,
+    String strategyKind,
+  ) {
+    return group.any((segment) {
+      final role = _shortsStoryRole(segment, strategyKind);
+      return role == 'evidence' || role == 'context' || role == 'risk';
+    });
+  }
+
+  List<String> _shortsTargetRolesForStrategy(String strategyKind) {
+    return switch (strategyKind) {
+      'risk' => const ['risk', 'evidence', 'impact', 'resolution'],
+      'news' => const ['hook', 'evidence', 'impact', 'resolution'],
+      'info' => const ['hook', 'context', 'evidence', 'resolution'],
+      _ => const ['hook', 'evidence', 'impact', 'resolution', 'context'],
+    };
+  }
+
+  HighlightSegment? _bestShortsRoleCandidate(
+    List<HighlightSegment> group,
+    List<HighlightSegment> available,
+    String targetRole,
+    String strategyKind, {
+    required double total,
+    required double maxSeconds,
+  }) {
+    final candidates = available
+        .where(
+          (candidate) =>
+              !_shortsGroupContainsSegment(group, candidate) &&
+              candidate.outputDuration > 0 &&
+              total + candidate.outputDuration <= maxSeconds + 0.001 &&
+              _shortsStoryRole(candidate, strategyKind) == targetRole,
+        )
+        .toList();
+    if (candidates.isEmpty) {
+      return null;
+    }
+    candidates.sort((a, b) {
+      final scoreCompare =
+          _shortsRoleCandidateScore(
+            b,
+            group,
+            targetRole,
+            strategyKind,
+          ).compareTo(
+            _shortsRoleCandidateScore(a, group, targetRole, strategyKind),
+          );
+      if (scoreCompare != 0) {
+        return scoreCompare;
+      }
+      return a.start.compareTo(b.start);
+    });
+    return candidates.first;
+  }
+
+  double _shortsRoleCandidateScore(
+    HighlightSegment candidate,
+    List<HighlightSegment> group,
+    String targetRole,
+    String strategyKind,
+  ) {
+    var score = _shortsSeedScore(strategyKind, candidate);
+    final distance = _shortsDistanceToGroup(candidate, group);
+    score += 36 - math.min(distance / 12, 36);
+    final targetRank = _shortsRoleRank(targetRole);
+    final groupStart = group.fold<double>(
+      group.first.start,
+      (value, segment) => math.min(value, segment.start),
+    );
+    final groupEnd = group.fold<double>(
+      group.first.end,
+      (value, segment) => math.max(value, segment.end),
+    );
+    if (targetRank <= 1 && candidate.start <= groupStart + 90) {
+      score += 8;
+    }
+    if (targetRank >= 3 && candidate.start >= groupEnd - 1) {
+      score += 8;
+    }
+    for (final segment in group) {
+      final segmentRank = _shortsRoleRank(
+        _shortsStoryRole(segment, strategyKind),
+      );
+      if (segmentRank < targetRank && candidate.end < segment.start) {
+        score -= 18;
+      }
+      if (segmentRank > targetRank && candidate.start > segment.end) {
+        score -= 12;
+      }
+    }
+    if (targetRole != 'risk' &&
+        strategyKind != 'risk' &&
+        _segmentHasRiskSignal(candidate)) {
+      score -= 20;
+    }
+    return score;
+  }
+
+  double _shortsFillerCandidateScore(
+    HighlightSegment candidate,
+    List<HighlightSegment> group,
+    String strategyKind,
+  ) {
+    final role = _shortsStoryRole(candidate, strategyKind);
+    var score = _shortsSeedScore(strategyKind, candidate) * 0.45;
+    final distance = _shortsDistanceToGroup(candidate, group);
+    score += 42 - math.min(distance / 8, 42);
+    if (!_shortsGroupContainsRole(group, role, strategyKind)) {
+      score += 24;
+    }
+    if (role == 'close') {
+      score -= 16;
+    }
+    if (strategyKind != 'risk' && _segmentHasRiskSignal(candidate)) {
+      score -= 24;
+    }
+    return score;
+  }
+
+  double _shortsDistanceToGroup(
+    HighlightSegment candidate,
+    List<HighlightSegment> group,
+  ) {
+    var distance = double.infinity;
+    for (final segment in group) {
+      if (candidate.start <= segment.end && candidate.end >= segment.start) {
+        return 0;
+      }
+      if (candidate.end < segment.start) {
+        distance = math.min(distance, segment.start - candidate.end);
+      } else {
+        distance = math.min(distance, candidate.start - segment.end);
+      }
+    }
+    return distance.isFinite ? distance : 0;
+  }
+
+  bool _shortsGroupContainsRole(
+    List<HighlightSegment> group,
+    String role,
+    String strategyKind,
+  ) {
+    return group.any(
+      (segment) => _shortsStoryRole(segment, strategyKind) == role,
+    );
+  }
+
+  bool _shortsGroupContainsSegment(
+    List<HighlightSegment> group,
+    HighlightSegment candidate,
+  ) {
+    return group.any((segment) => segment.order == candidate.order);
   }
 
   String _shortsReason(
