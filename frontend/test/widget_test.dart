@@ -1,8 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/main.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
+import 'package:highlight_editor_app/models/job_models.dart';
+import 'package:highlight_editor_app/widgets/render_outputs_panel.dart';
 import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:provider/provider.dart';
 
@@ -117,6 +120,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.timelineZoom, 1.0);
+  });
+
+  testWidgets('render output panel can reveal local file location', (
+    tester,
+  ) async {
+    String? revealedPath;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RenderOutputsPanel(
+            outputs: const [
+              BatchRenderItemResult(
+                label: 'Shorts 01',
+                outputName: 'shorts_01.mp4',
+                url:
+                    'http://127.0.0.1:8000/api/jobs/job/download/shorts_01.mp4',
+                path: r'C:\AutoEdit outputs\shorts_01.mp4',
+              ),
+            ],
+            onRevealPath: (path) async {
+              revealedPath = path;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Show in folder'));
+    await tester.pump();
+
+    expect(revealedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
+    expect(find.text('shorts_01.mp4 location opened'), findsOneWidget);
   });
 }
 

@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/job_models.dart';
+import '../services/render_output_launcher.dart';
 
 class RenderOutputsPanel extends StatelessWidget {
   const RenderOutputsPanel({
     super.key,
     required this.outputs,
     this.compact = false,
+    this.onRevealPath,
   });
 
   final List<BatchRenderItemResult> outputs;
   final bool compact;
+  final Future<void> Function(String path)? onRevealPath;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +56,11 @@ class RenderOutputsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           for (var index = 0; index < outputs.length; index++) ...[
-            _RenderOutputRow(output: outputs[index], compact: compact),
+            _RenderOutputRow(
+              output: outputs[index],
+              compact: compact,
+              onRevealPath: onRevealPath,
+            ),
             if (index != outputs.length - 1) const SizedBox(height: 6),
           ],
         ],
@@ -63,10 +70,15 @@ class RenderOutputsPanel extends StatelessWidget {
 }
 
 class _RenderOutputRow extends StatelessWidget {
-  const _RenderOutputRow({required this.output, required this.compact});
+  const _RenderOutputRow({
+    required this.output,
+    required this.compact,
+    required this.onRevealPath,
+  });
 
   final BatchRenderItemResult output;
   final bool compact;
+  final Future<void> Function(String path)? onRevealPath;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +137,13 @@ class _RenderOutputRow extends StatelessWidget {
             ),
             if (output.path.isNotEmpty)
               IconButton(
+                tooltip: 'Show in folder',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _revealFile(context, output.path, label),
+                icon: const Icon(Icons.folder_open, size: 16),
+              ),
+            if (output.path.isNotEmpty)
+              IconButton(
                 tooltip: 'Copy local file path',
                 visualDensity: VisualDensity.compact,
                 onPressed: () =>
@@ -145,5 +164,30 @@ class _RenderOutputRow extends StatelessWidget {
         duration: const Duration(seconds: 1),
       ),
     );
+  }
+
+  Future<void> _revealFile(
+    BuildContext context,
+    String path,
+    String label,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final revealPath = onRevealPath ?? RenderOutputLauncher.reveal;
+    try {
+      await revealPath(path);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('$label location opened'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not open $label location: $error'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
