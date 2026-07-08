@@ -223,7 +223,6 @@ class _CompactEditorShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<EditorController>();
     return Column(
       children: [
         const _TopBar(compact: true),
@@ -236,10 +235,7 @@ class _CompactEditorShell extends StatelessWidget {
               const SizedBox(height: 12),
               const StatusPanel(),
               const SizedBox(height: 12),
-              _SurfacePanel(
-                padding: const EdgeInsets.all(12),
-                child: VideoPreview(controller: controller.videoController),
-              ),
+              const SizedBox(height: 300, child: _PreviewStage()),
               const SizedBox(height: 12),
               const _TimelinePanel(compact: true),
               const SizedBox(height: 12),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -71,6 +72,7 @@ class EditorController extends ChangeNotifier {
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
+  int _previewRevision = 0;
   bool isProbingMedia = false;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
@@ -443,6 +445,7 @@ class EditorController extends ChangeNotifier {
     await _disposeVideoController();
     notifyListeners();
     if (!kIsWeb && selectedFile?.path != null) {
+      unawaited(_initializeLocalPreview(selectedFile!.path!));
       unawaited(probeSelectedMedia());
     }
   }
@@ -2005,17 +2008,51 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> _initializePreview(String id) async {
+    final revision = ++_previewRevision;
     await _disposeVideoController();
     final controller = VideoPlayerController.networkUrl(
       Uri.parse(_apiClient.sourceUrl(id)),
     );
-    videoController = controller;
     await controller.initialize();
+    if (revision != _previewRevision) {
+      await controller.dispose();
+      return;
+    }
+    videoController = controller;
     final previewDuration = controller.value.duration.inMilliseconds / 1000;
     if (previewDuration > 0 && duration == 0) {
       duration = previewDuration;
     }
     controller.addListener(_handleVideoTick);
+  }
+
+  Future<void> _initializeLocalPreview(String path) async {
+    final revision = ++_previewRevision;
+    try {
+      final file = io.File(path);
+      if (!await file.exists()) {
+        return;
+      }
+      final controller = VideoPlayerController.file(file);
+      await controller.initialize();
+      if (revision != _previewRevision || selectedFile?.path != path) {
+        await controller.dispose();
+        return;
+      }
+      await _disposeVideoController();
+      videoController = controller;
+      final previewDuration = controller.value.duration.inMilliseconds / 1000;
+      if (previewDuration > 0 && duration == 0) {
+        duration = previewDuration;
+      }
+      controller.addListener(_handleVideoTick);
+      notifyListeners();
+    } catch (_) {
+      if (selectedFile?.path == path) {
+        await _disposeVideoController();
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> _disposeVideoController() async {
