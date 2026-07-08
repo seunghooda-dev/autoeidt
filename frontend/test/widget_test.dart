@@ -94,6 +94,12 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyV);
     expect(controller.isRazorTool, isFalse);
 
+    expect(controller.timelineSnappingEnabled, isTrue);
+    await _pressShortcut(tester, LogicalKeyboardKey.keyS);
+    expect(controller.timelineSnappingEnabled, isFalse);
+    await _pressShortcut(tester, LogicalKeyboardKey.keyS);
+    expect(controller.timelineSnappingEnabled, isTrue);
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyL, control: true);
     expect(controller.selectedSegment!.audioLinked, isFalse);
 
@@ -245,6 +251,53 @@ void main() {
     expect(controller.timelineZoom, 1.0);
   });
 
+  testWidgets('timeline snapping pulls scrubber to marker and edit points', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 100
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 30, reason: 'test'),
+      ]
+      ..timelineMarkers = const [
+        TimelineMarker(id: 1, seconds: 20, label: 'M01'),
+      ];
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    final timelineBox = tester.renderObject<RenderBox>(
+      find.byType(TimelineEditor).first,
+    );
+    final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
+    final markerNearX = timelineBox.size.width * 20.4 / controller.duration;
+
+    await tester.tapAt(timelineTopLeft + Offset(markerNearX, 40));
+    await tester.pump();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 600);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyS);
+    expect(controller.timelineSnappingEnabled, isFalse);
+
+    await tester.tapAt(timelineTopLeft + Offset(markerNearX, 40));
+    await tester.pump();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 612);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyS);
+    expect(controller.timelineSnappingEnabled, isTrue);
+    expect(find.text('Snap S'), findsOneWidget);
+  });
+
   testWidgets('timeline context menu exposes detached audio nudge commands', (
     tester,
   ) async {
@@ -285,6 +338,8 @@ void main() {
     await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
 
+    expect(find.text('Disable snapping'), findsOneWidget);
+    expect(find.text('S'), findsOneWidget);
     expect(find.text('Move detached audio earlier 1f'), findsOneWidget);
     expect(find.text('Ctrl+Alt+Left'), findsOneWidget);
     expect(find.text('Move detached audio later 10f'), findsOneWidget);

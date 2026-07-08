@@ -231,6 +231,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
+        key == LogicalKeyboardKey.keyS) {
+      editor.toggleTimelineSnapping();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
         key == LogicalKeyboardKey.keyI) {
       editor.setMarkInFromPlayhead();
     } else if (!isCtrl &&
@@ -916,75 +921,107 @@ class _TimelinePanel extends StatelessWidget {
                 icon: Icons.view_timeline_outlined,
               ),
               const SizedBox(width: 10),
-              _SmallPill(label: '${controller.segments.length} clips'),
-              const SizedBox(width: 6),
-              _TrackControlButton(
-                label: controller.videoTrackLocked ? 'V1 Locked' : 'V1',
-                icon: controller.videoTrackLocked
-                    ? Icons.lock
-                    : Icons.lock_open,
-                tooltip: controller.videoTrackLocked
-                    ? 'V1 영상 트랙 잠금 해제'
-                    : 'V1 영상 트랙 잠금',
-                selected: controller.videoTrackLocked,
-                onPressed: editor.toggleVideoTrackLock,
-              ),
-              const SizedBox(width: 6),
-              _TrackControlButton(
-                label: controller.audioTrackLocked ? 'A1/A2 Locked' : 'A1/A2',
-                icon: controller.audioTrackLocked
-                    ? Icons.lock
-                    : Icons.lock_open,
-                tooltip: controller.audioTrackLocked
-                    ? 'A1/A2 오디오 트랙 잠금 해제'
-                    : 'A1/A2 오디오 트랙 잠금',
-                selected: controller.audioTrackLocked,
-                onPressed: editor.toggleAudioTrackLock,
-              ),
-              const SizedBox(width: 6),
-              _TrackControlButton(
-                label: controller.allAudioMuted ? 'A1/A2 Muted' : 'A1/A2 Mix',
-                icon: controller.allAudioMuted
-                    ? Icons.volume_off_outlined
-                    : Icons.volume_up_outlined,
-                tooltip: controller.allAudioMuted
-                    ? 'A1/A2 전체 음소거 해제'
-                    : 'A1/A2 전체 음소거',
-                selected: controller.allAudioMuted,
-                onPressed: editor.toggleAllAudioMute,
-              ),
-              const SizedBox(width: 6),
-              _AudioTrackBusMenu(controller: controller, editor: editor),
-              if (selected != null) ...[
-                const SizedBox(width: 6),
-                _TrackControlButton(
-                  label: selected.audioChannel1Enabled ? 'A1 On' : 'A1 Off',
-                  icon: selected.audioChannel1Enabled
-                      ? Icons.check_box_outlined
-                      : Icons.check_box_outline_blank,
-                  tooltip: selected.audioChannel1Enabled
-                      ? '선택 클립 A1 채널 비활성화'
-                      : '선택 클립 A1 채널 활성화',
-                  selected: selected.audioChannel1Enabled,
-                  onPressed: editor.toggleSelectedAudioChannel1,
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _SmallPill(label: '${controller.segments.length} clips'),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.timelineSnappingLabel,
+                        icon: controller.timelineSnappingEnabled
+                            ? Icons.grid_on
+                            : Icons.grid_off,
+                        tooltip: controller.timelineSnappingEnabled
+                            ? '타임라인 스냅 끄기 (S)'
+                            : '타임라인 스냅 켜기 (S)',
+                        selected: controller.timelineSnappingEnabled,
+                        onPressed: editor.toggleTimelineSnapping,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.videoTrackLocked ? 'V1 Locked' : 'V1',
+                        icon: controller.videoTrackLocked
+                            ? Icons.lock
+                            : Icons.lock_open,
+                        tooltip: controller.videoTrackLocked
+                            ? 'V1 영상 트랙 잠금 해제'
+                            : 'V1 영상 트랙 잠금',
+                        selected: controller.videoTrackLocked,
+                        onPressed: editor.toggleVideoTrackLock,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.audioTrackLocked
+                            ? 'A1/A2 Locked'
+                            : 'A1/A2',
+                        icon: controller.audioTrackLocked
+                            ? Icons.lock
+                            : Icons.lock_open,
+                        tooltip: controller.audioTrackLocked
+                            ? 'A1/A2 오디오 트랙 잠금 해제'
+                            : 'A1/A2 오디오 트랙 잠금',
+                        selected: controller.audioTrackLocked,
+                        onPressed: editor.toggleAudioTrackLock,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.allAudioMuted
+                            ? 'A1/A2 Muted'
+                            : 'A1/A2 Mix',
+                        icon: controller.allAudioMuted
+                            ? Icons.volume_off_outlined
+                            : Icons.volume_up_outlined,
+                        tooltip: controller.allAudioMuted
+                            ? 'A1/A2 전체 음소거 해제'
+                            : 'A1/A2 전체 음소거',
+                        selected: controller.allAudioMuted,
+                        onPressed: editor.toggleAllAudioMute,
+                      ),
+                      const SizedBox(width: 6),
+                      _AudioTrackBusMenu(
+                        controller: controller,
+                        editor: editor,
+                      ),
+                      if (selected != null) ...[
+                        const SizedBox(width: 6),
+                        _TrackControlButton(
+                          label: selected.audioChannel1Enabled
+                              ? 'A1 On'
+                              : 'A1 Off',
+                          icon: selected.audioChannel1Enabled
+                              ? Icons.check_box_outlined
+                              : Icons.check_box_outline_blank,
+                          tooltip: selected.audioChannel1Enabled
+                              ? '선택 클립 A1 채널 비활성화'
+                              : '선택 클립 A1 채널 활성화',
+                          selected: selected.audioChannel1Enabled,
+                          onPressed: editor.toggleSelectedAudioChannel1,
+                        ),
+                        const SizedBox(width: 6),
+                        _TrackControlButton(
+                          label: selected.audioChannel2Enabled
+                              ? 'A2 On'
+                              : 'A2 Off',
+                          icon: selected.audioChannel2Enabled
+                              ? Icons.check_box_outlined
+                              : Icons.check_box_outline_blank,
+                          tooltip: selected.audioChannel2Enabled
+                              ? '선택 클립 A2 채널 비활성화'
+                              : '선택 클립 A2 채널 활성화',
+                          selected: selected.audioChannel2Enabled,
+                          onPressed: editor.toggleSelectedAudioChannel2,
+                        ),
+                      ],
+                      const SizedBox(width: 6),
+                      _SmallPill(
+                        label:
+                            'Out ${formatSeconds(controller.segments.fold<double>(0, (total, segment) => total + segment.outputDuration))}',
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 6),
-                _TrackControlButton(
-                  label: selected.audioChannel2Enabled ? 'A2 On' : 'A2 Off',
-                  icon: selected.audioChannel2Enabled
-                      ? Icons.check_box_outlined
-                      : Icons.check_box_outline_blank,
-                  tooltip: selected.audioChannel2Enabled
-                      ? '선택 클립 A2 채널 비활성화'
-                      : '선택 클립 A2 채널 활성화',
-                  selected: selected.audioChannel2Enabled,
-                  onPressed: editor.toggleSelectedAudioChannel2,
-                ),
-              ],
-              const Spacer(),
-              _SmallPill(
-                label:
-                    'Out ${formatSeconds(controller.segments.fold<double>(0, (total, segment) => total + segment.outputDuration))}',
               ),
             ],
           ),
@@ -1182,6 +1219,7 @@ class _TimelineEditorBody extends StatelessWidget {
       timelineMarkers: controller.timelineMarkers,
       waveform: controller.waveform,
       zoom: controller.timelineZoom,
+      snappingEnabled: controller.timelineSnappingEnabled,
       videoTrackLocked: controller.videoTrackLocked,
       audioTrackLocked: controller.audioTrackLocked,
       razorTool: controller.isRazorTool,
@@ -1244,6 +1282,7 @@ class _TimelineEditorBody extends StatelessWidget {
           .applyDefaultAudioTransition,
       onSetSelectionTool: context.read<EditorController>().setSelectionTool,
       onSetRazorTool: context.read<EditorController>().setRazorTool,
+      onToggleSnapping: context.read<EditorController>().toggleTimelineSnapping,
       onSplitAt: context.read<EditorController>().splitSelectedAt,
       onDuplicateSegment: context
           .read<EditorController>()

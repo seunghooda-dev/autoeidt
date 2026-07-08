@@ -14,6 +14,7 @@ enum _DragTrack { video, audio1, audio2 }
 enum _TimelineMenuAction {
   selectionTool,
   razorTool,
+  toggleSnapping,
   markIn,
   markOut,
   markClip,
@@ -77,6 +78,7 @@ class TimelineEditor extends StatefulWidget {
     required this.timelineMarkers,
     required this.waveform,
     required this.zoom,
+    required this.snappingEnabled,
     required this.videoTrackLocked,
     required this.audioTrackLocked,
     required this.razorTool,
@@ -113,6 +115,7 @@ class TimelineEditor extends StatefulWidget {
     this.onApplyAudioTransition,
     this.onSetSelectionTool,
     this.onSetRazorTool,
+    this.onToggleSnapping,
     this.onSplitAt,
     this.onDuplicateSegment,
     this.onDeleteSegment,
@@ -139,6 +142,7 @@ class TimelineEditor extends StatefulWidget {
   final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
   final double zoom;
+  final bool snappingEnabled;
   final bool videoTrackLocked;
   final bool audioTrackLocked;
   final bool razorTool;
@@ -175,6 +179,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onApplyAudioTransition;
   final VoidCallback? onSetSelectionTool;
   final VoidCallback? onSetRazorTool;
+  final VoidCallback? onToggleSnapping;
   final ValueChanged<double>? onSplitAt;
   final VoidCallback? onDuplicateSegment;
   final VoidCallback? onDeleteSegment;
@@ -196,6 +201,7 @@ class TimelineEditor extends StatefulWidget {
 }
 
 class _TimelineEditorState extends State<TimelineEditor> {
+  static const double _snapHitWidth = 10;
   static const double _handleHitWidth = 16;
   static const double _handleVisualWidth = 4;
   static const double _minSegmentSeconds = 1.0;
@@ -344,7 +350,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
   void _tap(Offset position, double width) {
     final track = _trackAt(position.dy);
     final hitIndex = _segmentIndexAt(position.dx, width, track);
-    final seconds = _snapToFrame(_xToSeconds(position.dx, width));
+    final seconds = _snapTimelineSeconds(
+      _xToSeconds(position.dx, width),
+      width,
+    );
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
@@ -360,7 +369,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final track = _trackAt(position.dy);
     final hitIndex = _segmentIndexAt(position.dx, width, track);
     final marker = _markerAt(position.dx, width);
-    final seconds = _snapToFrame(_xToSeconds(position.dx, width));
+    final seconds = _snapTimelineSeconds(
+      _xToSeconds(position.dx, width),
+      width,
+    );
     final segment = hitIndex == null ? null : widget.segments[hitIndex];
 
     if (segment != null) {
@@ -387,6 +399,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onSetSelectionTool?.call();
       case _TimelineMenuAction.razorTool:
         widget.onSetRazorTool?.call();
+      case _TimelineMenuAction.toggleSnapping:
+        widget.onToggleSnapping?.call();
       case _TimelineMenuAction.markIn:
         widget.onSetMarkIn?.call(seconds);
       case _TimelineMenuAction.markOut:
@@ -608,6 +622,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
         'Razor Tool',
         _TimelineMenuAction.razorTool,
         shortcut: 'C',
+      ),
+      _menuItem(
+        widget.snappingEnabled ? Icons.grid_on : Icons.grid_off,
+        widget.snappingEnabled ? 'Disable snapping' : 'Enable snapping',
+        _TimelineMenuAction.toggleSnapping,
+        shortcut: 'S',
+        enabled: widget.onToggleSnapping != null,
       ),
       const PopupMenuDivider(),
       _menuItem(
@@ -1047,12 +1068,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _activeTrack = null;
       _isScrubbing = true;
     });
-    widget.onScrub(_snapToFrame(_xToSeconds(x, width)));
+    widget.onScrub(_snapTimelineSeconds(_xToSeconds(x, width), width));
   }
 
   void _updateDrag(double x, double width) {
     if (_isScrubbing) {
-      widget.onScrub(_snapToFrame(_xToSeconds(x, width)));
+      widget.onScrub(_snapTimelineSeconds(_xToSeconds(x, width), width));
       return;
     }
 
@@ -1067,7 +1088,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     }
 
     final current = widget.segments[index];
-    final seconds = _snapToFrame(_xToSeconds(x, width));
+    final seconds = _snapTimelineSeconds(_xToSeconds(x, width), width);
 
     HighlightSegment updated;
     if (track == _DragTrack.video) {
@@ -1207,7 +1228,50 @@ class _TimelineEditorState extends State<TimelineEditor> {
     return (x / width).clamp(0.0, 1.0) * widget.duration;
   }
 
-  double _snapToFrame(double value) => snapSecondsToFrame(value);
+  double _snapTimelineSeconds(double value, double width) {
+    final frameValue = snapSecondsToFrame(value).clamp(0.0, widget.duration);
+    if (!widget.snappingEnabled || widget.duration <= 0 || width <= 0) {
+      return frameValue.toDouble();
+    }
+
+    final x = _secondsToX(frameValue.toDouble(), width);
+    var closestSeconds = frameValue.toDouble();
+    var closestDistance = double.infinity;
+    for (final candidate in _snapCandidateSeconds()) {
+      final snappedCandidate = snapSecondsToFrame(
+        candidate.clamp(0.0, widget.duration).toDouble(),
+      );
+      final distance = (x - _secondsToX(snappedCandidate, width)).abs();
+      if (distance < closestDistance && distance <= _snapHitWidth) {
+        closestDistance = distance;
+        closestSeconds = snappedCandidate;
+      }
+    }
+    return closestSeconds;
+  }
+
+  List<double> _snapCandidateSeconds() {
+    final points = <double>{0.0, widget.duration};
+    if (widget.markIn != null) {
+      points.add(widget.markIn!);
+    }
+    if (widget.markOut != null) {
+      points.add(widget.markOut!);
+    }
+    for (final marker in widget.timelineMarkers) {
+      if (marker.enabled) {
+        points.add(marker.seconds);
+      }
+    }
+    for (final segment in widget.segments) {
+      points
+        ..add(segment.start)
+        ..add(segment.end)
+        ..add(segment.effectiveAudioStart)
+        ..add(segment.effectiveAudioEnd);
+    }
+    return points.toList();
+  }
 }
 
 class _TimelinePainter extends CustomPainter {

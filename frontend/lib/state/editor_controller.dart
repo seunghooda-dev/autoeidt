@@ -80,6 +80,7 @@ class EditorController extends ChangeNotifier {
   String captionStylePreset = 'news';
   String exportAspectRatio = '16:9';
   double timelineZoom = 1.0;
+  bool timelineSnappingEnabled = true;
   String timelineTool = 'selection';
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
@@ -314,6 +315,8 @@ class EditorController extends ChangeNotifier {
       markOut != null;
   bool get isRazorTool => timelineTool == 'razor';
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
+  String get timelineSnappingLabel =>
+      timelineSnappingEnabled ? 'Snap S' : 'Snap Off';
   bool get allAudioMuted =>
       segments.isNotEmpty &&
       segments.every(
@@ -663,6 +666,7 @@ class EditorController extends ChangeNotifier {
     markOut = null;
     uploadProgress = 0;
     timelineTool = 'selection';
+    timelineSnappingEnabled = true;
     videoTrackLocked = false;
     audioTrackLocked = false;
     comparisonDefaultSegments = [];
@@ -1466,6 +1470,11 @@ class EditorController extends ChangeNotifier {
       return;
     }
     timelineTool = 'razor';
+    notifyListeners();
+  }
+
+  void toggleTimelineSnapping() {
+    timelineSnappingEnabled = !timelineSnappingEnabled;
     notifyListeners();
   }
 
