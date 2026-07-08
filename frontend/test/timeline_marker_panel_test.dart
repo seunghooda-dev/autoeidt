@@ -38,6 +38,17 @@ void main() {
     await tester.pump();
     expect(controller.currentPositionSeconds, 5);
 
+    await tester.tap(find.byTooltip('Hook 구간을 In/Out으로 지정'));
+    await tester.pump();
+    expect(controller.markIn, closeTo(5.005, 0.001));
+    expect(controller.markOut, closeTo(12.012, 0.001));
+
+    await tester.tap(find.byTooltip('Hook 구간을 클립으로 추가'));
+    await tester.pump();
+    expect(controller.segments.single.start, closeTo(5.005, 0.001));
+    expect(controller.segments.single.end, closeTo(12.012, 0.001));
+    expect(controller.segments.single.reason, '마커 Hook 구간');
+
     await tester.tap(find.byTooltip('Hook 마커 편집'));
     await tester.pumpAndSettle();
     expect(find.text('마커 편집'), findsOneWidget);

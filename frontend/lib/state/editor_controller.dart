@@ -1086,6 +1086,47 @@ class EditorController extends ChangeNotifier {
     unawaited(seekTo(marker.seconds, autoplay: false));
   }
 
+  void setMarksFromTimelineMarker(int id) {
+    final range = _timelineMarkerRange(id);
+    if (range == null) {
+      return;
+    }
+    _commitHistory();
+    markIn = range.start;
+    markOut = range.end;
+    unawaited(seekTo(range.start, autoplay: false));
+    notifyListeners();
+  }
+
+  void addSegmentFromTimelineMarker(int id) {
+    final range = _timelineMarkerRange(id);
+    if (range == null) {
+      return;
+    }
+    final marker = range.marker;
+    _commitHistory();
+    segments = _reorderSegments([
+      ...segments,
+      HighlightSegment(
+        order: segments.length + 1,
+        start: range.start,
+        end: range.end,
+        reason: '마커 ${marker.label} 구간',
+        script: marker.note.isNotEmpty
+            ? marker.note
+            : _scriptPreviewFor(range.start, range.end),
+        source: 'marker',
+        tags: ['marker'],
+      ),
+    ]);
+    selectedSegmentOrder = segments.length;
+    markIn = range.start;
+    markOut = range.end;
+    renderUrl = null;
+    unawaited(seekTo(range.start, autoplay: false));
+    notifyListeners();
+  }
+
   void markSelectedClip() {
     final selected = selectedSegment;
     if (selected == null) {
@@ -3835,6 +3876,33 @@ class EditorController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  ({TimelineMarker marker, double start, double end})? _timelineMarkerRange(
+    int id,
+  ) {
+    TimelineMarker? marker;
+    for (final item in timelineMarkers) {
+      if (item.id == id) {
+        marker = item;
+        break;
+      }
+    }
+    if (marker == null) {
+      return null;
+    }
+    final sourceDuration = timelineSourceDuration;
+    if (sourceDuration <= 0) {
+      return null;
+    }
+    final start = _snapToFrame(_clampProjectTime(marker.seconds));
+    final next = _nextTimelineMarkerFrom(start);
+    final fallbackEnd = math.min(sourceDuration, start + 30.0);
+    final end = _snapToFrame(_clampProjectTime(next?.seconds ?? fallbackEnd));
+    if (end - start < timecodeFrameDurationSeconds) {
+      return null;
+    }
+    return (marker: marker, start: start, end: end);
   }
 
   String _markerColorFor(int id) {

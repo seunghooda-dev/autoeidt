@@ -252,6 +252,9 @@ void main() {
       'Hook',
       'Fact',
     ]);
+    final firstMarkerId = controller.timelineMarkers.first.id;
+    final firstMarkerSeconds = controller.timelineMarkers.first.seconds;
+    final secondMarkerSeconds = controller.timelineMarkers.last.seconds;
     expect(controller.canJumpToNextTimelineMarker, isTrue);
     expect(controller.canJumpToPreviousTimelineMarker, isFalse);
 
@@ -278,8 +281,19 @@ void main() {
       controller.timelineMarkers.first.seconds,
     );
 
-    final markerId = controller.timelineMarkers.first.id;
-    controller.deleteTimelineMarker(markerId);
+    controller.setMarksFromTimelineMarker(firstMarkerId);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.markIn, firstMarkerSeconds);
+    expect(controller.markOut, secondMarkerSeconds);
+
+    controller.addSegmentFromTimelineMarker(firstMarkerId);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.segments.single.reason, '마커 Hook 구간');
+    expect(controller.segments.single.start, firstMarkerSeconds);
+    expect(controller.segments.single.end, secondMarkerSeconds);
+    expect(controller.segments.single.tags, ['marker']);
+
+    controller.deleteTimelineMarker(firstMarkerId);
     expect(controller.timelineMarkers.single.label, 'Fact');
 
     controller.undo();

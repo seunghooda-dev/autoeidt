@@ -210,6 +210,20 @@ class _MarkerTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               IconButton(
+                tooltip: '${marker.label} 구간을 In/Out으로 지정',
+                onPressed: () =>
+                    controller.setMarksFromTimelineMarker(marker.id),
+                icon: const Icon(Icons.keyboard_tab, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                tooltip: '${marker.label} 구간을 클립으로 추가',
+                onPressed: () =>
+                    controller.addSegmentFromTimelineMarker(marker.id),
+                icon: const Icon(Icons.playlist_add, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
                 tooltip: '${marker.label} 마커 편집',
                 onPressed: () => _showMarkerEditor(context, marker),
                 icon: const Icon(Icons.edit_outlined, size: 18),
