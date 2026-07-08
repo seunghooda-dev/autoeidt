@@ -95,3 +95,49 @@ def test_skill_engine_penalizes_filler_and_cta() -> None:
     joined_tags = {tag for item in highlights for tag in item["tags"]}
     assert "구독 좋아요" not in joined_text
     assert {"유지율", "핵심", "문제해결"} & joined_tags
+
+
+def test_news_engine_builds_editorial_sequence_and_avoids_rumor() -> None:
+    transcript = [
+        {"start": 0.0, "end": 15.0, "text": "오프닝 인사와 구독 좋아요 안내입니다"},
+        {
+            "start": 15.0,
+            "end": 35.0,
+            "text": "오늘 오전 서울시청에서 정부는 대형 화재 사고 조사 결과를 발표했습니다",
+        },
+        {
+            "start": 35.0,
+            "end": 55.0,
+            "text": "소방당국 보고서와 통계 자료에 따르면 피해 규모는 30억 원으로 집계됐습니다",
+        },
+        {
+            "start": 55.0,
+            "end": 75.0,
+            "text": "일각에서는 아직 확인되지 않은 루머와 추측도 나오고 있습니다",
+        },
+        {
+            "start": 75.0,
+            "end": 100.0,
+            "text": "인근 주민과 상인들은 안전 우려와 영업 손실 피해가 크다고 말했습니다",
+        },
+        {
+            "start": 100.0,
+            "end": 125.0,
+            "text": "회사 측은 공식 입장을 내고 사과했으며 경찰은 수사에 착수했습니다",
+        },
+    ]
+
+    highlights = select_highlights_with_skills(
+        transcript,
+        duration=125.0,
+        target_min_seconds=75.0,
+        target_max_seconds=110.0,
+    )
+
+    joined_text = " ".join(item["script"] for item in highlights)
+    joined_tags = {tag for item in highlights for tag in item["tags"]}
+    assert highlights == sorted(highlights, key=lambda item: item["start"])
+    assert "구독 좋아요" not in joined_text
+    assert "루머" not in joined_text
+    assert {"뉴스핵심", "근거", "영향", "대응"} <= joined_tags
+    assert all(item["source"] == "editorial-engine" for item in highlights)

@@ -23,7 +23,7 @@ def build_highlight_prompt(
         for item in transcript
     ]
     return f"""
-You are a senior video editor for YouTube long-form highlight videos.
+You are a senior video editor for YouTube long-form and newsroom-style reports.
 
 Analyze the timestamped transcript and select only the most interesting,
 important, or curiosity-driving moments. The final combined duration must be
@@ -53,6 +53,17 @@ Rules:
   setup that does not help the selected clip make sense.
 - Preserve enough context so each clip still makes sense when watched alone.
 - Select enough segments to make a 3-4 minute edit when the source duration allows it.
+
+News/editorial rules:
+- If this is news, politics, finance, public safety, legal, medical, or public
+  interest content, prioritize editorial clarity over entertainment.
+- Build a balanced sequence: lead/event, verified facts or data, impact on
+  people, official response or opposing view, and consequence/next step.
+- Prefer attributed claims: "according to", "said", "announced", "reported",
+  "에 따르면", "밝혔습니다", "말했습니다".
+- Avoid unverified rumors, speculation, sensational wording, or claims without
+  context. Do not make a clip imply certainty when the transcript does not.
+- Use Korean tags such as "뉴스핵심", "근거", "영향", "대응", "출처확인", "시간축".
 
 Transcript JSON:
 {json.dumps(compact_transcript, ensure_ascii=False)}
