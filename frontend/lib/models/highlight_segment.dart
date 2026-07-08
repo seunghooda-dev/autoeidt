@@ -1,3 +1,22 @@
+import '../utils/timecode.dart';
+
+double _jsonTimelineSeconds(Object? value) {
+  if (value is num) {
+    return snapSecondsToFrame(value.toDouble());
+  }
+  if (value is String) {
+    return snapSecondsToFrame(double.tryParse(value) ?? 0);
+  }
+  return 0;
+}
+
+double? _jsonOptionalTimelineSeconds(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  return _jsonTimelineSeconds(value);
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,
@@ -124,8 +143,8 @@ class HighlightSegment {
   factory HighlightSegment.fromJson(Map<String, dynamic> json) {
     return HighlightSegment(
       order: (json['order'] as num?)?.toInt() ?? 0,
-      start: (json['start'] as num).toDouble(),
-      end: (json['end'] as num).toDouble(),
+      start: _jsonTimelineSeconds(json['start']),
+      end: _jsonTimelineSeconds(json['end']),
       reason: json['reason'] as String? ?? '',
       script: json['script'] as String? ?? '',
       source: json['source'] as String? ?? 'ai',
@@ -154,11 +173,11 @@ class HighlightSegment {
           (json['colorSaturation'] as num?)?.toDouble() ??
           1.0,
       audioStart:
-          (json['audio_start'] as num?)?.toDouble() ??
-          (json['audioStart'] as num?)?.toDouble(),
+          _jsonOptionalTimelineSeconds(json['audio_start']) ??
+          _jsonOptionalTimelineSeconds(json['audioStart']),
       audioEnd:
-          (json['audio_end'] as num?)?.toDouble() ??
-          (json['audioEnd'] as num?)?.toDouble(),
+          _jsonOptionalTimelineSeconds(json['audio_end']) ??
+          _jsonOptionalTimelineSeconds(json['audioEnd']),
       audioMuted:
           (json['audio_muted'] as bool?) ??
           (json['audioMuted'] as bool?) ??
@@ -213,8 +232,8 @@ class HighlightSegment {
   Map<String, dynamic> toJson() {
     return {
       'order': order,
-      'start': start,
-      'end': end,
+      'start': snapSecondsToFrame(start),
+      'end': snapSecondsToFrame(end),
       'reason': reason,
       'script': script,
       'source': source,
@@ -224,8 +243,8 @@ class HighlightSegment {
       'color_brightness': colorBrightness,
       'color_contrast': colorContrast,
       'color_saturation': colorSaturation,
-      'audio_start': effectiveAudioStart,
-      'audio_end': effectiveAudioEnd,
+      'audio_start': snapSecondsToFrame(effectiveAudioStart),
+      'audio_end': snapSecondsToFrame(effectiveAudioEnd),
       'audio_muted': audioMuted,
       'audio_volume': audioVolume,
       'audio_pan': audioPan,
@@ -255,8 +274,8 @@ class TranscriptSegment {
 
   factory TranscriptSegment.fromJson(Map<String, dynamic> json) {
     return TranscriptSegment(
-      start: (json['start'] as num).toDouble(),
-      end: (json['end'] as num).toDouble(),
+      start: _jsonTimelineSeconds(json['start']),
+      end: _jsonTimelineSeconds(json['end']),
       text: json['text'] as String? ?? '',
     );
   }
@@ -296,8 +315,8 @@ class CaptionSegment {
   factory CaptionSegment.fromJson(Map<String, dynamic> json) {
     return CaptionSegment(
       order: (json['order'] as num?)?.toInt() ?? 0,
-      start: (json['start'] as num).toDouble(),
-      end: (json['end'] as num).toDouble(),
+      start: _jsonTimelineSeconds(json['start']),
+      end: _jsonTimelineSeconds(json['end']),
       text: json['text'] as String? ?? '',
       enabled: json['enabled'] as bool? ?? true,
     );
@@ -306,8 +325,8 @@ class CaptionSegment {
   Map<String, dynamic> toJson() {
     return {
       'order': order,
-      'start': start,
-      'end': end,
+      'start': snapSecondsToFrame(start),
+      'end': snapSecondsToFrame(end),
       'text': text,
       'enabled': enabled,
     };

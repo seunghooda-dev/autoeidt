@@ -119,11 +119,8 @@ class MediaProbeInfo {
           0,
       sourceTimecode: json['source_timecode'] as String?,
       sourceDropFrame: json['source_drop_frame'] as bool? ?? false,
-      timelineFrameRate:
-          (json['timeline_frame_rate'] as num?)?.toDouble() ??
-          timecodeFrameRate,
-      timelineTimecodeMode:
-          json['timeline_timecode_mode'] as String? ?? 'non_drop',
+      timelineFrameRate: timecodeFrameRate,
+      timelineTimecodeMode: 'non_drop',
       timelineTimebase: json['timeline_timebase'] as String? ?? '30p NDF',
       timecode: normalizeTimecodeText(json['timecode'] as String?),
       audioStreamCount: (json['audio_stream_count'] as num?)?.toInt() ?? 0,
@@ -550,7 +547,7 @@ class TimelineMarker {
   factory TimelineMarker.fromJson(Map<String, dynamic> json) {
     return TimelineMarker(
       id: _intFromJson(json['id'], 0),
-      seconds: _doubleFromJson(json['seconds'], 0),
+      seconds: snapSecondsToFrame(_doubleFromJson(json['seconds'], 0)),
       label: _stringFromJson(json['label'], 'Marker'),
       color: _stringFromJson(json['color'], 'amber'),
       note: _stringFromJson(json['note'], ''),
@@ -579,7 +576,7 @@ class TimelineMarker {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'seconds': seconds,
+      'seconds': snapSecondsToFrame(seconds),
       'label': label,
       'color': color,
       if (note.isNotEmpty) 'note': note,
@@ -706,13 +703,14 @@ class ProjectState {
       shortsCandidates: rawShortsCandidates
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
+          .map(_timelineSafeShortsCandidateMap)
           .toList(),
       selectedShortsId: (json['selected_shorts_id'] as num?)?.toInt(),
       includeCaptions: json['include_captions'] as bool? ?? true,
       captionStylePreset: json['caption_style_preset'] as String? ?? 'news',
       exportAspectRatio: json['export_aspect_ratio'] as String? ?? '16:9',
-      markIn: (json['mark_in'] as num?)?.toDouble(),
-      markOut: (json['mark_out'] as num?)?.toDouble(),
+      markIn: _optionalTimelineSecondsFromJson(json['mark_in']),
+      markOut: _optionalTimelineSecondsFromJson(json['mark_out']),
     );
   }
 
@@ -729,13 +727,49 @@ class ProjectState {
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
       'timeline_markers': timelineMarkers.map((item) => item.toJson()).toList(),
-      'shorts_candidates': shortsCandidates,
+      'shorts_candidates': _timelineSafeShortsCandidateMaps(shortsCandidates),
       if (selectedShortsId != null) 'selected_shorts_id': selectedShortsId,
       'include_captions': includeCaptions,
       'caption_style_preset': captionStylePreset,
       'export_aspect_ratio': exportAspectRatio,
-      if (markIn != null) 'mark_in': markIn,
-      if (markOut != null) 'mark_out': markOut,
+      if (markIn != null) 'mark_in': snapSecondsToFrame(markIn!),
+      if (markOut != null) 'mark_out': snapSecondsToFrame(markOut!),
     };
   }
+}
+
+List<Map<String, dynamic>> _timelineSafeShortsCandidateMaps(
+  List<Map<String, dynamic>> input,
+) {
+  return [for (final raw in input) _timelineSafeShortsCandidateMap(raw)];
+}
+
+Map<String, dynamic> _timelineSafeShortsCandidateMap(Map<String, dynamic> raw) {
+  final output = Map<String, dynamic>.from(raw);
+  final rawSegments = output['segments'];
+  if (rawSegments is List) {
+    output['segments'] = [
+      for (final item in rawSegments)
+        if (item is Map)
+          _timelineSafeShortsSegmentMap(Map<String, dynamic>.from(item))
+        else
+          item,
+    ];
+  }
+  return output;
+}
+
+Map<String, dynamic> _timelineSafeShortsSegmentMap(Map<String, dynamic> raw) {
+  try {
+    return HighlightSegment.fromJson(raw).toJson();
+  } catch (_) {
+    return raw;
+  }
+}
+
+double? _optionalTimelineSecondsFromJson(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  return snapSecondsToFrame(_doubleFromJson(value, 0));
 }

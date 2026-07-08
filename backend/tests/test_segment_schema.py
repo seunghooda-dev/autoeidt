@@ -1,4 +1,4 @@
-from app.schemas import CaptionStyle, HighlightSegment, ProjectState
+from app.schemas import CaptionSegment, CaptionStyle, HighlightSegment, ProjectState
 
 
 def test_highlight_segment_accepts_track_controls() -> None:
@@ -46,6 +46,54 @@ def test_caption_style_clamps_unsafe_values() -> None:
     assert style.shadow == 8
     assert style.alignment == 9
     assert style.margin_v == 360
+
+
+def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
+    segment = HighlightSegment(
+        order=1,
+        start=1.001,
+        end=2.049,
+        reason="frame grid",
+        audio_start=3.016,
+        audio_end=4.019,
+    )
+    caption = CaptionSegment(order=1, start=5.012, end=6.049, text="caption")
+    project = ProjectState(
+        duration=60,
+        timeline_frame_rate=29.97,
+        timeline_timecode_mode="drop",
+        mark_in=12.516,
+        mark_out=58.019,
+        timeline_markers=[{"id": 1, "seconds": 7.018, "label": "Snap"}],
+        shorts_candidates=[
+            {
+                "id": 1,
+                "label": "Shorts 01",
+                "segments": [
+                    {
+                        "order": 2,
+                        "start": 8.019,
+                        "end": 9.049,
+                        "reason": "shorts",
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert segment.start == 1.0
+    assert segment.end == 2.033333
+    assert segment.audio_start == 3.0
+    assert segment.audio_end == 4.033333
+    assert caption.start == 5.0
+    assert caption.end == 6.033333
+    assert project.timeline_frame_rate == 30.0
+    assert project.timeline_timecode_mode == "non_drop"
+    assert project.mark_in == 12.5
+    assert project.mark_out == 58.033333
+    assert project.timeline_markers[0].seconds == 7.033333
+    assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
+    assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 
 
 def test_project_state_accepts_render_settings() -> None:

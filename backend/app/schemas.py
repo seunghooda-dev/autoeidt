@@ -3,6 +3,25 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+TIMELINE_FRAME_RATE = 30.0
+TIMELINE_TIMECODE_MODE = "non_drop"
+
+
+def _snap_seconds_to_30p(value: Any) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        seconds = 0.0
+    if seconds <= 0:
+        return 0.0
+    return round(round(seconds * TIMELINE_FRAME_RATE) / TIMELINE_FRAME_RATE, 6)
+
+
+def _snap_optional_seconds_to_30p(value: Any) -> float | None:
+    if value is None:
+        return None
+    return _snap_seconds_to_30p(value)
+
 
 class JobStatus(StrEnum):
     queued = "queued"
@@ -25,12 +44,22 @@ class TranscriptWord(BaseModel):
     end: float
     word: str
 
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
+
 
 class TranscriptSegment(BaseModel):
     start: float
     end: float
     text: str
     words: list[TranscriptWord] = Field(default_factory=list)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
 
 
 class CaptionSegment(BaseModel):
@@ -39,6 +68,19 @@ class CaptionSegment(BaseModel):
     end: float
     text: str
     enabled: bool = True
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
+
+    @field_validator("end")
+    @classmethod
+    def end_must_be_after_start(cls, value: float, info: Any) -> float:
+        start = info.data.get("start")
+        if start is not None and value <= start:
+            raise ValueError("end must be greater than start")
+        return value
 
 
 class CaptionStyle(BaseModel):
@@ -105,6 +147,11 @@ class HighlightSegment(BaseModel):
     audio_fade_out: float = 0.0
     score: float = 0.0
     tags: list[str] = Field(default_factory=list)
+
+    @field_validator("start", "end", "audio_start", "audio_end", mode="before")
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float | None:
+        return _snap_optional_seconds_to_30p(value)
 
     @field_validator("end")
     @classmethod
@@ -206,8 +253,8 @@ class MediaProbeResponse(BaseModel):
     source_frame_rate: float = 0.0
     source_timecode: str | None = None
     source_drop_frame: bool = False
-    timeline_frame_rate: float = 30.0
-    timeline_timecode_mode: str = "non_drop"
+    timeline_frame_rate: float = TIMELINE_FRAME_RATE
+    timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     timeline_timebase: str = "30p NDF"
     timecode: str | None = None
     audio_stream_count: int = 0
@@ -216,6 +263,16 @@ class MediaProbeResponse(BaseModel):
     mxf_operational_pattern: str = ""
     can_analyze: bool = False
     warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("timeline_frame_rate", mode="before")
+    @classmethod
+    def timeline_frame_rate_is_30p(cls, value: Any) -> float:
+        return TIMELINE_FRAME_RATE
+
+    @field_validator("timeline_timecode_mode", mode="before")
+    @classmethod
+    def timeline_timecode_mode_is_non_drop(cls, value: Any) -> str:
+        return TIMELINE_TIMECODE_MODE
 
 
 class LocalStyleTrainingRequest(BaseModel):
@@ -291,10 +348,10 @@ class TimelineMarker(BaseModel):
     note: str = ""
     enabled: bool = True
 
-    @field_validator("seconds")
+    @field_validator("seconds", mode="before")
     @classmethod
     def seconds_must_be_non_negative(cls, value: float) -> float:
-        return max(0.0, float(value))
+        return _snap_seconds_to_30p(value)
 
 
 class RenderRequest(BaseModel):
@@ -351,6 +408,33 @@ class BatchRenderRequest(BaseModel):
     include_captions: bool = True
 
 
+def _normalize_shorts_candidate_payloads(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        candidate = dict(item)
+        raw_segments = candidate.get("segments")
+        if isinstance(raw_segments, list):
+            candidate["segments"] = [
+                _normalize_shorts_candidate_segment(segment)
+                for segment in raw_segments
+            ]
+        normalized.append(candidate)
+    return normalized
+
+
+def _normalize_shorts_candidate_segment(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    try:
+        return HighlightSegment(**value).model_dump()
+    except Exception:
+        return value
+
+
 class RenderResponse(BaseModel):
     job_id: str
     render_task_id: str
@@ -362,8 +446,8 @@ class ProjectState(BaseModel):
     name: str = "AutoEdit Project"
     original_path: str | None = None
     duration: float = 0
-    timeline_frame_rate: float = 30.0
-    timeline_timecode_mode: str = "non_drop"
+    timeline_frame_rate: float = TIMELINE_FRAME_RATE
+    timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
@@ -379,12 +463,22 @@ class ProjectState(BaseModel):
     @field_validator("timeline_frame_rate", mode="before")
     @classmethod
     def timeline_frame_rate_is_30p(cls, value: Any) -> float:
-        return 30.0
+        return TIMELINE_FRAME_RATE
 
     @field_validator("timeline_timecode_mode", mode="before")
     @classmethod
     def timeline_timecode_mode_is_non_drop(cls, value: Any) -> str:
-        return "non_drop"
+        return TIMELINE_TIMECODE_MODE
+
+    @field_validator("mark_in", "mark_out", mode="before")
+    @classmethod
+    def marks_are_30p(cls, value: Any) -> float | None:
+        return _snap_optional_seconds_to_30p(value)
+
+    @field_validator("shorts_candidates", mode="before")
+    @classmethod
+    def shorts_candidates_are_30p(cls, value: Any) -> list[dict[str, Any]]:
+        return _normalize_shorts_candidate_payloads(value)
 
 
 class ProjectResponse(ProjectState):
