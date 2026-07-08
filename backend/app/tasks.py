@@ -25,10 +25,40 @@ from app.services.reference_style import (
     download_reference_url,
 )
 from app.services.stt_service import transcribe_audio
-from app.storage import now_iso, store
+from app.storage import now_iso, safe_filename, store
 
 TIMECODE_FRAME_RATE = 30000 / 1001
 TIMECODE_FRAME_DURATION = 1001 / 30000
+
+
+def _normalized_mp4_output_name(output_name: str | None, fallback: str) -> str:
+    safe_name = safe_filename(output_name or fallback)
+    path = Path(safe_name)
+    stem = path.stem.strip("._") or Path(fallback).stem or "render"
+    return f"{stem}.mp4"
+
+
+def _unique_render_output_path(
+    output_dir: Path,
+    output_name: str | None,
+    fallback: str,
+    reserved_names: set[str] | None = None,
+) -> Path:
+    reserved_names = reserved_names if reserved_names is not None else set()
+    base_name = _normalized_mp4_output_name(output_name, fallback)
+    base_path = output_dir / base_name
+    stem = base_path.stem
+    suffix = base_path.suffix or ".mp4"
+
+    for index in range(1, 10_000):
+        name = base_name if index == 1 else f"{stem}_{index:03d}{suffix}"
+        normalized = name.lower()
+        candidate = output_dir / name
+        if normalized not in reserved_names and not candidate.exists():
+            reserved_names.add(normalized)
+            return candidate
+
+    raise RuntimeError("사용 가능한 렌더 출력 파일명을 만들 수 없습니다.")
 
 
 def _snap_to_timecode_frame(seconds: float) -> float:
@@ -600,8 +630,11 @@ def render_video_job(
         )
 
         video_path = Path(job["video_path"])
-        output_name = str(options.get("output_name") or "youtube_highlights.mp4")
-        output_path = store.output_dir(job_id) / output_name
+        output_path = _unique_render_output_path(
+            store.output_dir(job_id),
+            str(options.get("output_name") or ""),
+            "youtube_highlights.mp4",
+        )
         captions = options.get("captions") or []
         if not options.get("include_captions", False):
             captions = []
@@ -654,6 +687,7 @@ def render_batch_video_job(
             captions = []
         caption_style = options.get("caption_style") or {}
         rendered_items: list[dict[str, Any]] = []
+        reserved_output_names: set[str] = set()
         total = max(len(items), 1)
         for index, item in enumerate(items, start=1):
             normalized = _normalize_highlights(
@@ -663,8 +697,12 @@ def render_batch_video_job(
             )
             if not normalized:
                 continue
-            output_name = str(item.get("output_name") or f"shorts_{index:02}.mp4")
-            output_path = store.output_dir(job_id) / output_name
+            output_path = _unique_render_output_path(
+                store.output_dir(job_id),
+                str(item.get("output_name") or ""),
+                f"shorts_{index:02}.mp4",
+                reserved_output_names,
+            )
             progress = 10 + int(index / total * 80)
             _set_task_state(
                 task,
