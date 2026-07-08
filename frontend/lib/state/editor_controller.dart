@@ -51,6 +51,7 @@ class EditorController extends ChangeNotifier {
   bool includeCaptions = true;
   String exportAspectRatio = '16:9';
   double timelineZoom = 1.0;
+  String timelineTool = 'selection';
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
   String projectName = 'AutoEdit Project';
@@ -76,6 +77,8 @@ class EditorController extends ChangeNotifier {
       job?.status != 'rendering';
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  bool get isRazorTool => timelineTool == 'razor';
+  String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   bool get allAudioMuted =>
       segments.isNotEmpty && segments.every((segment) => segment.audioMuted);
   bool get hasValidMarks =>
@@ -211,6 +214,7 @@ class EditorController extends ChangeNotifier {
     markIn = null;
     markOut = null;
     uploadProgress = 0;
+    timelineTool = 'selection';
     videoTrackLocked = false;
     audioTrackLocked = false;
     _clearHistory();
@@ -430,6 +434,51 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearMarkIn() {
+    if (markIn == null) {
+      return;
+    }
+    _commitHistory();
+    markIn = null;
+    notifyListeners();
+  }
+
+  void clearMarkOut() {
+    if (markOut == null) {
+      return;
+    }
+    _commitHistory();
+    markOut = null;
+    notifyListeners();
+  }
+
+  void markSelectedClip() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    _commitHistory();
+    markIn = selected.start;
+    markOut = selected.end;
+    notifyListeners();
+  }
+
+  void setSelectionTool() {
+    if (timelineTool == 'selection') {
+      return;
+    }
+    timelineTool = 'selection';
+    notifyListeners();
+  }
+
+  void setRazorTool() {
+    if (timelineTool == 'razor') {
+      return;
+    }
+    timelineTool = 'razor';
+    notifyListeners();
+  }
+
   void addMarkedSegment() {
     if (!hasValidMarks) {
       return;
@@ -462,6 +511,124 @@ class EditorController extends ChangeNotifier {
         start: markIn!,
         end: markOut!,
         script: _scriptPreviewFor(markIn!, markOut!),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void addEditAtPlayhead() {
+    addEditAt(currentPositionSeconds);
+  }
+
+  void addEditAt(double seconds) {
+    splitSelectedAt(seconds);
+  }
+
+  void rippleTrimSelectedStartToPlayhead() {
+    rippleTrimSelectedStartTo(currentPositionSeconds);
+  }
+
+  void rippleTrimSelectedEndToPlayhead() {
+    rippleTrimSelectedEndTo(currentPositionSeconds);
+  }
+
+  void extendSelectedStartToPlayhead() {
+    extendSelectedStartTo(currentPositionSeconds);
+  }
+
+  void extendSelectedEndToPlayhead() {
+    extendSelectedEndTo(currentPositionSeconds);
+  }
+
+  void rippleTrimSelectedStartTo(double seconds) {
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final selected = _segmentForEditAt(point);
+    if (selected == null ||
+        point <= selected.start + timecodeFrameDurationSeconds ||
+        point >= selected.end - timecodeFrameDurationSeconds) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        start: point,
+        audioStart: selected.audioLinked ? point : selected.audioStart,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void rippleTrimSelectedEndTo(double seconds) {
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final selected = _segmentForEditAt(point);
+    if (selected == null ||
+        point <= selected.start + timecodeFrameDurationSeconds ||
+        point >= selected.end - timecodeFrameDurationSeconds) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        end: point,
+        audioEnd: selected.audioLinked ? point : selected.audioEnd,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void extendSelectedStartTo(double seconds) {
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final selected = _segmentForEditAt(point, requireInside: false);
+    if (selected == null ||
+        point >= selected.end - timecodeFrameDurationSeconds) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        start: point,
+        audioStart: selected.audioLinked ? point : selected.audioStart,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void extendSelectedEndTo(double seconds) {
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final selected = _segmentForEditAt(point, requireInside: false);
+    if (selected == null ||
+        point <= selected.start + timecodeFrameDurationSeconds) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        end: point,
+        audioEnd: selected.audioLinked ? point : selected.audioEnd,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void applyDefaultVideoTransition() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoFadeIn: selected.videoFadeIn == 0 ? 0.15 : selected.videoFadeIn,
+        videoFadeOut: selected.videoFadeOut == 0 ? 0.15 : selected.videoFadeOut,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void applyDefaultAudioTransition() {
+    final selected = selectedSegment;
+    if (selected == null || audioTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioFadeIn: selected.audioFadeIn == 0 ? 0.12 : selected.audioFadeIn,
+        audioFadeOut: selected.audioFadeOut == 0 ? 0.12 : selected.audioFadeOut,
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
@@ -1314,6 +1481,27 @@ class EditorController extends ChangeNotifier {
           ? segment.source
           : '${segment.source}+director',
     );
+  }
+
+  HighlightSegment? _segmentForEditAt(
+    double seconds, {
+    bool requireInside = true,
+  }) {
+    final selected = selectedSegment;
+    if (selected != null) {
+      final insideSelected =
+          seconds >= selected.start && seconds <= selected.end;
+      if (!requireInside || insideSelected) {
+        return selected;
+      }
+    }
+    for (final segment in segments) {
+      if (seconds >= segment.start && seconds <= segment.end) {
+        selectedSegmentOrder = segment.order;
+        return segment;
+      }
+    }
+    return requireInside ? null : selected;
   }
 
   bool _sameCaptionEnabledState(

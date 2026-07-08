@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'state/editor_controller.dart';
@@ -54,24 +55,121 @@ class HighlightEditorApp extends StatelessWidget {
   }
 }
 
-class EditorDashboard extends StatelessWidget {
+class EditorDashboard extends StatefulWidget {
   const EditorDashboard({super.key});
 
   @override
+  State<EditorDashboard> createState() => _EditorDashboardState();
+}
+
+class _EditorDashboardState extends State<EditorDashboard> {
+  final FocusNode _shortcutFocusNode = FocusNode(
+    debugLabel: 'AutoEdit shortcuts',
+  );
+
+  @override
+  void dispose() {
+    _shortcutFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final useDesktop =
-                constraints.maxWidth >= 1120 && constraints.maxHeight >= 680;
-            return useDesktop
-                ? const _DesktopEditorShell()
-                : const _CompactEditorShell();
-          },
+    return Focus(
+      focusNode: _shortcutFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Scaffold(
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final useDesktop =
+                  constraints.maxWidth >= 1120 && constraints.maxHeight >= 680;
+              return useDesktop
+                  ? const _DesktopEditorShell()
+                  : const _CompactEditorShell();
+            },
+          ),
         ),
       ),
     );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final keyboard = HardwareKeyboard.instance;
+    final isCtrl = keyboard.isControlPressed || keyboard.isMetaPressed;
+    final isShift = keyboard.isShiftPressed;
+    final isAlt = keyboard.isAltPressed;
+    final key = event.logicalKey;
+    final editor = context.read<EditorController>();
+
+    bool handled = true;
+    if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
+      editor.redo();
+    } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyZ) {
+      editor.undo();
+    } else if (isCtrl && key == LogicalKeyboardKey.keyK) {
+      editor.addEditAtPlayhead();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyD) {
+      editor.applyDefaultAudioTransition();
+    } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyD) {
+      editor.applyDefaultVideoTransition();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyX) {
+      editor.clearMarks();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyI) {
+      editor.clearMarkIn();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyO) {
+      editor.clearMarkOut();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyC) {
+      editor.setRazorTool();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyV) {
+      editor.setSelectionTool();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyI) {
+      editor.setMarkInFromPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyO) {
+      editor.setMarkOutFromPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyX) {
+      editor.markSelectedClip();
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyQ) {
+      editor.extendSelectedStartToPlayhead();
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyW) {
+      editor.extendSelectedEndToPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyQ) {
+      editor.rippleTrimSelectedStartToPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyW) {
+      editor.rippleTrimSelectedEndToPlayhead();
+    } else if (key == LogicalKeyboardKey.delete) {
+      editor.deleteSelectedSegment();
+    } else {
+      handled = false;
+    }
+
+    return handled ? KeyEventResult.handled : KeyEventResult.ignored;
   }
 }
 
@@ -740,6 +838,7 @@ class _TimelineEditorBody extends StatelessWidget {
       zoom: controller.timelineZoom,
       videoTrackLocked: controller.videoTrackLocked,
       audioTrackLocked: controller.audioTrackLocked,
+      razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onScrub: (seconds) {
         context.read<EditorController>().seekTo(seconds, autoplay: false);
@@ -748,6 +847,26 @@ class _TimelineEditorBody extends StatelessWidget {
       onSetMarkIn: context.read<EditorController>().setMarkInAt,
       onSetMarkOut: context.read<EditorController>().setMarkOutAt,
       onClearMarks: context.read<EditorController>().clearMarks,
+      onClearMarkIn: context.read<EditorController>().clearMarkIn,
+      onClearMarkOut: context.read<EditorController>().clearMarkOut,
+      onMarkClip: context.read<EditorController>().markSelectedClip,
+      onAddEditAt: context.read<EditorController>().addEditAt,
+      onRippleTrimStartTo: context
+          .read<EditorController>()
+          .rippleTrimSelectedStartTo,
+      onRippleTrimEndTo: context
+          .read<EditorController>()
+          .rippleTrimSelectedEndTo,
+      onExtendStartTo: context.read<EditorController>().extendSelectedStartTo,
+      onExtendEndTo: context.read<EditorController>().extendSelectedEndTo,
+      onApplyVideoTransition: context
+          .read<EditorController>()
+          .applyDefaultVideoTransition,
+      onApplyAudioTransition: context
+          .read<EditorController>()
+          .applyDefaultAudioTransition,
+      onSetSelectionTool: context.read<EditorController>().setSelectionTool,
+      onSetRazorTool: context.read<EditorController>().setRazorTool,
       onSplitAt: context.read<EditorController>().splitSelectedAt,
       onDuplicateSegment: context
           .read<EditorController>()

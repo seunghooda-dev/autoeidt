@@ -49,6 +49,13 @@ class EditControls extends StatelessWidget {
               label: 'Zoom',
               value: '${controller.timelineZoom.toStringAsFixed(1)}x',
             ),
+            _MetricChip(
+              icon: controller.isRazorTool
+                  ? Icons.content_cut
+                  : Icons.near_me_outlined,
+              label: 'Tool',
+              value: controller.timelineToolLabel,
+            ),
             if (selected != null)
               _MetricChip(
                 icon: selected.audioLinked ? Icons.link : Icons.link_off,
@@ -129,7 +136,7 @@ class _ContextHint extends StatelessWidget {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              'Right click: Split · Delete · Audio',
+              'Right click: Premiere shortcuts',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(

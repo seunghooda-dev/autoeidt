@@ -166,6 +166,55 @@ void main() {
     expect(controller.selectedSegment!.audioLinked, isTrue);
   });
 
+  test('premiere style cut shortcuts update timeline edits', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 13, reason: 'test'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setRazorTool();
+    expect(controller.isRazorTool, isTrue);
+    expect(controller.timelineToolLabel, 'Razor C');
+
+    controller.setSelectionTool();
+    expect(controller.isRazorTool, isFalse);
+
+    controller.rippleTrimSelectedStartTo(7);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 210);
+
+    controller.rippleTrimSelectedEndTo(11);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.end), 330);
+
+    controller.extendSelectedStartTo(4);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 120);
+
+    controller.extendSelectedEndTo(12);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.end), 360);
+
+    controller.markSelectedClip();
+    expect(controller.markIn, controller.selectedSegment!.start);
+    expect(controller.markOut, controller.selectedSegment!.end);
+
+    controller.clearMarkIn();
+    expect(controller.markIn, isNull);
+    controller.clearMarkOut();
+    expect(controller.markOut, isNull);
+
+    controller.applyDefaultVideoTransition();
+    controller.applyDefaultAudioTransition();
+    expect(controller.selectedSegment!.videoFadeIn, 0.15);
+    expect(controller.selectedSegment!.videoFadeOut, 0.15);
+    expect(controller.selectedSegment!.audioFadeIn, 0.12);
+    expect(controller.selectedSegment!.audioFadeOut, 0.12);
+
+    controller.addEditAt(8);
+    expect(controller.segments.length, 2);
+    expect(secondsToTimecodeFrame(controller.segments.first.end), 240);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 240);
+  });
+
   test('video visibility audio pan and track locks update editor state', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30

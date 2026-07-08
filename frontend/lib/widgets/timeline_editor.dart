@@ -10,9 +10,21 @@ enum _DragEdge { start, end }
 enum _DragTrack { video, audio }
 
 enum _TimelineMenuAction {
+  selectionTool,
+  razorTool,
   markIn,
   markOut,
+  markClip,
   clearMarks,
+  clearIn,
+  clearOut,
+  addEdit,
+  rippleTrimStart,
+  rippleTrimEnd,
+  extendStart,
+  extendEnd,
+  applyVideoTransition,
+  applyAudioTransition,
   split,
   duplicate,
   delete,
@@ -37,12 +49,25 @@ class TimelineEditor extends StatefulWidget {
     required this.zoom,
     required this.videoTrackLocked,
     required this.audioTrackLocked,
+    required this.razorTool,
     required this.onSegmentChanged,
     required this.onScrub,
     required this.onSegmentSelected,
     this.onSetMarkIn,
     this.onSetMarkOut,
     this.onClearMarks,
+    this.onClearMarkIn,
+    this.onClearMarkOut,
+    this.onMarkClip,
+    this.onAddEditAt,
+    this.onRippleTrimStartTo,
+    this.onRippleTrimEndTo,
+    this.onExtendStartTo,
+    this.onExtendEndTo,
+    this.onApplyVideoTransition,
+    this.onApplyAudioTransition,
+    this.onSetSelectionTool,
+    this.onSetRazorTool,
     this.onSplitAt,
     this.onDuplicateSegment,
     this.onDeleteSegment,
@@ -63,12 +88,25 @@ class TimelineEditor extends StatefulWidget {
   final double zoom;
   final bool videoTrackLocked;
   final bool audioTrackLocked;
+  final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
   final ValueChanged<double>? onSetMarkIn;
   final ValueChanged<double>? onSetMarkOut;
   final VoidCallback? onClearMarks;
+  final VoidCallback? onClearMarkIn;
+  final VoidCallback? onClearMarkOut;
+  final VoidCallback? onMarkClip;
+  final ValueChanged<double>? onAddEditAt;
+  final ValueChanged<double>? onRippleTrimStartTo;
+  final ValueChanged<double>? onRippleTrimEndTo;
+  final ValueChanged<double>? onExtendStartTo;
+  final ValueChanged<double>? onExtendEndTo;
+  final VoidCallback? onApplyVideoTransition;
+  final VoidCallback? onApplyAudioTransition;
+  final VoidCallback? onSetSelectionTool;
+  final VoidCallback? onSetRazorTool;
   final ValueChanged<double>? onSplitAt;
   final VoidCallback? onDuplicateSegment;
   final VoidCallback? onDeleteSegment;
@@ -166,10 +204,15 @@ class _TimelineEditorState extends State<TimelineEditor> {
   void _tap(Offset position, double width) {
     final track = _trackAt(position.dy);
     final hitIndex = _segmentIndexAt(position.dx, width, track);
+    final seconds = _snapToFrame(_xToSeconds(position.dx, width));
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
-    widget.onScrub(_snapToFrame(_xToSeconds(position.dx, width)));
+    if (widget.razorTool && hitIndex != null) {
+      widget.onSplitAt?.call(seconds);
+      return;
+    }
+    widget.onScrub(seconds);
   }
 
   Future<void> _showContextMenu(TapDownDetails details, double width) async {
@@ -199,12 +242,36 @@ class _TimelineEditorState extends State<TimelineEditor> {
     }
 
     switch (action) {
+      case _TimelineMenuAction.selectionTool:
+        widget.onSetSelectionTool?.call();
+      case _TimelineMenuAction.razorTool:
+        widget.onSetRazorTool?.call();
       case _TimelineMenuAction.markIn:
         widget.onSetMarkIn?.call(seconds);
       case _TimelineMenuAction.markOut:
         widget.onSetMarkOut?.call(seconds);
+      case _TimelineMenuAction.markClip:
+        widget.onMarkClip?.call();
       case _TimelineMenuAction.clearMarks:
         widget.onClearMarks?.call();
+      case _TimelineMenuAction.clearIn:
+        widget.onClearMarkIn?.call();
+      case _TimelineMenuAction.clearOut:
+        widget.onClearMarkOut?.call();
+      case _TimelineMenuAction.addEdit:
+        widget.onAddEditAt?.call(seconds);
+      case _TimelineMenuAction.rippleTrimStart:
+        widget.onRippleTrimStartTo?.call(seconds);
+      case _TimelineMenuAction.rippleTrimEnd:
+        widget.onRippleTrimEndTo?.call(seconds);
+      case _TimelineMenuAction.extendStart:
+        widget.onExtendStartTo?.call(seconds);
+      case _TimelineMenuAction.extendEnd:
+        widget.onExtendEndTo?.call(seconds);
+      case _TimelineMenuAction.applyVideoTransition:
+        widget.onApplyVideoTransition?.call();
+      case _TimelineMenuAction.applyAudioTransition:
+        widget.onApplyAudioTransition?.call();
       case _TimelineMenuAction.split:
         widget.onSplitAt?.call(seconds);
       case _TimelineMenuAction.duplicate:
@@ -247,20 +314,116 @@ class _TimelineEditorState extends State<TimelineEditor> {
         ),
       ),
       const PopupMenuDivider(),
-      _menuItem(Icons.start, 'Set In here', _TimelineMenuAction.markIn),
+      _menuHeader('Premiere Cut Shortcuts'),
+      _menuItem(
+        Icons.near_me_outlined,
+        'Selection Tool',
+        _TimelineMenuAction.selectionTool,
+        shortcut: 'V',
+      ),
+      _menuItem(
+        Icons.content_cut,
+        'Razor Tool',
+        _TimelineMenuAction.razorTool,
+        shortcut: 'C',
+      ),
+      const PopupMenuDivider(),
+      _menuItem(
+        Icons.start,
+        'Set In here',
+        _TimelineMenuAction.markIn,
+        shortcut: 'I',
+      ),
       _menuItem(
         Icons.flag_outlined,
         'Set Out here',
         _TimelineMenuAction.markOut,
+        shortcut: 'O',
       ),
-      _menuItem(Icons.clear, 'Clear marks', _TimelineMenuAction.clearMarks),
+      _menuItem(
+        Icons.select_all,
+        'Mark selected clip',
+        _TimelineMenuAction.markClip,
+        shortcut: 'X',
+        enabled: segment != null,
+      ),
+      _menuItem(
+        Icons.first_page,
+        'Clear In',
+        _TimelineMenuAction.clearIn,
+        shortcut: 'Ctrl+Shift+I',
+      ),
+      _menuItem(
+        Icons.last_page,
+        'Clear Out',
+        _TimelineMenuAction.clearOut,
+        shortcut: 'Ctrl+Shift+O',
+      ),
+      _menuItem(
+        Icons.clear,
+        'Clear In/Out',
+        _TimelineMenuAction.clearMarks,
+        shortcut: 'Ctrl+Shift+X',
+      ),
       const PopupMenuDivider(),
       _menuItem(
+        Icons.add,
+        'Add Edit at cursor',
+        _TimelineMenuAction.addEdit,
+        shortcut: 'Ctrl+K',
+        enabled: segment != null,
+      ),
+      _menuItem(
         Icons.call_split,
-        'Split at cursor',
+        'Split selected clip',
         _TimelineMenuAction.split,
+        shortcut: 'Ctrl+K',
         enabled: clipEditable,
       ),
+      _menuItem(
+        Icons.keyboard_tab,
+        'Ripple trim start',
+        _TimelineMenuAction.rippleTrimStart,
+        shortcut: 'Q',
+        enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.keyboard_return,
+        'Ripple trim end',
+        _TimelineMenuAction.rippleTrimEnd,
+        shortcut: 'W',
+        enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.keyboard_double_arrow_left,
+        'Extend start to cursor',
+        _TimelineMenuAction.extendStart,
+        shortcut: 'Shift+Q',
+        enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.keyboard_double_arrow_right,
+        'Extend end to cursor',
+        _TimelineMenuAction.extendEnd,
+        shortcut: 'Shift+W',
+        enabled: segment != null && !videoLocked,
+      ),
+      const PopupMenuDivider(),
+      _menuItem(
+        Icons.gradient,
+        'Apply video transition',
+        _TimelineMenuAction.applyVideoTransition,
+        shortcut: 'Ctrl+D',
+        enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.graphic_eq,
+        'Apply audio transition',
+        _TimelineMenuAction.applyAudioTransition,
+        shortcut: 'Ctrl+Shift+D',
+        enabled: segment != null && !audioLocked,
+      ),
+      const PopupMenuDivider(),
       _menuItem(
         Icons.content_copy,
         'Duplicate clip',
@@ -271,6 +434,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.delete_outline,
         'Delete clip',
         _TimelineMenuAction.delete,
+        shortcut: 'Delete',
         enabled: clipEditable,
       ),
       _menuItem(
@@ -298,6 +462,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         segment?.audioLinked ?? true ? Icons.link_off : Icons.link,
         segment?.audioLinked ?? true ? 'Detach audio' : 'Relink audio',
         _TimelineMenuAction.toggleAudioLink,
+        shortcut: 'Ctrl+L',
         enabled: segment != null && !audioLocked,
       ),
       _menuItem(
@@ -317,10 +482,25 @@ class _TimelineEditorState extends State<TimelineEditor> {
     ];
   }
 
+  PopupMenuItem<_TimelineMenuAction> _menuHeader(String label) {
+    return PopupMenuItem(
+      enabled: false,
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+
   PopupMenuItem<_TimelineMenuAction> _menuItem(
     IconData icon,
     String label,
     _TimelineMenuAction action, {
+    String? shortcut,
     bool enabled = true,
   }) {
     return PopupMenuItem(
@@ -330,7 +510,17 @@ class _TimelineEditorState extends State<TimelineEditor> {
         children: [
           Icon(icon, size: 18),
           const SizedBox(width: 10),
-          Text(label),
+          Expanded(child: Text(label)),
+          if (shortcut != null) ...[
+            const SizedBox(width: 14),
+            Text(
+              shortcut,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
         ],
       ),
     );
