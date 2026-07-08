@@ -100,6 +100,17 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyS);
     expect(controller.timelineSnappingEnabled, isTrue);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.digit1, control: true);
+    expect(controller.videoTrackTargeted, isFalse);
+    await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);
+    expect(controller.audioTrack1Targeted, isFalse);
+    await _pressShortcut(tester, LogicalKeyboardKey.digit3, control: true);
+    expect(controller.audioTrack2Targeted, isTrue);
+    await _pressShortcut(tester, LogicalKeyboardKey.digit1, control: true);
+    expect(controller.videoTrackTargeted, isTrue);
+    await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);
+    expect(controller.audioTrack1Targeted, isTrue);
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyL, control: true);
     expect(controller.selectedSegment!.audioLinked, isFalse);
 
@@ -340,6 +351,9 @@ void main() {
 
     expect(find.text('Disable snapping'), findsOneWidget);
     expect(find.text('S'), findsOneWidget);
+    expect(find.text('Track Targets'), findsOneWidget);
+    expect(find.text('Untarget V1 video'), findsOneWidget);
+    expect(find.text('Ctrl+1'), findsOneWidget);
     expect(find.text('Move detached audio earlier 1f'), findsOneWidget);
     expect(find.text('Ctrl+Alt+Left'), findsOneWidget);
     expect(find.text('Move detached audio later 10f'), findsOneWidget);

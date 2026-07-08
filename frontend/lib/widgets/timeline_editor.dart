@@ -62,6 +62,9 @@ enum _TimelineMenuAction {
   toggleAllAudioChannel2,
   soloAudioChannel1,
   soloAudioChannel2,
+  toggleVideoTarget,
+  toggleAudio1Target,
+  toggleAudio2Target,
   toggleVideoEnabled,
   resetAudioPan,
 }
@@ -79,6 +82,9 @@ class TimelineEditor extends StatefulWidget {
     required this.waveform,
     required this.zoom,
     required this.snappingEnabled,
+    required this.videoTrackTargeted,
+    required this.audioTrack1Targeted,
+    required this.audioTrack2Targeted,
     required this.videoTrackLocked,
     required this.audioTrackLocked,
     required this.razorTool,
@@ -128,6 +134,9 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleAllAudioChannel2,
     this.onSoloAudioChannel1,
     this.onSoloAudioChannel2,
+    this.onToggleVideoTarget,
+    this.onToggleAudio1Target,
+    this.onToggleAudio2Target,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onZoomDelta,
@@ -143,6 +152,9 @@ class TimelineEditor extends StatefulWidget {
   final List<double> waveform;
   final double zoom;
   final bool snappingEnabled;
+  final bool videoTrackTargeted;
+  final bool audioTrack1Targeted;
+  final bool audioTrack2Targeted;
   final bool videoTrackLocked;
   final bool audioTrackLocked;
   final bool razorTool;
@@ -192,6 +204,9 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleAllAudioChannel2;
   final VoidCallback? onSoloAudioChannel1;
   final VoidCallback? onSoloAudioChannel2;
+  final VoidCallback? onToggleVideoTarget;
+  final VoidCallback? onToggleAudio1Target;
+  final VoidCallback? onToggleAudio2Target;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final ValueChanged<double>? onZoomDelta;
@@ -497,6 +512,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onSoloAudioChannel1?.call();
       case _TimelineMenuAction.soloAudioChannel2:
         widget.onSoloAudioChannel2?.call();
+      case _TimelineMenuAction.toggleVideoTarget:
+        widget.onToggleVideoTarget?.call();
+      case _TimelineMenuAction.toggleAudio1Target:
+        widget.onToggleAudio1Target?.call();
+      case _TimelineMenuAction.toggleAudio2Target:
+        widget.onToggleAudio2Target?.call();
       case _TimelineMenuAction.toggleVideoEnabled:
         widget.onToggleVideoEnabled?.call();
       case _TimelineMenuAction.resetAudioPan:
@@ -536,6 +557,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final allA2Enabled =
         widget.segments.isNotEmpty &&
         widget.segments.every((segment) => segment.audioChannel2Enabled);
+    final canDisableVideoTarget =
+        widget.audioTrack1Targeted || widget.audioTrack2Targeted;
+    final canDisableAudio1Target =
+        widget.videoTrackTargeted || widget.audioTrack2Targeted;
+    final canDisableAudio2Target =
+        widget.videoTrackTargeted || widget.audioTrack1Targeted;
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -610,6 +637,41 @@ class _TimelineEditorState extends State<TimelineEditor> {
         ),
         const PopupMenuDivider(),
       ],
+      _menuHeader('Track Targets'),
+      _menuItem(
+        widget.videoTrackTargeted
+            ? Icons.check_box_outlined
+            : Icons.check_box_outline_blank,
+        widget.videoTrackTargeted ? 'Untarget V1 video' : 'Target V1 video',
+        _TimelineMenuAction.toggleVideoTarget,
+        shortcut: 'Ctrl+1',
+        enabled:
+            widget.onToggleVideoTarget != null &&
+            (!widget.videoTrackTargeted || canDisableVideoTarget),
+      ),
+      _menuItem(
+        widget.audioTrack1Targeted
+            ? Icons.check_box_outlined
+            : Icons.check_box_outline_blank,
+        widget.audioTrack1Targeted ? 'Untarget A1 audio' : 'Target A1 audio',
+        _TimelineMenuAction.toggleAudio1Target,
+        shortcut: 'Ctrl+2',
+        enabled:
+            widget.onToggleAudio1Target != null &&
+            (!widget.audioTrack1Targeted || canDisableAudio1Target),
+      ),
+      _menuItem(
+        widget.audioTrack2Targeted
+            ? Icons.check_box_outlined
+            : Icons.check_box_outline_blank,
+        widget.audioTrack2Targeted ? 'Untarget A2 audio' : 'Target A2 audio',
+        _TimelineMenuAction.toggleAudio2Target,
+        shortcut: 'Ctrl+3',
+        enabled:
+            widget.onToggleAudio2Target != null &&
+            (!widget.audioTrack2Targeted || canDisableAudio2Target),
+      ),
+      const PopupMenuDivider(),
       _menuHeader('Premiere Cut Shortcuts'),
       _menuItem(
         Icons.near_me_outlined,

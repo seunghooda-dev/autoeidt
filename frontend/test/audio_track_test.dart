@@ -811,6 +811,62 @@ void main() {
     expect(controller.outputDurationSeconds, closeTo(60, 0.001));
   });
 
+  test('track targets lift only selected tracks inside marked range', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 70, reason: 'wide'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.toggleVideoTrackTarget();
+    controller.toggleAudioTrack2Target();
+    expect(controller.videoTrackTargeted, isFalse);
+    expect(controller.audioTrack1Targeted, isTrue);
+    expect(controller.audioTrack2Targeted, isFalse);
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(50);
+    controller.liftMarkedRange();
+
+    expect(controller.segments.length, 3);
+    final targetedGap = controller.segments[1];
+    expect(targetedGap.videoEnabled, isTrue);
+    expect(targetedGap.audioChannel1Enabled, isFalse);
+    expect(targetedGap.audioChannel2Enabled, isTrue);
+    expect(targetedGap.audioMuted, isFalse);
+    expect(targetedGap.source, contains('target-lift'));
+    expect(controller.outputDurationSeconds, closeTo(60, 0.001));
+  });
+
+  test('partial track target extract preserves timeline duration', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 70, reason: 'wide'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.toggleAudioTrack1Target();
+    controller.toggleAudioTrack2Target();
+    expect(controller.videoTrackTargeted, isTrue);
+    expect(controller.audioTrack1Targeted, isFalse);
+    expect(controller.audioTrack2Targeted, isFalse);
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(50);
+    controller.extractMarkedRange();
+
+    expect(controller.segments.length, 3);
+    final targetedGap = controller.segments[1];
+    expect(targetedGap.videoEnabled, isFalse);
+    expect(targetedGap.audioChannel1Enabled, isTrue);
+    expect(targetedGap.audioChannel2Enabled, isTrue);
+    expect(targetedGap.audioMuted, isFalse);
+    expect(targetedGap.source, contains('target-lift'));
+    expect(controller.outputDurationSeconds, closeTo(60, 0.001));
+  });
+
   test('extract marked range preserves detached audio timing', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 200

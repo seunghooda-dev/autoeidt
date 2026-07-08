@@ -117,6 +117,21 @@ class _EditorDashboardState extends State<EditorDashboard> {
     bool handled = true;
     if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
       editor.redo();
+    } else if (isCtrl &&
+        !isShift &&
+        !isAlt &&
+        key == LogicalKeyboardKey.digit1) {
+      editor.toggleVideoTrackTarget();
+    } else if (isCtrl &&
+        !isShift &&
+        !isAlt &&
+        key == LogicalKeyboardKey.digit2) {
+      editor.toggleAudioTrack1Target();
+    } else if (isCtrl &&
+        !isShift &&
+        !isAlt &&
+        key == LogicalKeyboardKey.digit3) {
+      editor.toggleAudioTrack2Target();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyZ) {
       editor.undo();
     } else if (isCtrl && key == LogicalKeyboardKey.keyK) {
@@ -941,6 +956,36 @@ class _TimelinePanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       _TrackControlButton(
+                        label: 'T V1',
+                        icon: Icons.track_changes,
+                        tooltip: controller.videoTrackTargeted
+                            ? 'V1 편집 타깃 끄기 (Ctrl+1)'
+                            : 'V1 편집 타깃 켜기 (Ctrl+1)',
+                        selected: controller.videoTrackTargeted,
+                        onPressed: editor.toggleVideoTrackTarget,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: 'T A1',
+                        icon: Icons.track_changes,
+                        tooltip: controller.audioTrack1Targeted
+                            ? 'A1 편집 타깃 끄기 (Ctrl+2)'
+                            : 'A1 편집 타깃 켜기 (Ctrl+2)',
+                        selected: controller.audioTrack1Targeted,
+                        onPressed: editor.toggleAudioTrack1Target,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: 'T A2',
+                        icon: Icons.track_changes,
+                        tooltip: controller.audioTrack2Targeted
+                            ? 'A2 편집 타깃 끄기 (Ctrl+3)'
+                            : 'A2 편집 타깃 켜기 (Ctrl+3)',
+                        selected: controller.audioTrack2Targeted,
+                        onPressed: editor.toggleAudioTrack2Target,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
                         label: controller.videoTrackLocked ? 'V1 Locked' : 'V1',
                         icon: controller.videoTrackLocked
                             ? Icons.lock
@@ -1220,6 +1265,9 @@ class _TimelineEditorBody extends StatelessWidget {
       waveform: controller.waveform,
       zoom: controller.timelineZoom,
       snappingEnabled: controller.timelineSnappingEnabled,
+      videoTrackTargeted: controller.videoTrackTargeted,
+      audioTrack1Targeted: controller.audioTrack1Targeted,
+      audioTrack2Targeted: controller.audioTrack2Targeted,
       videoTrackLocked: controller.videoTrackLocked,
       audioTrackLocked: controller.audioTrackLocked,
       razorTool: controller.isRazorTool,
@@ -1313,6 +1361,15 @@ class _TimelineEditorBody extends StatelessWidget {
       onSoloAudioChannel2: context
           .read<EditorController>()
           .soloAudioChannel2Track,
+      onToggleVideoTarget: context
+          .read<EditorController>()
+          .toggleVideoTrackTarget,
+      onToggleAudio1Target: context
+          .read<EditorController>()
+          .toggleAudioTrack1Target,
+      onToggleAudio2Target: context
+          .read<EditorController>()
+          .toggleAudioTrack2Target,
       onToggleVideoEnabled: context
           .read<EditorController>()
           .toggleSelectedVideoEnabled,

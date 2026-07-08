@@ -82,6 +82,9 @@ class EditorController extends ChangeNotifier {
   double timelineZoom = 1.0;
   bool timelineSnappingEnabled = true;
   String timelineTool = 'selection';
+  bool videoTrackTargeted = true;
+  bool audioTrack1Targeted = true;
+  bool audioTrack2Targeted = true;
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
   String projectName = 'AutoEdit Project';
@@ -317,6 +320,13 @@ class EditorController extends ChangeNotifier {
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   String get timelineSnappingLabel =>
       timelineSnappingEnabled ? 'Snap S' : 'Snap Off';
+  bool get hasAnyTrackTarget =>
+      videoTrackTargeted || audioTrack1Targeted || audioTrack2Targeted;
+  bool get allTrackTargetsEnabled =>
+      videoTrackTargeted && audioTrack1Targeted && audioTrack2Targeted;
+  bool get targetedTracksUnlocked =>
+      (!videoTrackTargeted || !videoTrackLocked) &&
+      (!(audioTrack1Targeted || audioTrack2Targeted) || !audioTrackLocked);
   bool get allAudioMuted =>
       segments.isNotEmpty &&
       segments.every(
@@ -334,8 +344,8 @@ class EditorController extends ChangeNotifier {
       markOut! - markIn! >= timecodeFrameDurationSeconds;
   bool get canLiftOrExtractMarkedRange =>
       hasValidMarks &&
-      !videoTrackLocked &&
-      !audioTrackLocked &&
+      hasAnyTrackTarget &&
+      targetedTracksUnlocked &&
       segments.any(
         (segment) => _segmentOverlapsRange(segment, markIn!, markOut!),
       );
@@ -667,6 +677,9 @@ class EditorController extends ChangeNotifier {
     uploadProgress = 0;
     timelineTool = 'selection';
     timelineSnappingEnabled = true;
+    videoTrackTargeted = true;
+    audioTrack1Targeted = true;
+    audioTrack2Targeted = true;
     videoTrackLocked = false;
     audioTrackLocked = false;
     comparisonDefaultSegments = [];
@@ -1478,6 +1491,30 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleVideoTrackTarget() {
+    if (videoTrackTargeted && !audioTrack1Targeted && !audioTrack2Targeted) {
+      return;
+    }
+    videoTrackTargeted = !videoTrackTargeted;
+    notifyListeners();
+  }
+
+  void toggleAudioTrack1Target() {
+    if (audioTrack1Targeted && !videoTrackTargeted && !audioTrack2Targeted) {
+      return;
+    }
+    audioTrack1Targeted = !audioTrack1Targeted;
+    notifyListeners();
+  }
+
+  void toggleAudioTrack2Target() {
+    if (audioTrack2Targeted && !videoTrackTargeted && !audioTrack1Targeted) {
+      return;
+    }
+    audioTrack2Targeted = !audioTrack2Targeted;
+    notifyListeners();
+  }
+
   void addMarkedSegment() {
     if (!hasValidMarks) {
       return;
@@ -1527,6 +1564,7 @@ class EditorController extends ChangeNotifier {
     if (!canLiftOrExtractMarkedRange) {
       return;
     }
+    final useTrackTargetGap = leaveGap || !allTrackTargetsEnabled;
     final rangeStart = _snapToFrame(_clampProjectTime(markIn!));
     final rangeEnd = _snapToFrame(_clampProjectTime(markOut!));
     if (rangeEnd - rangeStart < timecodeFrameDurationSeconds) {
@@ -1563,8 +1601,10 @@ class EditorController extends ChangeNotifier {
       if (before != null) {
         output.add(before);
       }
-      if (leaveGap) {
-        final gap = _gapSegmentForRange(segment, overlapStart, overlapEnd);
+      if (useTrackTargetGap) {
+        final gap = allTrackTargetsEnabled
+            ? _gapSegmentForRange(segment, overlapStart, overlapEnd)
+            : _targetedGapSegmentForRange(segment, overlapStart, overlapEnd);
         if (gap != null) {
           output.add(gap);
         }
@@ -5145,6 +5185,49 @@ class EditorController extends ChangeNotifier {
         audioFadeOut: 0,
         score: 0,
         tags: [...segment.tags, if (!segment.tags.contains('gap')) 'gap'],
+      ),
+    );
+  }
+
+  HighlightSegment? _targetedGapSegmentForRange(
+    HighlightSegment segment,
+    double start,
+    double end,
+  ) {
+    final snappedStart = _snapToFrame(_clampProjectTime(start));
+    final snappedEnd = _snapToFrame(_clampProjectTime(end));
+    if (snappedEnd - snappedStart < timecodeFrameDurationSeconds) {
+      return null;
+    }
+    final channel1 = audioTrack1Targeted ? false : segment.audioChannel1Enabled;
+    final channel2 = audioTrack2Targeted ? false : segment.audioChannel2Enabled;
+    final hasAudio = channel1 || channel2;
+    return _normalizeSegmentAudio(
+      segment.copyWith(
+        start: snappedStart,
+        end: snappedEnd,
+        reason: 'Targeted lift In/Out',
+        script: videoTrackTargeted ? '' : segment.script,
+        source: _appendSource(segment.source, 'target-lift'),
+        videoEnabled: videoTrackTargeted ? false : segment.videoEnabled,
+        videoFadeIn: videoTrackTargeted ? 0 : segment.videoFadeIn,
+        videoFadeOut: videoTrackTargeted ? 0 : segment.videoFadeOut,
+        audioStart: snappedStart,
+        audioEnd: snappedEnd,
+        audioMuted: segment.audioMuted || !hasAudio,
+        audioVolume: hasAudio ? segment.audioVolume : 0,
+        audioPan: hasAudio ? segment.audioPan : 0,
+        audioNormalize: hasAudio && segment.audioNormalize,
+        audioLinked: true,
+        audioChannel1Enabled: channel1,
+        audioChannel2Enabled: channel2,
+        audioFadeIn: hasAudio ? segment.audioFadeIn : 0,
+        audioFadeOut: hasAudio ? segment.audioFadeOut : 0,
+        score: videoTrackTargeted && !hasAudio ? 0 : segment.score,
+        tags: [
+          ...segment.tags,
+          if (!segment.tags.contains('target-lift')) 'target-lift',
+        ],
       ),
     );
   }
