@@ -239,7 +239,8 @@ class _MultiShortsPanel extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed: candidates.isEmpty
+                  onPressed:
+                      candidates.isEmpty || controller.selectedShortsCount == 0
                       ? null
                       : context
                             .read<EditorController>()
@@ -290,6 +291,14 @@ class _MultiShortsPanel extends StatelessWidget {
                   color: safetyBlocks > 0
                       ? Theme.of(context).colorScheme.error
                       : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ] else if (controller.selectedShortsCount == 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'No publish-ready shorts selected · review candidates manually',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -355,6 +364,8 @@ class _ShortsCandidateTile extends StatelessWidget {
                   ),
                   _CandidateStrategyBadge(candidate: candidate),
                   const SizedBox(width: 6),
+                  _CandidateReadinessBadge(candidate: candidate),
+                  const SizedBox(width: 6),
                   _CandidateQualityBadge(candidate: candidate),
                   const SizedBox(width: 6),
                   Text(
@@ -400,6 +411,18 @@ class _ShortsCandidateTile extends StatelessWidget {
                   ],
                 ),
               ],
+              const SizedBox(height: 5),
+              Text(
+                candidate.readinessDetail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: candidate.isPublishReady
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               if (candidate.strengths.isNotEmpty ||
                   candidate.issues.isNotEmpty) ...[
                 const SizedBox(height: 7),
@@ -493,6 +516,42 @@ class _CandidateStrategyBadge extends StatelessWidget {
       'risk' => colorScheme.error,
       _ => colorScheme.outline,
     };
+  }
+}
+
+class _CandidateReadinessBadge extends StatelessWidget {
+  const _CandidateReadinessBadge({required this.candidate});
+
+  final ShortsCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = switch (candidate.readinessLabel) {
+      'Ready' => colorScheme.primary,
+      'Review' => colorScheme.tertiary,
+      _ => colorScheme.error,
+    };
+    return Tooltip(
+      message: candidate.readinessDetail,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          border: Border.all(color: color.withValues(alpha: 0.58)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          candidate.readinessLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
   }
 }
 

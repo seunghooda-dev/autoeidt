@@ -709,6 +709,68 @@ void main() {
     );
     expect(offlineCandidate.qualityScore, lessThan(85));
     expect(offlineCandidate.qualityGrade, isNot('S'));
+    expect(offlineCandidate.isPublishReady, isFalse);
+    expect(offlineCandidate.readinessLabel, isNot('Ready'));
+  });
+
+  test('shorts readiness auto-selects only publish ready candidates', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 240
+      ..captions = const [
+        CaptionSegment(order: 1, start: 10, end: 65, text: '검증된 핵심 후킹 설명'),
+        CaptionSegment(order: 2, start: 100, end: 155, text: '검토용 오디오 후보'),
+      ]
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 65,
+          reason: '핵심 결과와 후킹이 분명한 검증된 설명',
+          script: '출처가 확인된 핵심 결과를 먼저 설명합니다',
+          score: 9,
+          audioNormalize: true,
+          tags: ['유지율', '뉴스핵심', '근거'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 100,
+          end: 155,
+          reason: 'STT 없이 오디오 활동 기반으로 잡은 검토용 후보',
+          source: 'fallback-audio-review',
+          score: 9,
+          audioNormalize: true,
+          tags: ['검토필요', '오디오활성', 'STT미설정'],
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 3,
+      minSeconds: 40,
+      maxSeconds: 70,
+    );
+
+    expect(controller.hasShortsCandidates, isTrue);
+    expect(
+      controller.shortsCandidates.any((candidate) => candidate.isPublishReady),
+      isTrue,
+    );
+    expect(
+      controller.shortsCandidates
+          .where((candidate) => candidate.selected)
+          .every((candidate) => candidate.isPublishReady),
+      isTrue,
+    );
+    expect(
+      controller.selectedShortsCount,
+      controller.shortsCandidates
+          .where((candidate) => candidate.isPublishReady)
+          .length,
+    );
+    final offlineCandidate = controller.shortsCandidates.firstWhere(
+      (candidate) => candidate.issues.contains('Offline review'),
+    );
+    expect(offlineCandidate.selected, isFalse);
+    expect(offlineCandidate.readinessLabel, 'Review');
   });
 
   test('selected shorts safety repair only updates selected candidates', () {
@@ -889,6 +951,9 @@ void main() {
     );
 
     final selectedId = controller.selectedShortsId!;
+    final wasSelected = controller.shortsCandidates
+        .firstWhere((candidate) => candidate.id == selectedId)
+        .selected;
     controller.updateSegment(controller.segments.first.copyWith(end: 60));
     controller.updateSelectedShortsFromTimeline();
     final updatedCandidate = controller.shortsCandidates.firstWhere(
@@ -907,7 +972,7 @@ void main() {
       controller.shortsCandidates
           .firstWhere((candidate) => candidate.id == selectedId)
           .selected,
-      isFalse,
+      isNot(wasSelected),
     );
 
     controller.deleteShortsCandidate(selectedId);

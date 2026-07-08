@@ -2124,10 +2124,33 @@ class EditorController extends ChangeNotifier {
               '${output[index].strategyLabel} ${(index + 1).toString().padLeft(2, '0')}',
         ),
     ];
-    shortsCandidates = rankedOutput;
+    shortsCandidates = _applyShortsReadinessSelection(rankedOutput);
     selectedShortsId = rankedOutput.first.id;
-    _loadShortsCandidateToTimeline(rankedOutput.first);
+    _loadShortsCandidateToTimeline(shortsCandidates.first);
     notifyListeners();
+  }
+
+  List<ShortsCandidate> _applyShortsReadinessSelection(
+    List<ShortsCandidate> input,
+  ) {
+    return [
+      for (final candidate in input)
+        candidate.copyWith(
+          selected: _shouldAutoSelectShortsCandidate(candidate),
+        ),
+    ];
+  }
+
+  bool _shouldAutoSelectShortsCandidate(ShortsCandidate candidate) {
+    if (!candidate.isPublishReady) {
+      return false;
+    }
+    final safetyBlocks = _buildRenderSafetyChecklist(
+      candidate.segments,
+      aspectRatio: '9:16',
+      requireCaptions: true,
+    ).where((item) => item.status == EditorialCheckStatus.block);
+    return safetyBlocks.isEmpty;
   }
 
   List<_ShortsBuildStrategy> _shortsBuildStrategies() {
@@ -4656,6 +4679,44 @@ class ShortsCandidate {
     0,
     (total, segment) => total + segment.outputDuration,
   );
+
+  bool get hasSeriousReviewIssue =>
+      riskCount > 0 ||
+      issues.contains('Risk review') ||
+      issues.contains('Offline review');
+
+  bool get isPublishReady =>
+      qualityScore >= 70 &&
+      storyScore >= 58 &&
+      !hasSeriousReviewIssue &&
+      !issues.contains('Story flow') &&
+      !issues.contains('Audio mix');
+
+  bool get needsEditorialReview =>
+      !isPublishReady && qualityScore >= 55 && !issues.contains('No clips');
+
+  String get readinessLabel {
+    if (isPublishReady) {
+      return 'Ready';
+    }
+    if (needsEditorialReview) {
+      return 'Review';
+    }
+    return 'Hold';
+  }
+
+  String get readinessDetail {
+    if (isPublishReady) {
+      return '기본 렌더 선택 가능';
+    }
+    if (hasSeriousReviewIssue) {
+      return '사실 확인 또는 원본 검수 필요';
+    }
+    if (issues.isNotEmpty) {
+      return issues.first;
+    }
+    return '점수 보강 필요';
+  }
 
   ShortsCandidate copyWith({
     int? id,
