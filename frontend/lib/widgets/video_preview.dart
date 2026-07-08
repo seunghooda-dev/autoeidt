@@ -36,17 +36,61 @@ class VideoPreview extends StatelessWidget {
         aspectRatio: player.value.aspectRatio == 0
             ? 16 / 9
             : player.value.aspectRatio,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            VideoPlayer(player),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 12,
-              child: _VideoControls(controller: player),
+        child: ValueListenableBuilder<VideoPlayerValue>(
+          valueListenable: player,
+          builder: (context, value, _) {
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                value.isPlaying ? player.pause() : player.play();
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  VideoPlayer(player),
+                  if (!value.isPlaying) _PausedOverlay(controller: player),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: _VideoControls(controller: player),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PausedOverlay extends StatelessWidget {
+  const _PausedOverlay({required this.controller});
+
+  final VideoPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.18)),
+      child: Center(
+        child: Tooltip(
+          message: '재생 / 일시정지 (Space)',
+          child: FilledButton.tonalIcon(
+            onPressed: controller.play,
+            icon: const Icon(Icons.play_arrow, size: 30),
+            label: const Text('Play'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.black.withValues(alpha: 0.72),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.16)),
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );

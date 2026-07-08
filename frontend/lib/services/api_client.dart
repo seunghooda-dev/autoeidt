@@ -67,6 +67,18 @@ class ApiClient {
     return MediaProbeInfo.fromJson(response.data!);
   }
 
+  Future<String> createLocalPreview(String path) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/preview-local',
+      data: {'path': path},
+    );
+    final previewUrl = response.data?['preview_url'] as String? ?? '';
+    if (previewUrl.isEmpty) {
+      throw StateError('프리뷰 프록시 URL을 받지 못했습니다.');
+    }
+    return absoluteUrl(previewUrl);
+  }
+
   Future<StyleTrainingResponse> trainStyleProfile({
     required String name,
     List<String> urls = const [],

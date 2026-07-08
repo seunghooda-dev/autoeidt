@@ -73,6 +73,7 @@ class EditorController extends ChangeNotifier {
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
   int _previewRevision = 0;
+  bool isPreparingPreview = false;
   bool isProbingMedia = false;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
@@ -356,6 +357,9 @@ class EditorController extends ChangeNotifier {
     if (isProbingMedia) {
       return '미디어 사전검사 중...';
     }
+    if (isPreparingPreview) {
+      return '프리뷰 프록시 생성 중...';
+    }
     if (selectedFile != null) {
       return selectedFile!.name;
     }
@@ -421,6 +425,7 @@ class EditorController extends ChangeNotifier {
     selectedFile = result.files.single;
     selectedMediaProbe = null;
     isProbingMedia = false;
+    isPreparingPreview = false;
     jobId = null;
     job = null;
     duration = 0;
@@ -473,6 +478,8 @@ class EditorController extends ChangeNotifier {
       selectedMediaProbe = probe;
       if (!probe.canAnalyze) {
         errorMessage = '사전검사 실패: 분석 가능한 비디오 스트림이 없습니다.';
+      } else if (probe.isMxf) {
+        unawaited(_initializeProxyPreview(path));
       }
     } catch (error) {
       if (selectedFile?.path == path) {
@@ -1914,6 +1921,19 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> togglePlayback() async {
+    final controller = videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if (controller.value.isPlaying) {
+      await controller.pause();
+    } else {
+      await controller.play();
+    }
+    notifyListeners();
+  }
+
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollOnce());
@@ -2050,6 +2070,47 @@ class EditorController extends ChangeNotifier {
     } catch (_) {
       if (selectedFile?.path == path) {
         await _disposeVideoController();
+        unawaited(_initializeProxyPreview(path));
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _initializeProxyPreview(String path) async {
+    if (kIsWeb || path.isEmpty) {
+      return;
+    }
+    isPreparingPreview = true;
+    notifyListeners();
+    try {
+      await _ensureLocalEngineForApi();
+      final previewUrl = await _apiClient.createLocalPreview(path);
+      if (selectedFile?.path != path) {
+        return;
+      }
+      final revision = ++_previewRevision;
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(previewUrl),
+      );
+      await controller.initialize();
+      if (revision != _previewRevision || selectedFile?.path != path) {
+        await controller.dispose();
+        return;
+      }
+      await _disposeVideoController();
+      videoController = controller;
+      final previewDuration = controller.value.duration.inMilliseconds / 1000;
+      if (previewDuration > 0 && duration == 0) {
+        duration = previewDuration;
+      }
+      controller.addListener(_handleVideoTick);
+    } catch (error) {
+      if (selectedFile?.path == path && errorMessage == null) {
+        errorMessage = '프리뷰 생성 실패: $error';
+      }
+    } finally {
+      if (selectedFile?.path == path) {
+        isPreparingPreview = false;
         notifyListeners();
       }
     }

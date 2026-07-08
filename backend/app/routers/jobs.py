@@ -10,6 +10,7 @@ from app.schemas import (
     JobStatus,
     JobStatusResponse,
     LocalImportRequest,
+    LocalPreviewResponse,
     MediaProbeRequest,
     MediaProbeResponse,
     ProjectResponse,
@@ -19,7 +20,7 @@ from app.schemas import (
     TimelineResponse,
     UploadJobResponse,
 )
-from app.services.ffmpeg_service import FFmpegError, probe_media_info
+from app.services.ffmpeg_service import FFmpegError, create_preview_proxy, probe_media_info
 from app.storage import now_iso, safe_filename, store
 from app.tasks import (
     analyze_video_job,
@@ -183,6 +184,29 @@ def probe_local_media(payload: MediaProbeRequest) -> MediaProbeResponse:
         return MediaProbeResponse(**probe_media_info(source_path))
     except FFmpegError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/preview-local", response_model=LocalPreviewResponse)
+def create_local_preview(payload: MediaProbeRequest) -> LocalPreviewResponse:
+    source_path = _resolve_local_file(payload.path)
+    try:
+        preview_path, cached = create_preview_proxy(source_path)
+    except FFmpegError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LocalPreviewResponse(
+        preview_url=f"/api/jobs/preview/{preview_path.name}",
+        cached=cached,
+    )
+
+
+@router.get("/preview/{filename}")
+def stream_preview_proxy(filename: str) -> FileResponse:
+    if "/" in filename or "\\" in filename or not filename.endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="invalid preview filename")
+    path = get_settings().data_dir / "preview_proxies" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="preview file not found")
+    return FileResponse(path, media_type="video/mp4", filename=filename)
 
 
 @router.post("/import-local", response_model=UploadJobResponse, status_code=status.HTTP_202_ACCEPTED)

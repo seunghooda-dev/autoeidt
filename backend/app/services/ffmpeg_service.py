@@ -6,6 +6,7 @@ import sys
 from array import array
 from dataclasses import dataclass
 from functools import lru_cache
+from hashlib import sha1
 from pathlib import Path
 from typing import Any
 
@@ -221,6 +222,64 @@ def probe_media_info(video_path: Path) -> dict[str, Any]:
         timeout=60,
     )
     return summarize_media_probe(video_path, json.loads(result.stdout))
+
+
+def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
+    settings = get_settings()
+    resolved = video_path.resolve(strict=True)
+    stat = resolved.stat()
+    cache_key = sha1(
+        f"preview-v2|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
+    ).hexdigest()
+    preview_dir = settings.data_dir / "preview_proxies"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    output_path = preview_dir / f"{cache_key}.mp4"
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return output_path, True
+
+    temp_path = output_path.with_suffix(".tmp.mp4")
+    if temp_path.exists():
+        temp_path.unlink()
+    _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(resolved),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-sn",
+            "-dn",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
+            "-vf",
+            "scale=-2:540,format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "30",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-ac",
+            "2",
+            "-movflags",
+            "+faststart",
+            "-write_tmcd",
+            "0",
+            str(temp_path),
+        ],
+        timeout=None,
+    )
+    temp_path.replace(output_path)
+    return output_path, False
 
 
 def extract_audio(video_path: Path, audio_path: Path) -> Path:

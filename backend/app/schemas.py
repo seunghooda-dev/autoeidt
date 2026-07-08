@@ -176,6 +176,11 @@ class MediaProbeRequest(BaseModel):
     path: str
 
 
+class LocalPreviewResponse(BaseModel):
+    preview_url: str
+    cached: bool = False
+
+
 class MediaProbeResponse(BaseModel):
     path: str
     filename: str

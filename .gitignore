@@ -16,6 +16,7 @@ backend/data/*.mkv
 backend/data/jobs/
 backend/data/uploads/
 backend/data/outputs/
+backend/data/preview_proxies/
 test-assets/
 dist/
 
