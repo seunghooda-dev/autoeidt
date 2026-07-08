@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.schemas import (
     JobStatus,
     JobStatusResponse,
+    LocalImportRequest,
     ProjectResponse,
     ProjectState,
     RenderRequest,
@@ -34,6 +35,70 @@ def _load_job_or_404(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="job not found") from exc
 
 
+def _load_ready_style_profile(style_id: str | None) -> dict | None:
+    if not style_id:
+        return None
+    try:
+        style_profile = store.load_style(style_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="style profile not found") from exc
+    if style_profile.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="style profile is not ready")
+    return style_profile
+
+
+def _queue_analysis(
+    *,
+    background_tasks: BackgroundTasks,
+    job_id: str,
+) -> str:
+    settings = get_settings()
+    if settings.task_runner == "inline":
+        task_id = f"inline-analyze-{job_id}"
+        store.update(
+            job_id,
+            celery_task_id=task_id,
+            message="로컬 분석 작업 대기 중",
+        )
+        background_tasks.add_task(analyze_video_job, job_id)
+    else:
+        task = analyze_video_task.delay(job_id)
+        task_id = task.id
+        store.update(job_id, celery_task_id=task_id, message="분석 작업 대기 중")
+    return task_id
+
+
+def _create_analysis_job(
+    *,
+    job_id: str,
+    original_filename: str,
+    video_path: Path,
+    style_profile: dict | None,
+    import_mode: str,
+) -> None:
+    job = {
+        "job_id": job_id,
+        "status": JobStatus.queued.value,
+        "stage": "queued",
+        "progress": 0,
+        "message": "분석 작업 등록 중",
+        "original_filename": original_filename,
+        "video_path": str(video_path),
+        "import_mode": import_mode,
+        "audio_path": None,
+        "duration": None,
+        "transcript": [],
+        "segments": [],
+        "render_path": None,
+        "render_url": None,
+        "error": None,
+        "style_profile": style_profile,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    store.save(job_id, job)
+
+
 @router.post("/upload", response_model=UploadJobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_video(
     background_tasks: BackgroundTasks,
@@ -41,14 +106,7 @@ async def upload_video(
     style_id: str | None = Form(None),
 ) -> UploadJobResponse:
     settings = get_settings()
-    style_profile = None
-    if style_id:
-        try:
-            style_profile = store.load_style(style_id)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="style profile not found") from exc
-        if style_profile.get("status") != "ready":
-            raise HTTPException(status_code=409, detail="style profile is not ready")
+    style_profile = _load_ready_style_profile(style_id)
 
     job_id = uuid.uuid4().hex
     upload_dir = store.upload_dir(job_id)
@@ -67,40 +125,46 @@ async def upload_video(
                 )
             output.write(chunk)
 
-    job = {
-        "job_id": job_id,
-        "status": JobStatus.queued.value,
-        "stage": "queued",
-        "progress": 0,
-        "message": "분석 작업 등록 중",
-        "original_filename": file.filename,
-        "video_path": str(video_path),
-        "audio_path": None,
-        "duration": None,
-        "transcript": [],
-        "segments": [],
-        "render_path": None,
-        "render_url": None,
-        "error": None,
-        "style_profile": style_profile,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-    }
-    store.save(job_id, job)
+    _create_analysis_job(
+        job_id=job_id,
+        original_filename=file.filename or filename,
+        video_path=video_path,
+        style_profile=style_profile,
+        import_mode="uploaded_copy",
+    )
+    _queue_analysis(background_tasks=background_tasks, job_id=job_id)
 
-    if settings.task_runner == "inline":
-        task_id = f"inline-analyze-{job_id}"
-        store.update(
-            job_id,
-            celery_task_id=task_id,
-            message="로컬 분석 작업 대기 중",
-        )
-        background_tasks.add_task(analyze_video_job, job_id)
-    else:
-        task = analyze_video_task.delay(job_id)
-        task_id = task.id
-        store.update(job_id, celery_task_id=task_id, message="분석 작업 대기 중")
+    return UploadJobResponse(
+        job_id=job_id,
+        status=JobStatus.queued,
+        stage="queued",
+        progress=0,
+    )
 
+
+@router.post("/import-local", response_model=UploadJobResponse, status_code=status.HTTP_202_ACCEPTED)
+def import_local_video(
+    payload: LocalImportRequest,
+    background_tasks: BackgroundTasks,
+) -> UploadJobResponse:
+    source_path = Path(payload.path).expanduser()
+    try:
+        source_path = source_path.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="local source file not found") from exc
+    if not source_path.is_file():
+        raise HTTPException(status_code=400, detail="local source path must be a file")
+
+    style_profile = _load_ready_style_profile(payload.style_id)
+    job_id = uuid.uuid4().hex
+    _create_analysis_job(
+        job_id=job_id,
+        original_filename=payload.display_name or source_path.name,
+        video_path=source_path,
+        style_profile=style_profile,
+        import_mode="local_path",
+    )
+    _queue_analysis(background_tasks=background_tasks, job_id=job_id)
     return UploadJobResponse(
         job_id=job_id,
         status=JobStatus.queued,

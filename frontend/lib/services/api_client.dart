@@ -43,6 +43,22 @@ class ApiClient {
     return UploadJobResponse.fromJson(response.data!);
   }
 
+  Future<UploadJobResponse> importLocalVideo({
+    required String path,
+    required String displayName,
+    String? styleId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/import-local',
+      data: {
+        'path': path,
+        'display_name': displayName,
+        if (styleId != null && styleId.isNotEmpty) 'style_id': styleId,
+      },
+    );
+    return UploadJobResponse.fromJson(response.data!);
+  }
+
   Future<StyleTrainingResponse> trainStyleProfile({
     required String name,
     List<String> urls = const [],
@@ -67,6 +83,18 @@ class ApiClient {
       data: formData,
       onSendProgress: onSendProgress,
       options: Options(contentType: 'multipart/form-data'),
+    );
+    return StyleTrainingResponse.fromJson(response.data!);
+  }
+
+  Future<StyleTrainingResponse> trainLocalStyleProfile({
+    required String name,
+    List<String> urls = const [],
+    List<String> filePaths = const [],
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/styles/train-local',
+      data: {'name': name, 'urls': urls, 'file_paths': filePaths},
     );
     return StyleTrainingResponse.fromJson(response.data!);
   }

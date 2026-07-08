@@ -378,17 +378,29 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _apiClient.uploadVideo(
-        file,
-        styleId: hasReadyStyle ? activeStyleProfile!.styleId : null,
-        onSendProgress: (sent, total) {
-          if (total <= 0) {
-            return;
-          }
-          uploadProgress = sent / total;
-          notifyListeners();
-        },
-      );
+      final styleId = hasReadyStyle ? activeStyleProfile!.styleId : null;
+      final localPath = file.path;
+      final UploadJobResponse response;
+      if (!kIsWeb && localPath != null && localPath.isNotEmpty) {
+        response = await _apiClient.importLocalVideo(
+          path: localPath,
+          displayName: file.name,
+          styleId: styleId,
+        );
+        uploadProgress = 1;
+      } else {
+        response = await _apiClient.uploadVideo(
+          file,
+          styleId: styleId,
+          onSendProgress: (sent, total) {
+            if (total <= 0) {
+              return;
+            }
+            uploadProgress = sent / total;
+            notifyListeners();
+          },
+        );
+      }
       jobId = response.jobId;
       isUploading = false;
       try {
@@ -399,7 +411,7 @@ class EditorController extends ChangeNotifier {
       _startPolling();
     } catch (error) {
       isUploading = false;
-      errorMessage = '업로드 실패: $error';
+      errorMessage = '분석 요청 실패: $error';
     }
     notifyListeners();
   }
@@ -439,18 +451,33 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _apiClient.trainStyleProfile(
-        name: 'Company Reference Style',
-        urls: urls,
-        files: referenceFiles,
-        onSendProgress: (sent, total) {
-          if (total <= 0) {
-            return;
-          }
-          styleUploadProgress = sent / total;
-          notifyListeners();
-        },
-      );
+      final localPaths = referenceFiles
+          .map((file) => file.path)
+          .whereType<String>()
+          .where((path) => path.isNotEmpty)
+          .toList();
+      final StyleTrainingResponse response;
+      if (!kIsWeb && localPaths.length == referenceFiles.length) {
+        response = await _apiClient.trainLocalStyleProfile(
+          name: 'Company Reference Style',
+          urls: urls,
+          filePaths: localPaths,
+        );
+        styleUploadProgress = 1;
+      } else {
+        response = await _apiClient.trainStyleProfile(
+          name: 'Company Reference Style',
+          urls: urls,
+          files: referenceFiles,
+          onSendProgress: (sent, total) {
+            if (total <= 0) {
+              return;
+            }
+            styleUploadProgress = sent / total;
+            notifyListeners();
+          },
+        );
+      }
       trainingStyleProfile = response.profile;
       if (response.profile?.isReady ?? false) {
         activeStyleProfile = response.profile;

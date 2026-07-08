@@ -166,6 +166,18 @@ class UploadJobResponse(BaseModel):
     duration: float | None = None
 
 
+class LocalImportRequest(BaseModel):
+    path: str
+    display_name: str | None = None
+    style_id: str | None = None
+
+
+class LocalStyleTrainingRequest(BaseModel):
+    name: str = "Company Reference Style"
+    file_paths: list[str] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
+
+
 class StyleReferenceSource(BaseModel):
     label: str
     kind: str = "file"
