@@ -935,6 +935,33 @@ void main() {
     expect(controller.selectedSegment!.audioChannel2Enabled, isFalse);
     controller.toggleSelectedAudioChannel2();
     expect(controller.selectedSegment!.audioChannel2Enabled, isTrue);
+    expect(controller.allAudioChannel1Enabled, isTrue);
+    expect(controller.allAudioChannel2Enabled, isTrue);
+    controller.toggleAllAudioChannel2();
+    expect(
+      controller.segments.every((segment) => !segment.audioChannel2Enabled),
+      isTrue,
+    );
+    expect(controller.allAudioChannel2Enabled, isFalse);
+    controller.toggleAllAudioChannel1();
+    expect(
+      controller.segments.every((segment) => !segment.audioChannel1Enabled),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => segment.audioChannel2Enabled),
+      isTrue,
+    );
+    controller.soloAudioChannel1Track();
+    expect(
+      controller.segments.every((segment) => segment.audioChannel1Enabled),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => !segment.audioChannel2Enabled),
+      isTrue,
+    );
+    expect(controller.segments.every((segment) => !segment.audioMuted), isTrue);
     var selected = controller.selectedSegment!;
     expect(selected.videoFadeIn, closeTo(4, 0.01));
     expect(selected.videoFadeOut, closeTo(4, 0.01));
@@ -957,6 +984,11 @@ void main() {
     expect(controller.selectedSegment!.videoEnabled, isFalse);
 
     controller.toggleAudioTrackLock();
+    controller.soloAudioChannel2Track();
+    expect(
+      controller.segments.every((segment) => !segment.audioChannel2Enabled),
+      isTrue,
+    );
     controller.toggleAllAudioMute();
     expect(controller.segments.every((segment) => segment.audioMuted), isTrue);
   });

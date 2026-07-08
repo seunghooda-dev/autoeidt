@@ -303,6 +303,12 @@ class EditorController extends ChangeNotifier {
       segments.every(
         (segment) => segment.audioMuted || !segment.hasActiveAudioChannel,
       );
+  bool get allAudioChannel1Enabled =>
+      segments.isNotEmpty &&
+      segments.every((segment) => segment.audioChannel1Enabled);
+  bool get allAudioChannel2Enabled =>
+      segments.isNotEmpty &&
+      segments.every((segment) => segment.audioChannel2Enabled);
   bool get hasValidMarks =>
       markIn != null &&
       markOut != null &&
@@ -1888,6 +1894,98 @@ class EditorController extends ChangeNotifier {
 
   void toggleAllAudioMute() {
     setAllAudioMute(!allAudioMuted);
+  }
+
+  void toggleAllAudioChannel1() {
+    setAllAudioChannelEnabled(1, !allAudioChannel1Enabled);
+  }
+
+  void toggleAllAudioChannel2() {
+    setAllAudioChannelEnabled(2, !allAudioChannel2Enabled);
+  }
+
+  void soloAudioChannel1Track() {
+    setAudioChannelSolo(1);
+  }
+
+  void soloAudioChannel2Track() {
+    setAudioChannelSolo(2);
+  }
+
+  void setAllAudioChannelEnabled(int channel, bool enabled) {
+    if (audioTrackLocked || segments.isEmpty) {
+      return;
+    }
+    var changed = false;
+    final nextSegments = [
+      for (final segment in segments)
+        () {
+          var channel1 = segment.audioChannel1Enabled;
+          var channel2 = segment.audioChannel2Enabled;
+          if (channel == 1) {
+            channel1 = enabled;
+            if (!channel1 && !channel2) {
+              channel2 = true;
+            }
+          } else if (channel == 2) {
+            channel2 = enabled;
+            if (!channel1 && !channel2) {
+              channel1 = true;
+            }
+          }
+          if (channel1 == segment.audioChannel1Enabled &&
+              channel2 == segment.audioChannel2Enabled) {
+            return segment;
+          }
+          changed = true;
+          return segment.copyWith(
+            audioChannel1Enabled: channel1,
+            audioChannel2Enabled: channel2,
+            source: segment.source == 'ai' ? 'ai+manual' : segment.source,
+          );
+        }(),
+    ];
+    if (!changed) {
+      return;
+    }
+    _commitHistory();
+    segments = nextSegments;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void setAudioChannelSolo(int channel) {
+    if (audioTrackLocked || segments.isEmpty) {
+      return;
+    }
+    final soloChannel1 = channel == 1;
+    var changed = false;
+    final nextSegments = [
+      for (final segment in segments)
+        () {
+          final channel1 = soloChannel1;
+          final channel2 = !soloChannel1;
+          if (segment.audioChannel1Enabled == channel1 &&
+              segment.audioChannel2Enabled == channel2 &&
+              !segment.audioMuted) {
+            return segment;
+          }
+          changed = true;
+          return segment.copyWith(
+            audioChannel1Enabled: channel1,
+            audioChannel2Enabled: channel2,
+            audioMuted: false,
+            source: segment.source == 'ai' ? 'ai+manual' : segment.source,
+          );
+        }(),
+    ];
+    if (!changed) {
+      return;
+    }
+    _commitHistory();
+    segments = nextSegments;
+    renderUrl = null;
+    notifyListeners();
   }
 
   void setAllAudioMute(bool muted) {

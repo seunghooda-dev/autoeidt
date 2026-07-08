@@ -953,6 +953,8 @@ class _TimelinePanel extends StatelessWidget {
                 selected: controller.allAudioMuted,
                 onPressed: editor.toggleAllAudioMute,
               ),
+              const SizedBox(width: 6),
+              _AudioTrackBusMenu(controller: controller, editor: editor),
               if (selected != null) ...[
                 const SizedBox(width: 6),
                 _TrackControlButton(
@@ -1510,6 +1512,119 @@ class _TrackControlButton extends StatelessWidget {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
+      ),
+    );
+  }
+}
+
+class _AudioTrackBusMenu extends StatelessWidget {
+  const _AudioTrackBusMenu({required this.controller, required this.editor});
+
+  final EditorController controller;
+  final EditorController editor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final enabled = controller.hasTimeline && !controller.audioTrackLocked;
+    return Tooltip(
+      message: enabled ? 'A1/A2 전체 트랙 제어' : 'A1/A2 트랙 잠김',
+      child: PopupMenuButton<String>(
+        enabled: enabled,
+        tooltip: 'A1/A2 전체 트랙 제어',
+        onSelected: (value) {
+          switch (value) {
+            case 'toggle-a1':
+              editor.toggleAllAudioChannel1();
+              break;
+            case 'toggle-a2':
+              editor.toggleAllAudioChannel2();
+              break;
+            case 'solo-a1':
+              editor.soloAudioChannel1Track();
+              break;
+            case 'solo-a2':
+              editor.soloAudioChannel2Track();
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          _audioBusItem(
+            value: 'toggle-a1',
+            icon: controller.allAudioChannel1Enabled
+                ? Icons.check_box_outlined
+                : Icons.check_box_outline_blank,
+            label: controller.allAudioChannel1Enabled
+                ? 'Disable all A1'
+                : 'Enable all A1',
+          ),
+          _audioBusItem(
+            value: 'toggle-a2',
+            icon: controller.allAudioChannel2Enabled
+                ? Icons.check_box_outlined
+                : Icons.check_box_outline_blank,
+            label: controller.allAudioChannel2Enabled
+                ? 'Disable all A2'
+                : 'Enable all A2',
+          ),
+          const PopupMenuDivider(),
+          _audioBusItem(
+            value: 'solo-a1',
+            icon: Icons.filter_1_outlined,
+            label: 'Solo A1 track',
+          ),
+          _audioBusItem(
+            value: 'solo-a2',
+            icon: Icons.filter_2_outlined,
+            label: 'Solo A2 track',
+          ),
+        ],
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: enabled ? colorScheme.outline : colorScheme.outlineVariant,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.graphic_eq,
+                size: 16,
+                color: enabled
+                    ? colorScheme.onSurface
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Audio Bus',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: enabled
+                      ? colorScheme.onSurface
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _audioBusItem({
+    required String value,
+    required IconData icon,
+    required String label,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [Icon(icon, size: 18), const SizedBox(width: 8), Text(label)],
       ),
     );
   }
