@@ -226,10 +226,11 @@ class _MediaProbePanel extends StatelessWidget {
               _ProbeBadge(
                 label: probe.videoCodec.isEmpty ? 'codec?' : probe.videoCodec,
               ),
-              _ProbeBadge(label: '${probe.frameRate.toStringAsFixed(3)} fps'),
-              const _ProbeBadge(label: 'Timeline 30p NDF'),
+              _ProbeBadge(label: 'Source ${probe.sourceFrameRateLabel}'),
+              _ProbeBadge(label: 'Timeline ${probe.timelineTimebaseLabel}'),
+              if (probe.sourceDropFrame) const _ProbeBadge(label: 'DF removed'),
               if (probe.timecode != null)
-                _ProbeBadge(label: 'TC ${probe.timecode}'),
+                _ProbeBadge(label: 'Timeline TC ${probe.timecode}'),
               _ProbeBadge(label: 'A ${probe.audioStreamCount}'),
             ],
           ),

@@ -236,6 +236,21 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
+        key == LogicalKeyboardKey.keyJ) {
+      unawaited(editor.shuttleReverse());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyK) {
+      unawaited(editor.shuttlePause());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyL) {
+      unawaited(editor.shuttleForward());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
         key == LogicalKeyboardKey.keyC) {
       editor.setRazorTool();
     } else if (!isCtrl &&

@@ -203,6 +203,12 @@ class MediaProbeResponse(BaseModel):
     width: int = 0
     height: int = 0
     frame_rate: float = 0.0
+    source_frame_rate: float = 0.0
+    source_timecode: str | None = None
+    source_drop_frame: bool = False
+    timeline_frame_rate: float = 30.0
+    timeline_timecode_mode: str = "non_drop"
+    timeline_timebase: str = "30p NDF"
     timecode: str | None = None
     audio_stream_count: int = 0
     audio_summary: str = ""
@@ -356,6 +362,8 @@ class ProjectState(BaseModel):
     name: str = "AutoEdit Project"
     original_path: str | None = None
     duration: float = 0
+    timeline_frame_rate: float = 30.0
+    timeline_timecode_mode: str = "non_drop"
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
@@ -367,6 +375,16 @@ class ProjectState(BaseModel):
     export_aspect_ratio: str = "16:9"
     mark_in: float | None = None
     mark_out: float | None = None
+
+    @field_validator("timeline_frame_rate", mode="before")
+    @classmethod
+    def timeline_frame_rate_is_30p(cls, value: Any) -> float:
+        return 30.0
+
+    @field_validator("timeline_timecode_mode", mode="before")
+    @classmethod
+    def timeline_timecode_mode_is_non_drop(cls, value: Any) -> str:
+        return "non_drop"
 
 
 class ProjectResponse(ProjectState):

@@ -134,7 +134,18 @@ void main() {
     );
 
     final restored = ProjectState.fromJson(project.toJson());
+    final restoredFromLegacyDropFrame = ProjectState.fromJson({
+      ...project.toJson(),
+      'timeline_frame_rate': 29.97,
+      'timeline_timecode_mode': 'drop',
+    });
 
+    expect(project.toJson()['timeline_frame_rate'], 30.0);
+    expect(project.toJson()['timeline_timecode_mode'], 'non_drop');
+    expect(restored.timelineFrameRate, 30.0);
+    expect(restored.timelineTimecodeMode, 'non_drop');
+    expect(restoredFromLegacyDropFrame.timelineFrameRate, 30.0);
+    expect(restoredFromLegacyDropFrame.timelineTimecodeMode, 'non_drop');
     expect(restored.includeCaptions, isFalse);
     expect(restored.captionStylePreset, 'shorts');
     expect(restored.exportAspectRatio, '9:16');
@@ -318,6 +329,8 @@ void main() {
     final project = controller.projectState;
 
     expect(project.includeCaptions, isFalse);
+    expect(project.timelineFrameRate, 30.0);
+    expect(project.timelineTimecodeMode, 'non_drop');
     expect(project.captionStylePreset, 'shorts');
     expect(project.exportAspectRatio, '9:16');
     expect(project.markIn, 10.5);
@@ -581,6 +594,37 @@ void main() {
 
     await controller.jumpToTimelineEnd();
     expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 3600);
+  });
+
+  test('jkl shuttle controls update playback direction and rate', () async {
+    final controller = EditorController(autoStartEngine: false)..duration = 120;
+
+    expect(controller.playbackShuttleLabel, 'K Stop');
+
+    await controller.shuttleForward();
+    expect(controller.playbackShuttleDirection, 1);
+    expect(controller.playbackShuttleRate, 1.0);
+    expect(controller.playbackShuttleLabel, 'L 1x');
+
+    await controller.shuttleForward();
+    expect(controller.playbackShuttleRate, 2.0);
+    expect(controller.playbackShuttleLabel, 'L 2x');
+
+    await controller.seekTo(20, autoplay: false);
+    await controller.shuttleReverse();
+    expect(controller.playbackShuttleDirection, -1);
+    expect(controller.playbackShuttleRate, 1.0);
+    expect(controller.playbackShuttleLabel, 'J 1x');
+
+    await controller.shuttleReverse();
+    expect(controller.playbackShuttleRate, 2.0);
+    expect(controller.playbackShuttleLabel, 'J 2x');
+
+    await controller.shuttlePause();
+    expect(controller.playbackShuttleDirection, 0);
+    expect(controller.playbackShuttleRate, 1.0);
+    expect(controller.playbackShuttleLabel, 'K Stop');
+    controller.dispose();
   });
 
   test('disabled timeline markers are skipped by marker rough cut', () async {

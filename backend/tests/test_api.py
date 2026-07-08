@@ -155,6 +155,8 @@ def test_project_endpoints_preserve_render_settings(
             "name": "Shorts Project",
             "original_path": str(source_path),
             "duration": 120,
+            "timeline_frame_rate": 29.97,
+            "timeline_timecode_mode": "drop",
             "segments": [],
             "captions": [],
             "waveform": [],
@@ -191,6 +193,8 @@ def test_project_endpoints_preserve_render_settings(
     payload = response.json()
     assert payload["original_filename"] == "relinked_source.mxf"
     assert payload["original_path"] == str(source_path.resolve())
+    assert payload["timeline_frame_rate"] == 30.0
+    assert payload["timeline_timecode_mode"] == "non_drop"
     assert payload["include_captions"] is False
     assert payload["caption_style_preset"] == "shorts"
     assert payload["export_aspect_ratio"] == "9:16"
@@ -207,6 +211,8 @@ def test_project_endpoints_preserve_render_settings(
     assert get_response.status_code == 200
     get_payload = get_response.json()
     assert get_payload["original_path"] == str(source_path.resolve())
+    assert get_payload["timeline_frame_rate"] == 30.0
+    assert get_payload["timeline_timecode_mode"] == "non_drop"
     assert get_payload["include_captions"] is False
     assert get_payload["caption_style_preset"] == "shorts"
     assert get_payload["export_aspect_ratio"] == "9:16"

@@ -15,6 +15,12 @@ void main() {
       'width': 1920,
       'height': 1080,
       'frame_rate': 29.97,
+      'source_frame_rate': 29.97,
+      'source_timecode': '01:00:00;00',
+      'source_drop_frame': true,
+      'timeline_frame_rate': 30.0,
+      'timeline_timecode_mode': 'non_drop',
+      'timeline_timebase': '30p NDF',
       'timecode': '01:00:00;00',
       'audio_stream_count': 8,
       'audio_summary': 'A1 pcm_s24le mono, A2 pcm_s24le mono, +4 more',
@@ -28,6 +34,13 @@ void main() {
     expect(probe.canAnalyze, isTrue);
     expect(probe.resolutionLabel, '1920x1080');
     expect(probe.frameRate, 29.97);
+    expect(probe.sourceFrameRate, 29.97);
+    expect(probe.sourceFrameRateLabel, '29.970 fps');
+    expect(probe.sourceTimecode, '01:00:00;00');
+    expect(probe.sourceDropFrame, isTrue);
+    expect(probe.timelineFrameRate, 30.0);
+    expect(probe.timelineTimecodeMode, 'non_drop');
+    expect(probe.timelineTimebaseLabel, '30p NDF');
     expect(probe.timecode, '01:00:00:00');
     expect(probe.audioStreamCount, 8);
     expect(probe.warnings.single, contains('다중 오디오'));

@@ -111,6 +111,15 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);
     expect(controller.audioTrack1Targeted, isTrue);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.keyL);
+    expect(controller.playbackShuttleLabel, 'L 1x');
+    await _pressShortcut(tester, LogicalKeyboardKey.keyL);
+    expect(controller.playbackShuttleLabel, 'L 2x');
+    await _pressShortcut(tester, LogicalKeyboardKey.keyJ);
+    expect(controller.playbackShuttleLabel, 'J 1x');
+    await _pressShortcut(tester, LogicalKeyboardKey.keyK);
+    expect(controller.playbackShuttleLabel, 'K Stop');
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyL, control: true);
     expect(controller.selectedSegment!.audioLinked, isFalse);
 
@@ -292,15 +301,26 @@ void main() {
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
     final markerNearX = timelineBox.size.width * 20.4 / controller.duration;
+    const videoLaneY = 56.0;
 
-    await tester.tapAt(timelineTopLeft + Offset(markerNearX, 40));
+    await tester.tapAt(timelineTopLeft + Offset(markerNearX, videoLaneY));
     await tester.pump();
     expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 600);
 
     await _pressShortcut(tester, LogicalKeyboardKey.keyS);
     expect(controller.timelineSnappingEnabled, isFalse);
+    await tester.pumpAndSettle();
 
-    await tester.tapAt(timelineTopLeft + Offset(markerNearX, 40));
+    final updatedTimelineBox = tester.renderObject<RenderBox>(
+      find.byType(TimelineEditor).first,
+    );
+    final updatedTimelineTopLeft = updatedTimelineBox.localToGlobal(
+      Offset.zero,
+    );
+
+    await tester.tapAt(
+      updatedTimelineTopLeft + Offset(markerNearX, videoLaneY),
+    );
     await tester.pump();
     expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 612);
 

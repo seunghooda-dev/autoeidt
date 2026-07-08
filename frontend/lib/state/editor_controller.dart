@@ -45,6 +45,7 @@ class EditorController extends ChangeNotifier {
   Timer? _pollTimer;
   Timer? _stylePollTimer;
   Timer? _recoverySaveTimer;
+  Timer? _reverseShuttleTimer;
   final List<_EditorSnapshot> _undoStack = [];
   final List<_EditorSnapshot> _redoStack = [];
   String? _lastRecoveryPayload;
@@ -97,6 +98,8 @@ class EditorController extends ChangeNotifier {
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
   int _previewRevision = 0;
+  int playbackShuttleDirection = 0;
+  double playbackShuttleRate = 1.0;
   bool isPreparingPreview = false;
   bool isProbingMedia = false;
   bool _previewUsesProxy = false;
@@ -320,6 +323,16 @@ class EditorController extends ChangeNotifier {
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   String get timelineSnappingLabel =>
       timelineSnappingEnabled ? 'Snap S' : 'Snap Off';
+  String get playbackShuttleLabel {
+    if (playbackShuttleDirection < 0) {
+      return 'J ${playbackShuttleRate.toStringAsFixed(0)}x';
+    }
+    if (playbackShuttleDirection > 0) {
+      return 'L ${playbackShuttleRate.toStringAsFixed(0)}x';
+    }
+    return 'K Stop';
+  }
+
   bool get hasAnyTrackTarget =>
       videoTrackTargeted || audioTrack1Targeted || audioTrack2Targeted;
   bool get allTrackTargetsEnabled =>
@@ -665,6 +678,9 @@ class EditorController extends ChangeNotifier {
     job = null;
     duration = 0;
     _manualPlayheadSeconds = 0;
+    _stopReverseShuttleTimer();
+    playbackShuttleDirection = 0;
+    playbackShuttleRate = 1.0;
     segments = [];
     transcript = [];
     captions = [];
@@ -4571,16 +4587,93 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> togglePlayback() async {
+    _stopReverseShuttleTimer();
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
+      playbackShuttleDirection = playbackShuttleDirection == 0 ? 1 : 0;
+      playbackShuttleRate = 1.0;
+      notifyListeners();
       return;
     }
     if (controller.value.isPlaying) {
       await controller.pause();
+      playbackShuttleDirection = 0;
     } else {
+      await controller.setPlaybackSpeed(1.0);
+      await controller.play();
+      playbackShuttleDirection = 1;
+    }
+    playbackShuttleRate = 1.0;
+    notifyListeners();
+  }
+
+  Future<void> shuttleForward() async {
+    _stopReverseShuttleTimer();
+    final nextRate = _nextShuttleRate(1);
+    playbackShuttleDirection = 1;
+    playbackShuttleRate = nextRate;
+    final controller = videoController;
+    if (controller != null && controller.value.isInitialized) {
+      await controller.setPlaybackSpeed(nextRate);
       await controller.play();
     }
     notifyListeners();
+  }
+
+  Future<void> shuttlePause() async {
+    _stopReverseShuttleTimer();
+    playbackShuttleDirection = 0;
+    playbackShuttleRate = 1.0;
+    final controller = videoController;
+    if (controller != null && controller.value.isInitialized) {
+      await controller.pause();
+      await controller.setPlaybackSpeed(1.0);
+    }
+    notifyListeners();
+  }
+
+  Future<void> shuttleReverse() async {
+    final nextRate = _nextShuttleRate(-1);
+    playbackShuttleDirection = -1;
+    playbackShuttleRate = nextRate;
+    final controller = videoController;
+    if (controller != null && controller.value.isInitialized) {
+      await controller.pause();
+      await controller.setPlaybackSpeed(1.0);
+    }
+    _startReverseShuttleTimer(nextRate);
+    notifyListeners();
+  }
+
+  double _nextShuttleRate(int direction) {
+    if (playbackShuttleDirection != direction) {
+      return 1.0;
+    }
+    const rates = [1.0, 2.0, 4.0, 8.0];
+    final index = rates.indexWhere((rate) => rate == playbackShuttleRate);
+    if (index < 0 || index >= rates.length - 1) {
+      return rates.last;
+    }
+    return rates[index + 1];
+  }
+
+  void _startReverseShuttleTimer(double rate) {
+    _stopReverseShuttleTimer();
+    _reverseShuttleTimer = Timer.periodic(const Duration(milliseconds: 120), (
+      _,
+    ) {
+      final next = _clampTime(currentPositionSeconds - 0.12 * rate);
+      if (next <= 0) {
+        unawaited(shuttlePause());
+        return;
+      }
+      unawaited(seekTo(next, autoplay: false));
+    });
+  }
+
+  void _stopReverseShuttleTimer() {
+    _reverseShuttleTimer?.cancel();
+    _reverseShuttleTimer = null;
   }
 
   void _startPolling() {
@@ -6659,6 +6752,7 @@ class EditorController extends ChangeNotifier {
     _pollTimer?.cancel();
     _stylePollTimer?.cancel();
     _recoverySaveTimer?.cancel();
+    _reverseShuttleTimer?.cancel();
     videoController?.dispose();
     unawaited(_engineService.dispose());
     super.dispose();

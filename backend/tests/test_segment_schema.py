@@ -53,6 +53,8 @@ def test_project_state_accepts_render_settings() -> None:
         name="shorts project",
         original_path="C:/media/source.mxf",
         duration=120,
+        timeline_frame_rate=29.97,
+        timeline_timecode_mode="drop",
         include_captions=False,
         caption_style_preset="shorts",
         export_aspect_ratio="9:16",
@@ -81,6 +83,8 @@ def test_project_state_accepts_render_settings() -> None:
 
     assert project.include_captions is False
     assert project.original_path == "C:/media/source.mxf"
+    assert project.timeline_frame_rate == 30.0
+    assert project.timeline_timecode_mode == "non_drop"
     assert project.caption_style_preset == "shorts"
     assert project.export_aspect_ratio == "9:16"
     assert project.mark_in == 12.5

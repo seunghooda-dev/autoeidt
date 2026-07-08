@@ -50,6 +50,11 @@ class EditControls extends StatelessWidget {
               value: '${controller.timelineZoom.toStringAsFixed(1)}x',
             ),
             _MetricChip(
+              icon: Icons.keyboard_double_arrow_right,
+              label: 'Shuttle',
+              value: controller.playbackShuttleLabel,
+            ),
+            _MetricChip(
               icon: controller.isRazorTool
                   ? Icons.content_cut
                   : Icons.near_me_outlined,

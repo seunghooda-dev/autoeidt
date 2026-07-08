@@ -43,6 +43,12 @@ def test_media_probe_summarizes_broadcast_mxf_op1a_like_file() -> None:
     assert summary["can_analyze"] is True
     assert summary["mxf_operational_pattern"] == "OP1a-like single-file MXF"
     assert summary["frame_rate"] == 29.97
+    assert summary["source_frame_rate"] == 29.97
+    assert summary["source_timecode"] == "01:00:00;00"
+    assert summary["source_drop_frame"] is True
+    assert summary["timeline_frame_rate"] == 30.0
+    assert summary["timeline_timecode_mode"] == "non_drop"
+    assert summary["timeline_timebase"] == "30p NDF"
     assert summary["timecode"] == "01:00:00:00"
     assert summary["audio_stream_count"] == 2
     assert "A1 pcm_s24le mono" in summary["audio_summary"]
@@ -99,3 +105,5 @@ def test_media_probe_clamps_invalid_source_timecode_to_30p_non_drop() -> None:
     )
 
     assert summary["timecode"] == "01:59:59:29"
+    assert summary["timeline_frame_rate"] == 30.0
+    assert summary["timeline_timecode_mode"] == "non_drop"

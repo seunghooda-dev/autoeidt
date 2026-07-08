@@ -14,6 +14,8 @@ from app.config import get_settings
 
 RENDER_FRAME_RATE = 30
 RENDER_FRAME_RATE_LABEL = str(RENDER_FRAME_RATE)
+TIMELINE_TIMECODE_MODE = "non_drop"
+TIMELINE_TIMEBASE_LABEL = "30p NDF"
 
 
 class FFmpegError(RuntimeError):
@@ -175,6 +177,7 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
     )
     source_timecode = _stream_timecode(streams, format_info)
     timeline_timecode = _normalize_non_drop_timecode(source_timecode)
+    source_drop_frame = _is_drop_frame_timecode(source_timecode)
     audio_labels = [
         _audio_stream_label(stream, index)
         for index, stream in enumerate(audio_streams[:4], start=1)
@@ -198,9 +201,9 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
             f"소스 프레임레이트가 {frame_rate:.3f}fps입니다. "
             "현재 타임라인은 30.00fps non-drop 기준입니다."
         )
-    if _is_drop_frame_timecode(source_timecode):
+    if source_drop_frame:
         warnings.append(
-            "소스 drop-frame 타임코드는 30p non-drop 표기로 변환해 작업합니다."
+            "소스 drop-frame 타임코드는 제거하고 30p non-drop 표기로 변환해 작업합니다."
         )
     if is_mxf and len(audio_streams) >= 8:
         warnings.append(
@@ -221,6 +224,12 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         "width": _safe_int(video.get("width")),
         "height": _safe_int(video.get("height")),
         "frame_rate": round(frame_rate, 3),
+        "source_frame_rate": round(frame_rate, 3),
+        "source_timecode": source_timecode,
+        "source_drop_frame": source_drop_frame,
+        "timeline_frame_rate": float(RENDER_FRAME_RATE),
+        "timeline_timecode_mode": TIMELINE_TIMECODE_MODE,
+        "timeline_timebase": TIMELINE_TIMEBASE_LABEL,
         "timecode": timeline_timecode,
         "audio_stream_count": len(audio_streams),
         "audio_summary": ", ".join(audio_labels),

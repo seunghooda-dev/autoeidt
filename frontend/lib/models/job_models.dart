@@ -40,6 +40,12 @@ class MediaProbeInfo {
     required this.width,
     required this.height,
     required this.frameRate,
+    this.sourceFrameRate = 0,
+    this.sourceTimecode,
+    this.sourceDropFrame = false,
+    this.timelineFrameRate = timecodeFrameRate,
+    this.timelineTimecodeMode = 'non_drop',
+    this.timelineTimebase = '30p NDF',
     required this.audioStreamCount,
     required this.audioSummary,
     required this.isMxf,
@@ -60,6 +66,12 @@ class MediaProbeInfo {
   final int width;
   final int height;
   final double frameRate;
+  final double sourceFrameRate;
+  final String? sourceTimecode;
+  final bool sourceDropFrame;
+  final double timelineFrameRate;
+  final String timelineTimecodeMode;
+  final String timelineTimebase;
   final String? timecode;
   final int audioStreamCount;
   final String audioSummary;
@@ -73,6 +85,18 @@ class MediaProbeInfo {
       return 'Unknown';
     }
     return '${width}x$height';
+  }
+
+  String get sourceFrameRateLabel {
+    final value = sourceFrameRate > 0 ? sourceFrameRate : frameRate;
+    return '${value.toStringAsFixed(3)} fps';
+  }
+
+  String get timelineTimebaseLabel {
+    if (timelineTimebase.trim().isNotEmpty) {
+      return timelineTimebase;
+    }
+    return '${timelineFrameRate.toStringAsFixed(2)}p NDF';
   }
 
   factory MediaProbeInfo.fromJson(Map<String, dynamic> json) {
@@ -89,6 +113,18 @@ class MediaProbeInfo {
       width: (json['width'] as num?)?.toInt() ?? 0,
       height: (json['height'] as num?)?.toInt() ?? 0,
       frameRate: (json['frame_rate'] as num?)?.toDouble() ?? 0,
+      sourceFrameRate:
+          (json['source_frame_rate'] as num?)?.toDouble() ??
+          (json['frame_rate'] as num?)?.toDouble() ??
+          0,
+      sourceTimecode: json['source_timecode'] as String?,
+      sourceDropFrame: json['source_drop_frame'] as bool? ?? false,
+      timelineFrameRate:
+          (json['timeline_frame_rate'] as num?)?.toDouble() ??
+          timecodeFrameRate,
+      timelineTimecodeMode:
+          json['timeline_timecode_mode'] as String? ?? 'non_drop',
+      timelineTimebase: json['timeline_timebase'] as String? ?? '30p NDF',
       timecode: normalizeTimecodeText(json['timecode'] as String?),
       audioStreamCount: (json['audio_stream_count'] as num?)?.toInt() ?? 0,
       audioSummary: json['audio_summary'] as String? ?? '',
@@ -616,13 +652,16 @@ class ProjectState {
     this.jobId,
     this.originalFilename,
     this.originalPath,
-  });
+  }) : timelineFrameRate = timecodeFrameRate,
+       timelineTimecodeMode = 'non_drop';
 
   final String name;
   final String? jobId;
   final String? originalFilename;
   final String? originalPath;
   final double duration;
+  final double timelineFrameRate;
+  final String timelineTimecodeMode;
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
   final List<double> waveform;
@@ -684,6 +723,8 @@ class ProjectState {
       if (originalFilename != null) 'original_filename': originalFilename,
       if (originalPath != null) 'original_path': originalPath,
       'duration': duration,
+      'timeline_frame_rate': timecodeFrameRate,
+      'timeline_timecode_mode': 'non_drop',
       'segments': segments.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
