@@ -141,3 +141,58 @@ def test_news_engine_builds_editorial_sequence_and_avoids_rumor() -> None:
     assert "루머" not in joined_text
     assert {"뉴스핵심", "근거", "영향", "대응"} <= joined_tags
     assert all(item["source"] == "editorial-engine" for item in highlights)
+
+
+def test_story_arc_engine_tags_complete_shorts_flow() -> None:
+    transcript = [
+        {
+            "start": 0.0,
+            "end": 12.0,
+            "text": "결과부터 보면 이번 사고의 핵심은 안전 점검 실패였습니다",
+        },
+        {
+            "start": 12.0,
+            "end": 28.0,
+            "text": "먼저 배경을 보면 지난달부터 같은 문제가 반복됐습니다",
+        },
+        {
+            "start": 28.0,
+            "end": 48.0,
+            "text": "당국 공식 보고서와 통계 자료에 따르면 피해 신고는 120건입니다",
+        },
+        {
+            "start": 48.0,
+            "end": 68.0,
+            "text": "주민들은 안전 우려와 영업 손실 피해가 크다고 말했습니다",
+        },
+        {
+            "start": 68.0,
+            "end": 88.0,
+            "text": "회사 측은 사과하고 재발 방지 대책과 보상 조치를 발표했습니다",
+        },
+        {
+            "start": 88.0,
+            "end": 108.0,
+            "text": "일각에서는 아직 확인되지 않은 루머와 추측도 나오고 있습니다",
+        },
+        {
+            "start": 108.0,
+            "end": 128.0,
+            "text": "구독 좋아요 알림 설정 부탁드립니다",
+        },
+    ]
+
+    highlights = select_highlights_with_skills(
+        transcript,
+        duration=128.0,
+        target_min_seconds=70.0,
+        target_max_seconds=120.0,
+    )
+
+    joined_text = " ".join(item["script"] for item in highlights)
+    joined_tags = {tag for item in highlights for tag in item["tags"]}
+    assert highlights == sorted(highlights, key=lambda item: item["start"])
+    assert "루머" not in joined_text
+    assert "구독 좋아요" not in joined_text
+    assert {"Story:Hook", "Story:Evidence", "Story:Impact", "Story:Resolution"} <= joined_tags
+    assert any(item["reason"].startswith("Hook 단계") for item in highlights)

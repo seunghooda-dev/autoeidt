@@ -9,6 +9,43 @@ from typing import Any, Protocol
 
 
 NEWS_STRUCTURE_TAGS = ["뉴스핵심", "근거", "영향", "대응", "출처확인", "시간축", "발언"]
+STORY_PHASES = [
+    {
+        "role": "hook",
+        "label": "Hook",
+        "tag": "Story:Hook",
+        "tags": {"뉴스핵심", "유지율", "질문", "호기심", "핵심", "문제해결"},
+        "keywords": {"결과", "핵심", "왜", "문제", "충격", "단독", "속보", "논란", "hook", "impact"},
+    },
+    {
+        "role": "context",
+        "label": "Context",
+        "tag": "Story:Context",
+        "tags": {"시간축", "전환", "문제해결", "문맥"},
+        "keywords": {"배경", "원인", "이유", "당시", "먼저", "시작", "context", "before"},
+    },
+    {
+        "role": "evidence",
+        "label": "Evidence",
+        "tag": "Story:Evidence",
+        "tags": {"근거", "출처확인", "발언", "구체성", "뉴스핵심"},
+        "keywords": {"근거", "자료", "통계", "공식", "발표", "확인", "보고서", "said", "reported"},
+    },
+    {
+        "role": "impact",
+        "label": "Impact",
+        "tag": "Story:Impact",
+        "tags": {"영향", "감정", "대응"},
+        "keywords": {"피해", "영향", "우려", "논란", "시민", "주민", "소비자", "impact", "damage"},
+    },
+    {
+        "role": "resolution",
+        "label": "Resolution",
+        "tag": "Story:Resolution",
+        "tags": {"대응", "문제해결", "시간축"},
+        "keywords": {"대응", "조치", "대책", "수사", "착수", "앞으로", "결론", "resolution", "next"},
+    },
+]
 _TOKEN_PATTERN = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 _STOPWORDS = {
     "그리고",
@@ -668,6 +705,181 @@ def choose_best_for_tag(
     return max(tagged, key=editorial_rank)
 
 
+def _window_text(window: TranscriptWindow) -> str:
+    return f"{window.text} {' '.join(window.tags)} {' '.join(window.reasons)}".lower()
+
+
+def _phase_match_score(window: TranscriptWindow, phase: dict[str, Any]) -> float:
+    tags = set(str(tag) for tag in window.tags)
+    tag_matches = len(tags & set(phase["tags"]))
+    text = _window_text(window)
+    keyword_matches = sum(
+        1 for keyword in phase["keywords"] if str(keyword).lower() in text
+    )
+    if tag_matches == 0 and keyword_matches == 0:
+        return 0.0
+    score = tag_matches * 1.4 + min(keyword_matches, 4) * 0.55
+    if phase["role"] == "resolution" and "대응" in tags:
+        score += 2.0
+    if phase["role"] == "evidence" and "대응" in tags and not (tags & {"근거", "발언"}):
+        score -= 1.8
+    if phase["role"] == "impact" and "대응" in tags and "영향" not in tags:
+        score -= 1.1
+    return max(0.0, score)
+
+
+def _story_phase_for_window(window: TranscriptWindow) -> dict[str, Any]:
+    scored = [
+        (phase, _phase_match_score(window, phase))
+        for phase in STORY_PHASES
+    ]
+    phase, score = max(scored, key=lambda item: item[1])
+    if score > 0:
+        return phase
+    return STORY_PHASES[1]
+
+
+def _story_tag_for_window(window: TranscriptWindow) -> str:
+    return str(_story_phase_for_window(window)["tag"])
+
+
+def _story_phase_rank(
+    window: TranscriptWindow,
+    phase: dict[str, Any],
+    phase_index: int,
+) -> float:
+    match_score = _phase_match_score(window, phase)
+    if match_score <= 0:
+        return -9999.0
+    early_bonus = (1.0 - window.position_ratio) * 1.4 if phase_index == 0 else 0.0
+    late_bonus = window.position_ratio * 0.55 if phase["role"] in {"impact", "resolution"} else 0.0
+    duration_fit = min(window.duration / 36.0, 1.0)
+    hook_length_penalty = max(0.0, (window.duration - 32.0) * 1.1) if phase["role"] == "hook" else 0.0
+    hook_purity_penalty = (
+        len(set(window.tags) & {"근거", "출처확인", "영향", "대응", "발언"}) * 2.4
+        if phase["role"] == "hook"
+        else 0.0
+    )
+    evidence_purity_penalty = (
+        len(set(window.tags) & {"영향", "대응"}) * 3.0
+        + max(0.0, (window.duration - 34.0) / 3.0)
+        if phase["role"] == "evidence"
+        else 0.0
+    )
+    impact_focus_bonus = 2.0 if phase["role"] == "impact" and "영향" in window.tags else 0.0
+    impact_focus_penalty = 3.0 if phase["role"] == "impact" and "영향" not in window.tags else 0.0
+    hook_opening_bonus = (
+        7.0
+        if phase["role"] == "hook"
+        and re.search(
+            r"^\s*(결과부터|핵심|왜|문제|충격|속보|단독|바로|지금)",
+            window.text,
+            re.I,
+        )
+        else 0.0
+    )
+    risk_penalty = len(window.risks) * 4.5
+    if "미확인" in window.risks:
+        risk_penalty += 8.0
+    return (
+        window.score
+        + match_score
+        + early_bonus
+        + late_bonus
+        + duration_fit
+        + hook_opening_bonus
+        + impact_focus_bonus
+        - hook_length_penalty
+        - hook_purity_penalty
+        - evidence_purity_penalty
+        - impact_focus_penalty
+        - risk_penalty
+    )
+
+
+def _append_story_tag(window: TranscriptWindow, story_tag: str) -> None:
+    if story_tag not in window.tags:
+        window.tags.append(story_tag)
+
+
+def choose_best_for_story_phase(
+    candidates: list[TranscriptWindow],
+    selected: list[TranscriptWindow],
+    total: float,
+    effective_max_seconds: float,
+    phase: dict[str, Any],
+    phase_index: int,
+) -> TranscriptWindow | None:
+    phase_candidates = [
+        candidate
+        for candidate in candidates
+        if can_add_window(candidate, selected, total, effective_max_seconds)
+        and _phase_match_score(candidate, phase) > 0
+        and "CTA" not in candidate.risks
+        and "말버릇" not in candidate.risks
+        and "미확인" not in candidate.risks
+    ]
+    if not phase_candidates:
+        return None
+    chosen = max(
+        phase_candidates,
+        key=lambda item: _story_phase_rank(item, phase, phase_index),
+    )
+    _append_story_tag(chosen, str(phase["tag"]))
+    if f"{phase['label']} 단계" not in chosen.reasons:
+        chosen.reasons.insert(0, f"{phase['label']} 단계")
+    return chosen
+
+
+def select_story_arc_windows(
+    candidates: list[TranscriptWindow],
+    effective_min_seconds: float,
+    effective_max_seconds: float,
+) -> list[TranscriptWindow]:
+    selected: list[TranscriptWindow] = []
+    total = 0.0
+    for phase_index, phase in enumerate(STORY_PHASES):
+        candidate = choose_best_for_story_phase(
+            candidates,
+            selected,
+            total,
+            effective_max_seconds,
+            phase,
+            phase_index,
+        )
+        if candidate is None:
+            continue
+        selected.append(candidate)
+        total += candidate.duration
+
+    for candidate in sorted(
+        candidates,
+        key=lambda item: (
+            item.score / item.duration,
+            _phase_match_score(item, _story_phase_for_window(item)),
+        ),
+        reverse=True,
+    ):
+        if selected and total >= effective_min_seconds:
+            break
+        if "미확인" in candidate.risks or "CTA" in candidate.risks:
+            continue
+        if not can_add_window(candidate, selected, total, effective_max_seconds):
+            continue
+        _append_story_tag(candidate, _story_tag_for_window(candidate))
+        selected.append(candidate)
+        total += candidate.duration
+
+    role_tags = {tag for item in selected for tag in item.tags if tag.startswith("Story:")}
+    has_arc = "Story:Hook" in role_tags and (
+        "Story:Evidence" in role_tags or "Story:Impact" in role_tags
+    )
+    if len(role_tags) < 3 or not has_arc:
+        return []
+    selected.sort(key=lambda item: item.start)
+    return selected
+
+
 def select_highlights_with_skills(
     transcript: list[dict[str, Any]],
     duration: float,
@@ -723,6 +935,25 @@ def select_highlights_with_skills(
             )
         ]
 
+    selected = select_story_arc_windows(
+        candidates,
+        effective_min_seconds,
+        effective_max_seconds,
+    )
+    if selected:
+        return [
+            {
+                "start": round(item.start, 3),
+                "end": round(item.end, 3),
+                "reason": reason_for_window(item),
+                "script": script_preview(item),
+                "source": window_source(item),
+                "score": round(item.score, 2),
+                "tags": item.tags,
+            }
+            for item in selected
+        ]
+
     selected: list[TranscriptWindow] = []
     total = 0.0
     for tag in NEWS_STRUCTURE_TAGS[:4]:
@@ -748,6 +979,9 @@ def select_highlights_with_skills(
 
     if not selected:
         selected = [max(candidates, key=lambda item: item.score)]
+
+    for item in selected:
+        _append_story_tag(item, _story_tag_for_window(item))
 
     selected.sort(key=lambda item: item.start)
     return [
