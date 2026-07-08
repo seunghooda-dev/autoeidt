@@ -348,6 +348,46 @@ void main() {
     expect(controller.timelineMarkers.length, 2);
   });
 
+  test('playhead navigation snaps to 30p frames and edit points', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 20, reason: 'a'),
+        HighlightSegment(order: 2, start: 35, end: 50, reason: 'b'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await controller.seekTo(10, autoplay: false);
+    await controller.stepPlayheadByFrames(1);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 301);
+
+    await controller.stepPlayheadByFrames(-10);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 291);
+
+    await controller.jumpToNextEditPoint();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 300);
+
+    await controller.jumpToNextEditPoint();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 600);
+
+    await controller.jumpToPreviousEditPoint();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 300);
+
+    controller.setMarkInAt(35);
+    controller.setMarkOutAt(50);
+    await controller.jumpToMarkOut();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 1500);
+
+    await controller.jumpToMarkIn();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 1050);
+
+    await controller.jumpToTimelineStart();
+    expect(controller.currentPositionSeconds, 0);
+
+    await controller.jumpToTimelineEnd();
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 3600);
+  });
+
   test('disabled timeline markers are skipped by marker rough cut', () async {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120

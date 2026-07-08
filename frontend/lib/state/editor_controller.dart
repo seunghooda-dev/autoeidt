@@ -1095,6 +1095,64 @@ class EditorController extends ChangeNotifier {
     unawaited(seekTo(marker.seconds, autoplay: false));
   }
 
+  Future<void> stepPlayheadByFrames(int frameDelta) async {
+    if (frameDelta == 0) {
+      return;
+    }
+    final next = _snapToFrame(
+      _clampTime(
+        currentPositionSeconds + frameDelta * timecodeFrameDurationSeconds,
+      ),
+    );
+    await seekTo(next, autoplay: false);
+  }
+
+  Future<void> jumpToTimelineStart() async {
+    await seekTo(0, autoplay: false);
+  }
+
+  Future<void> jumpToTimelineEnd() async {
+    await seekTo(timelineSourceDuration, autoplay: false);
+  }
+
+  Future<void> jumpToMarkIn() async {
+    final point = markIn;
+    if (point == null) {
+      return;
+    }
+    await seekTo(point, autoplay: false);
+  }
+
+  Future<void> jumpToMarkOut() async {
+    final point = markOut;
+    if (point == null) {
+      return;
+    }
+    await seekTo(point, autoplay: false);
+  }
+
+  Future<void> jumpToNextEditPoint() async {
+    final current = currentPositionSeconds;
+    final threshold = current + timecodeFrameDurationSeconds / 2;
+    for (final point in _timelineEditPoints()) {
+      if (point > threshold) {
+        await seekTo(point, autoplay: false);
+        return;
+      }
+    }
+  }
+
+  Future<void> jumpToPreviousEditPoint() async {
+    final current = currentPositionSeconds;
+    final threshold = current - timecodeFrameDurationSeconds / 2;
+    for (final point in _timelineEditPoints().reversed) {
+      if (point < threshold) {
+        await seekTo(point, autoplay: false);
+        return;
+      }
+    }
+  }
+
   void setMarksFromTimelineMarker(int id) {
     final range = _timelineMarkerRange(id);
     if (range == null) {
@@ -4046,6 +4104,21 @@ class EditorController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  List<double> _timelineEditPoints() {
+    final points = <double>{};
+    final sourceDuration = timelineSourceDuration;
+    if (sourceDuration > 0) {
+      points.add(0);
+      points.add(_snapToFrame(sourceDuration));
+    }
+    for (final segment in segments) {
+      points.add(_snapToFrame(_clampTime(segment.start)));
+      points.add(_snapToFrame(_clampTime(segment.end)));
+    }
+    final sorted = points.toList()..sort();
+    return sorted;
   }
 
   ({TimelineMarker marker, double start, double end})? _timelineMarkerRange(

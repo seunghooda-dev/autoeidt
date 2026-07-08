@@ -22,6 +22,12 @@ enum _TimelineMenuAction {
   clearOut,
   liftMarkedRange,
   extractMarkedRange,
+  stepBackwardFrame,
+  stepForwardFrame,
+  previousEdit,
+  nextEdit,
+  jumpToMarkIn,
+  jumpToMarkOut,
   addMarker,
   previousMarker,
   nextMarker,
@@ -72,6 +78,12 @@ class TimelineEditor extends StatefulWidget {
     this.onClearMarkOut,
     this.onLiftMarkedRange,
     this.onExtractMarkedRange,
+    this.onStepBackwardFrame,
+    this.onStepForwardFrame,
+    this.onJumpToPreviousEdit,
+    this.onJumpToNextEdit,
+    this.onJumpToMarkIn,
+    this.onJumpToMarkOut,
     this.onAddMarkerAt,
     this.onJumpToPreviousMarker,
     this.onJumpToNextMarker,
@@ -122,6 +134,12 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearMarkOut;
   final VoidCallback? onLiftMarkedRange;
   final VoidCallback? onExtractMarkedRange;
+  final VoidCallback? onStepBackwardFrame;
+  final VoidCallback? onStepForwardFrame;
+  final VoidCallback? onJumpToPreviousEdit;
+  final VoidCallback? onJumpToNextEdit;
+  final VoidCallback? onJumpToMarkIn;
+  final VoidCallback? onJumpToMarkOut;
   final ValueChanged<double>? onAddMarkerAt;
   final VoidCallback? onJumpToPreviousMarker;
   final VoidCallback? onJumpToNextMarker;
@@ -361,6 +379,18 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onLiftMarkedRange?.call();
       case _TimelineMenuAction.extractMarkedRange:
         widget.onExtractMarkedRange?.call();
+      case _TimelineMenuAction.stepBackwardFrame:
+        widget.onStepBackwardFrame?.call();
+      case _TimelineMenuAction.stepForwardFrame:
+        widget.onStepForwardFrame?.call();
+      case _TimelineMenuAction.previousEdit:
+        widget.onJumpToPreviousEdit?.call();
+      case _TimelineMenuAction.nextEdit:
+        widget.onJumpToNextEdit?.call();
+      case _TimelineMenuAction.jumpToMarkIn:
+        widget.onJumpToMarkIn?.call();
+      case _TimelineMenuAction.jumpToMarkOut:
+        widget.onJumpToMarkOut?.call();
       case _TimelineMenuAction.addMarker:
         widget.onAddMarkerAt?.call(seconds);
       case _TimelineMenuAction.previousMarker:
@@ -509,6 +539,50 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.extractMarkedRange,
         shortcut: "'",
         enabled: canEditMarkedRange && widget.onExtractMarkedRange != null,
+      ),
+      const PopupMenuDivider(),
+      _menuHeader('Frame Navigation'),
+      _menuItem(
+        Icons.keyboard_arrow_left,
+        'Step back 1 frame',
+        _TimelineMenuAction.stepBackwardFrame,
+        shortcut: 'Left',
+        enabled: widget.onStepBackwardFrame != null,
+      ),
+      _menuItem(
+        Icons.keyboard_arrow_right,
+        'Step forward 1 frame',
+        _TimelineMenuAction.stepForwardFrame,
+        shortcut: 'Right',
+        enabled: widget.onStepForwardFrame != null,
+      ),
+      _menuItem(
+        Icons.vertical_align_top,
+        'Previous edit point',
+        _TimelineMenuAction.previousEdit,
+        shortcut: 'Up',
+        enabled: widget.onJumpToPreviousEdit != null,
+      ),
+      _menuItem(
+        Icons.vertical_align_bottom,
+        'Next edit point',
+        _TimelineMenuAction.nextEdit,
+        shortcut: 'Down',
+        enabled: widget.onJumpToNextEdit != null,
+      ),
+      _menuItem(
+        Icons.keyboard_tab,
+        'Go to In',
+        _TimelineMenuAction.jumpToMarkIn,
+        shortcut: 'Shift+I',
+        enabled: widget.markIn != null && widget.onJumpToMarkIn != null,
+      ),
+      _menuItem(
+        Icons.keyboard_return,
+        'Go to Out',
+        _TimelineMenuAction.jumpToMarkOut,
+        shortcut: 'Shift+O',
+        enabled: widget.markOut != null && widget.onJumpToMarkOut != null,
       ),
       const PopupMenuDivider(),
       _menuHeader('Timeline Markers'),

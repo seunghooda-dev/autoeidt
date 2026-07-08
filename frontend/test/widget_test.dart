@@ -43,6 +43,38 @@ void main() {
     );
     await tester.pump();
 
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 1);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight, shift: true);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 11);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowLeft);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 10);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.end);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 900);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.home);
+    expect(controller.currentPositionSeconds, 0);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowDown);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowDown);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 390);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowUp);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
+
+    controller.setMarkInAt(6);
+    controller.setMarkOutAt(8);
+    await _pressShortcut(tester, LogicalKeyboardKey.keyO, shift: true);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 240);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyI, shift: true);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 180);
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyC);
     expect(controller.isRazorTool, isTrue);
 
@@ -67,6 +99,9 @@ void main() {
     );
     expect(controller.selectedSegment!.audioFadeIn, 0.12);
     expect(controller.selectedSegment!.audioFadeOut, 0.12);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.home);
+    expect(controller.currentPositionSeconds, 0);
 
     controller.addTimelineMarkerAt(5, label: 'A');
     controller.addTimelineMarkerAt(12, label: 'B');
@@ -96,8 +131,6 @@ void main() {
     );
     expect(controller.timelineMarkers, isEmpty);
 
-    controller.setMarkInAt(6);
-    controller.setMarkOutAt(8);
     await _pressShortcut(tester, LogicalKeyboardKey.semicolon);
     expect(controller.segments.length, 3);
     expect(controller.segments[1].videoEnabled, isFalse);

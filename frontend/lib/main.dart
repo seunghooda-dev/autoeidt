@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
@@ -101,6 +103,9 @@ class _EditorDashboardState extends State<EditorDashboard> {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
+    if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) {
+      return KeyEventResult.ignored;
+    }
 
     final keyboard = HardwareKeyboard.instance;
     final isCtrl = keyboard.isControlPressed || keyboard.isMetaPressed;
@@ -132,6 +137,47 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.clearMarkIn();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyO) {
       editor.clearMarkOut();
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyI) {
+      unawaited(editor.jumpToMarkIn());
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyO) {
+      unawaited(editor.jumpToMarkOut());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.home) {
+      unawaited(editor.jumpToTimelineStart());
+    } else if (!isCtrl && !isAlt && !isShift && key == LogicalKeyboardKey.end) {
+      unawaited(editor.jumpToTimelineEnd());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowUp) {
+      unawaited(editor.jumpToPreviousEditPoint());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowDown) {
+      unawaited(editor.jumpToNextEditPoint());
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowLeft) {
+      unawaited(editor.stepPlayheadByFrames(-1));
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowRight) {
+      unawaited(editor.stepPlayheadByFrames(1));
+    } else if (!isCtrl &&
+        !isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.arrowLeft) {
+      unawaited(editor.stepPlayheadByFrames(-10));
+    } else if (!isCtrl &&
+        !isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.arrowRight) {
+      unawaited(editor.stepPlayheadByFrames(10));
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1070,6 +1116,18 @@ class _TimelineEditorBody extends StatelessWidget {
       onClearMarkOut: context.read<EditorController>().clearMarkOut,
       onLiftMarkedRange: context.read<EditorController>().liftMarkedRange,
       onExtractMarkedRange: context.read<EditorController>().extractMarkedRange,
+      onStepBackwardFrame: () =>
+          unawaited(context.read<EditorController>().stepPlayheadByFrames(-1)),
+      onStepForwardFrame: () =>
+          unawaited(context.read<EditorController>().stepPlayheadByFrames(1)),
+      onJumpToPreviousEdit: () =>
+          unawaited(context.read<EditorController>().jumpToPreviousEditPoint()),
+      onJumpToNextEdit: () =>
+          unawaited(context.read<EditorController>().jumpToNextEditPoint()),
+      onJumpToMarkIn: () =>
+          unawaited(context.read<EditorController>().jumpToMarkIn()),
+      onJumpToMarkOut: () =>
+          unawaited(context.read<EditorController>().jumpToMarkOut()),
       onAddMarkerAt: context.read<EditorController>().addTimelineMarkerAt,
       onJumpToPreviousMarker: context
           .read<EditorController>()
