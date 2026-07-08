@@ -176,9 +176,17 @@ class MediaProbeRequest(BaseModel):
     path: str
 
 
+class LocalPreviewRequest(BaseModel):
+    path: str
+    start_seconds: float = 0.0
+    duration_seconds: float | None = None
+
+
 class LocalPreviewResponse(BaseModel):
     preview_url: str
     cached: bool = False
+    source_start: float = 0.0
+    duration: float = 0.0
 
 
 class MediaProbeResponse(BaseModel):

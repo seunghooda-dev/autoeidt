@@ -224,13 +224,23 @@ def probe_media_info(video_path: Path) -> dict[str, Any]:
     return summarize_media_probe(video_path, json.loads(result.stdout))
 
 
-def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
+def create_preview_proxy(
+    video_path: Path,
+    start_seconds: float = 0.0,
+    duration_seconds: float | None = None,
+) -> tuple[Path, bool, float, float]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
     stat = resolved.stat()
-    proxy_seconds = max(30, min(int(settings.preview_proxy_seconds), 600))
+    source_start = max(0.0, float(start_seconds or 0.0))
+    requested_duration = (
+        float(duration_seconds)
+        if duration_seconds is not None and duration_seconds > 0
+        else float(settings.preview_proxy_seconds)
+    )
+    proxy_seconds = max(30.0, min(requested_duration, 600.0))
     cache_key = sha1(
-        f"preview-v3|{proxy_seconds}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
+        f"preview-v4|{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
             "utf-8"
         )
     ).hexdigest()
@@ -238,7 +248,7 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
     preview_dir.mkdir(parents=True, exist_ok=True)
     output_path = preview_dir / f"{cache_key}.mp4"
     if output_path.exists() and output_path.stat().st_size > 0:
-        return output_path, True
+        return output_path, True, source_start, proxy_seconds
 
     temp_path = output_path.with_suffix(".tmp.mp4")
     if temp_path.exists():
@@ -247,6 +257,8 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
         [
             "ffmpeg",
             "-y",
+            "-ss",
+            f"{source_start:.3f}",
             "-i",
             str(resolved),
             "-map",
@@ -260,7 +272,7 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
             "-map_chapters",
             "-1",
             "-t",
-            str(proxy_seconds),
+            f"{proxy_seconds:.3f}",
             "-vf",
             "scale=-2:540,format=yuv420p",
             "-c:v",
@@ -284,7 +296,7 @@ def create_preview_proxy(video_path: Path) -> tuple[Path, bool]:
         timeout=None,
     )
     temp_path.replace(output_path)
-    return output_path, False
+    return output_path, False, source_start, proxy_seconds
 
 
 def extract_audio(video_path: Path, audio_path: Path) -> Path:

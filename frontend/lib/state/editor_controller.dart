@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -75,6 +76,9 @@ class EditorController extends ChangeNotifier {
   int _previewRevision = 0;
   bool isPreparingPreview = false;
   bool isProbingMedia = false;
+  bool _previewUsesProxy = false;
+  double _previewSourceStartSeconds = 0;
+  double? _previewSourceDurationSeconds;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
     'mp4',
@@ -177,7 +181,8 @@ class EditorController extends ChangeNotifier {
     if (controller == null || !controller.value.isInitialized) {
       return 0;
     }
-    return controller.value.position.inMilliseconds / 1000;
+    return _previewSourceStartSeconds +
+        controller.value.position.inMilliseconds / 1000;
   }
 
   HighlightSegment? get selectedSegment {
@@ -532,7 +537,19 @@ class EditorController extends ChangeNotifier {
       jobId = response.jobId;
       isUploading = false;
       try {
-        await _initializePreview(response.jobId);
+        if (!kIsWeb && localPath != null && localPath.isNotEmpty) {
+          final previewFocus = currentPositionSeconds;
+          if (selectedMediaProbe?.isMxf == true || _previewUsesProxy) {
+            await _initializeProxyPreview(
+              localPath,
+              focusSeconds: previewFocus,
+            );
+          } else {
+            await _initializeLocalPreview(localPath);
+          }
+        } else {
+          await _initializePreview(response.jobId);
+        }
       } catch (_) {
         await _disposeVideoController();
       }
@@ -1908,13 +1925,49 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _proxyContainsSourceTime(double seconds) {
+    if (!_previewUsesProxy) {
+      return true;
+    }
+    final durationSeconds = _previewSourceDurationSeconds;
+    if (durationSeconds == null || durationSeconds <= 0) {
+      return true;
+    }
+    final endSeconds = _previewSourceStartSeconds + durationSeconds;
+    return seconds >=
+            _previewSourceStartSeconds - timecodeFrameDurationSeconds &&
+        seconds <= endSeconds - timecodeFrameDurationSeconds;
+  }
+
+  double _previewLocalSecondsFor(
+    double sourceSeconds,
+    VideoPlayerController controller,
+  ) {
+    final durationSeconds = controller.value.duration.inMilliseconds / 1000;
+    final localSeconds = sourceSeconds - _previewSourceStartSeconds;
+    if (durationSeconds <= 0) {
+      return math.max(0, localSeconds);
+    }
+    return localSeconds.clamp(0.0, durationSeconds).toDouble();
+  }
+
   Future<void> seekTo(double seconds, {bool autoplay = true}) async {
-    final controller = videoController;
+    var controller = videoController;
+    final clamped = _clampTime(seconds);
+    if (_previewUsesProxy && !_proxyContainsSourceTime(clamped)) {
+      final path = selectedFile?.path;
+      if (!kIsWeb && path != null && path.isNotEmpty) {
+        await _initializeProxyPreview(path, focusSeconds: clamped);
+        controller = videoController;
+      }
+    }
     if (controller == null || !controller.value.isInitialized) {
       return;
     }
-    final clamped = _clampTime(seconds);
-    await controller.seekTo(Duration(milliseconds: (clamped * 1000).round()));
+    final localSeconds = _previewLocalSecondsFor(clamped, controller);
+    await controller.seekTo(
+      Duration(milliseconds: (localSeconds * 1000).round()),
+    );
     if (autoplay) {
       await controller.play();
     }
@@ -2039,6 +2092,9 @@ class EditorController extends ChangeNotifier {
       return;
     }
     videoController = controller;
+    _previewUsesProxy = false;
+    _previewSourceStartSeconds = 0;
+    _previewSourceDurationSeconds = null;
     final previewDuration = controller.value.duration.inMilliseconds / 1000;
     if (previewDuration > 0 && duration == 0) {
       duration = previewDuration;
@@ -2061,6 +2117,9 @@ class EditorController extends ChangeNotifier {
       }
       await _disposeVideoController();
       videoController = controller;
+      _previewUsesProxy = false;
+      _previewSourceStartSeconds = 0;
+      _previewSourceDurationSeconds = null;
       final previewDuration = controller.value.duration.inMilliseconds / 1000;
       if (previewDuration > 0 && duration == 0) {
         duration = previewDuration;
@@ -2076,7 +2135,11 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  Future<void> _initializeProxyPreview(String path) async {
+  Future<void> _initializeProxyPreview(
+    String path, {
+    double focusSeconds = 0,
+    bool autoplay = false,
+  }) async {
     if (kIsWeb || path.isEmpty) {
       return;
     }
@@ -2084,13 +2147,18 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
     try {
       await _ensureLocalEngineForApi();
-      final previewUrl = await _apiClient.createLocalPreview(path);
+      final sourceStart = math.max(0.0, focusSeconds - 8.0);
+      final preview = await _apiClient.createLocalPreview(
+        path,
+        startSeconds: sourceStart,
+        durationSeconds: focusSeconds > 0 ? 240 : null,
+      );
       if (selectedFile?.path != path) {
         return;
       }
       final revision = ++_previewRevision;
       final controller = VideoPlayerController.networkUrl(
-        Uri.parse(previewUrl),
+        Uri.parse(preview.url),
       );
       await controller.initialize();
       if (revision != _previewRevision || selectedFile?.path != path) {
@@ -2099,9 +2167,25 @@ class EditorController extends ChangeNotifier {
       }
       await _disposeVideoController();
       videoController = controller;
+      _previewUsesProxy = true;
+      _previewSourceStartSeconds = preview.sourceStart;
       final previewDuration = controller.value.duration.inMilliseconds / 1000;
-      if (previewDuration > 0 && duration == 0) {
-        duration = previewDuration;
+      _previewSourceDurationSeconds =
+          previewDuration > 0 && preview.duration > 0
+          ? math.min(previewDuration, preview.duration)
+          : (preview.duration > 0 ? preview.duration : previewDuration);
+      final sourceDuration = selectedMediaProbe?.duration ?? 0;
+      if (sourceDuration > 0 && duration == 0) {
+        duration = sourceDuration;
+      }
+      if (focusSeconds > 0) {
+        final localSeconds = _previewLocalSecondsFor(focusSeconds, controller);
+        await controller.seekTo(
+          Duration(milliseconds: (localSeconds * 1000).round()),
+        );
+      }
+      if (autoplay) {
+        await controller.play();
       }
       controller.addListener(_handleVideoTick);
     } catch (error) {
@@ -2119,6 +2203,9 @@ class EditorController extends ChangeNotifier {
   Future<void> _disposeVideoController() async {
     final current = videoController;
     videoController = null;
+    _previewUsesProxy = false;
+    _previewSourceStartSeconds = 0;
+    _previewSourceDurationSeconds = null;
     if (current != null) {
       current.removeListener(_handleVideoTick);
       await current.dispose();

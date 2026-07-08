@@ -4,6 +4,20 @@ import 'package:file_picker/file_picker.dart';
 import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 
+class LocalPreviewInfo {
+  const LocalPreviewInfo({
+    required this.url,
+    required this.sourceStart,
+    required this.duration,
+  });
+
+  final String url;
+  final double sourceStart;
+  final double duration;
+
+  double get sourceEnd => sourceStart + duration;
+}
+
 class ApiClient {
   ApiClient({String? baseUrl, Dio? dio})
     : baseUrl =
@@ -67,16 +81,35 @@ class ApiClient {
     return MediaProbeInfo.fromJson(response.data!);
   }
 
-  Future<String> createLocalPreview(String path) async {
+  Future<LocalPreviewInfo> createLocalPreview(
+    String path, {
+    double startSeconds = 0,
+    double? durationSeconds,
+  }) async {
+    final data = <String, Object>{'path': path, 'start_seconds': startSeconds};
+    if (durationSeconds != null) {
+      data['duration_seconds'] = durationSeconds;
+    }
     final response = await _dio.post<Map<String, dynamic>>(
       '$baseUrl/api/jobs/preview-local',
-      data: {'path': path},
+      data: data,
     );
     final previewUrl = response.data?['preview_url'] as String? ?? '';
     if (previewUrl.isEmpty) {
       throw StateError('프리뷰 프록시 URL을 받지 못했습니다.');
     }
-    return absoluteUrl(previewUrl);
+    return LocalPreviewInfo(
+      url: absoluteUrl(previewUrl),
+      sourceStart: _readDouble(response.data?['source_start']),
+      duration: _readDouble(response.data?['duration']),
+    );
+  }
+
+  double _readDouble(Object? value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse('$value') ?? 0;
   }
 
   Future<StyleTrainingResponse> trainStyleProfile({

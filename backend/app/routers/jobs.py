@@ -10,6 +10,7 @@ from app.schemas import (
     JobStatus,
     JobStatusResponse,
     LocalImportRequest,
+    LocalPreviewRequest,
     LocalPreviewResponse,
     MediaProbeRequest,
     MediaProbeResponse,
@@ -187,15 +188,21 @@ def probe_local_media(payload: MediaProbeRequest) -> MediaProbeResponse:
 
 
 @router.post("/preview-local", response_model=LocalPreviewResponse)
-def create_local_preview(payload: MediaProbeRequest) -> LocalPreviewResponse:
+def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
     source_path = _resolve_local_file(payload.path)
     try:
-        preview_path, cached = create_preview_proxy(source_path)
+        preview_path, cached, source_start, duration = create_preview_proxy(
+            source_path,
+            start_seconds=payload.start_seconds,
+            duration_seconds=payload.duration_seconds,
+        )
     except FFmpegError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LocalPreviewResponse(
         preview_url=f"/api/jobs/preview/{preview_path.name}",
         cached=cached,
+        source_start=source_start,
+        duration=duration,
     )
 
 
