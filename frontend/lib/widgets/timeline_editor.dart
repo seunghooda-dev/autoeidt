@@ -813,6 +813,11 @@ class _TimelinePainter extends CustomPainter {
   static const double _laneHeight = _TimelineEditorState._laneHeight;
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
+  static const Color _videoClipColor = Color(0xFFA7F3A1);
+  static const Color _videoClipActiveColor = Color(0xFFC6F77B);
+  static const Color _audioClipColor = Color(0xFFFFBD7A);
+  static const Color _audioClipActiveColor = Color(0xFFFFD49C);
+  static const Color _clipTextColor = Color(0xFF11140F);
 
   final double duration;
   final List<HighlightSegment> segments;
@@ -832,8 +837,8 @@ class _TimelinePainter extends CustomPainter {
     final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
     _drawTrack(canvas, size, _videoTop, radius, trackPaint);
     _drawTrack(canvas, size, _audioTop, radius, trackPaint);
-    _drawLaneLabel(canvas, 'V1', _videoTop, colorScheme.primary);
-    _drawLaneLabel(canvas, 'A1', _audioTop, colorScheme.secondary);
+    _drawLaneLabel(canvas, 'V1', _videoTop, _videoClipColor);
+    _drawLaneLabel(canvas, 'A1', _audioTop, _audioClipColor);
 
     _drawWaveform(canvas, size);
     _drawInOutRange(canvas, size);
@@ -890,8 +895,8 @@ class _TimelinePainter extends CustomPainter {
     final textPainter = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: _clipTextColor.withValues(alpha: 0.95),
           fontSize: 10,
           fontWeight: FontWeight.w800,
         ),
@@ -949,22 +954,132 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawTicks(Canvas canvas, Size size) {
+    final rulerRect = Rect.fromLTWH(0, 0, size.width, 26);
+    canvas.drawRect(
+      rulerRect,
+      Paint()..color = colorScheme.surface.withValues(alpha: 0.78),
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(0, 24, size.width, 1),
+      Paint()..color = colorScheme.outline.withValues(alpha: 0.75),
+    );
+
     final tickPaint = Paint()
-      ..color = colorScheme.outline
+      ..color = colorScheme.outline.withValues(alpha: 0.80)
       ..strokeWidth = 1;
-    const tickCount = 12;
-    for (var i = 0; i <= tickCount; i++) {
-      final x = size.width * i / tickCount;
-      final top = i % 3 == 0 ? 26.0 : 30.0;
+    final minorTickPaint = Paint()
+      ..color = colorScheme.outline.withValues(alpha: 0.32)
+      ..strokeWidth = 0.8;
+    final majorStep = _tickStepSeconds(size.width);
+    final minorStep = math.max(1.0, majorStep / 5);
+    for (
+      var seconds = 0.0;
+      seconds <= duration + minorStep / 2;
+      seconds += minorStep
+    ) {
+      final normalizedSeconds = seconds.clamp(0.0, duration).toDouble();
+      final x = _secondsToX(normalizedSeconds, size.width);
+      final isMajor =
+          (normalizedSeconds / majorStep -
+                      (normalizedSeconds / majorStep).round())
+                  .abs() <
+              0.001 ||
+          normalizedSeconds == 0 ||
+          normalizedSeconds == duration;
+      final top = isMajor ? 24.0 : 29.0;
       canvas.drawLine(
         Offset(x, top),
-        Offset(x, _audioTop + _laneHeight + 6),
-        tickPaint,
+        Offset(x, isMajor ? _audioTop + _laneHeight + 6 : 38),
+        isMajor ? tickPaint : minorTickPaint,
       );
+      if (isMajor) {
+        _drawRulerTimecode(canvas, size, x, normalizedSeconds);
+      }
+      if (normalizedSeconds == duration) {
+        break;
+      }
     }
   }
 
+  double _tickStepSeconds(double width) {
+    if (duration <= 0 || width <= 0) {
+      return 1;
+    }
+    final targetStep = duration / math.max(2.0, width / 118);
+    const candidates = <double>[
+      1,
+      2,
+      5,
+      10,
+      15,
+      30,
+      60,
+      120,
+      300,
+      600,
+      900,
+      1800,
+      3600,
+    ];
+    for (final candidate in candidates) {
+      if (candidate >= targetStep) {
+        return candidate;
+      }
+    }
+    return (targetStep / 3600).ceil() * 3600;
+  }
+
+  void _drawRulerTimecode(Canvas canvas, Size size, double x, double seconds) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: formatSeconds(seconds),
+        style: TextStyle(
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.92),
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final labelX = (x - textPainter.width / 2)
+        .clamp(2.0, math.max(2.0, size.width - textPainter.width - 2))
+        .toDouble();
+    textPainter.paint(canvas, Offset(labelX, 6));
+  }
+
   void _drawSegments(Canvas canvas, Size size, Radius radius) {
+    if (segments.isEmpty && duration > 0) {
+      _drawClipBlock(
+        canvas,
+        size,
+        top: _videoTop,
+        start: 0,
+        end: duration,
+        fill: _videoClipColor,
+        border: _videoClipColor,
+        radius: radius,
+        handlesActive: false,
+        label: 'V1 Source',
+        track: _DragTrack.video,
+      );
+      _drawClipBlock(
+        canvas,
+        size,
+        top: _audioTop,
+        start: 0,
+        end: duration,
+        fill: _audioClipColor,
+        border: _audioClipColor,
+        radius: radius,
+        handlesActive: false,
+        label: 'A1 Source',
+        track: _DragTrack.audio,
+      );
+      return;
+    }
+
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
       final isActive =
@@ -977,25 +1092,27 @@ class _TimelinePainter extends CustomPainter {
         start: segment.start,
         end: segment.end,
         fill: segment.videoEnabled
-            ? (isActive ? colorScheme.tertiary : colorScheme.primary)
+            ? (isActive ? _videoClipActiveColor : _videoClipColor)
             : colorScheme.onSurfaceVariant.withValues(alpha: 0.28),
         border: segment.videoEnabled
-            ? (isActive ? colorScheme.tertiary : colorScheme.onSurface)
+            ? (isActive ? _videoClipActiveColor : _videoClipColor)
             : colorScheme.error,
         radius: radius,
         handlesActive: isActive && activeTrack != _DragTrack.audio,
         disabledPattern: !segment.videoEnabled,
+        label: 'V1 C${segment.order}',
+        track: _DragTrack.video,
       );
       _drawFadeOverlay(canvas, size, segment);
 
       final audioFill = segment.audioLinked
-          ? colorScheme.secondary
+          ? (isActive ? _audioClipActiveColor : _audioClipColor)
           : colorScheme.tertiary;
       final audioBorder = segment.audioMuted
           ? colorScheme.error
           : segment.audioPan.abs() > 0.001
           ? colorScheme.primary
-          : (isActive ? colorScheme.tertiary : colorScheme.onSurface);
+          : (isActive ? _audioClipActiveColor : _audioClipColor);
       _drawClipBlock(
         canvas,
         size,
@@ -1008,6 +1125,10 @@ class _TimelinePainter extends CustomPainter {
         border: audioBorder,
         radius: radius,
         handlesActive: isActive && activeTrack != _DragTrack.video,
+        label: segment.audioMuted
+            ? 'A1 muted C${segment.order}'
+            : 'A1 C${segment.order}',
+        track: _DragTrack.audio,
       );
       if (segment.audioPan.abs() > 0.001) {
         _drawPanIndicator(canvas, size, segment);
@@ -1025,6 +1146,8 @@ class _TimelinePainter extends CustomPainter {
     required Color border,
     required Radius radius,
     required bool handlesActive,
+    required String label,
+    required _DragTrack track,
     bool disabledPattern = false,
   }) {
     final left = _secondsToX(start, size.width);
@@ -1077,6 +1200,12 @@ class _TimelinePainter extends CustomPainter {
           ..strokeWidth = 1,
       );
     }
+    if (track == _DragTrack.video) {
+      _drawVideoPresence(canvas, rect);
+    } else {
+      _drawAudioPresence(canvas, rect);
+    }
+    _drawClipTimecodeLabel(canvas, rect, label, start, end, track);
     canvas.drawRRect(
       rrect,
       Paint()
@@ -1112,6 +1241,84 @@ class _TimelinePainter extends CustomPainter {
         handleInnerPaint,
       );
     }
+  }
+
+  void _drawVideoPresence(Canvas canvas, Rect rect) {
+    if (rect.width < 18) {
+      return;
+    }
+    final paint = Paint()
+      ..color = _clipTextColor.withValues(alpha: 0.18)
+      ..strokeWidth = 0.8;
+    final top = rect.top + 4;
+    final bottom = rect.top + 10;
+    for (var x = rect.left + 14; x < rect.right - 4; x += 18) {
+      canvas.drawLine(Offset(x, top), Offset(x, bottom), paint);
+    }
+  }
+
+  void _drawAudioPresence(Canvas canvas, Rect rect) {
+    if (rect.width < 18) {
+      return;
+    }
+    final paint = Paint()
+      ..color = _clipTextColor.withValues(alpha: 0.22)
+      ..strokeWidth = 1;
+    final centerY = rect.center.dy;
+    canvas.drawLine(
+      Offset(rect.left + 7, centerY),
+      Offset(rect.right - 7, centerY),
+      paint..color = _clipTextColor.withValues(alpha: 0.12),
+    );
+    final wavePaint = Paint()
+      ..color = _clipTextColor.withValues(alpha: 0.22)
+      ..strokeWidth = 0.9;
+    for (var x = rect.left + 12; x < rect.right - 6; x += 12) {
+      final phase = ((x - rect.left) / 12).round();
+      final halfHeight = phase.isEven ? 4.0 : 7.0;
+      canvas.drawLine(
+        Offset(x, centerY - halfHeight),
+        Offset(x, centerY + halfHeight),
+        wavePaint,
+      );
+    }
+  }
+
+  void _drawClipTimecodeLabel(
+    Canvas canvas,
+    Rect rect,
+    String label,
+    double start,
+    double end,
+    _DragTrack track,
+  ) {
+    if (rect.width < 28) {
+      return;
+    }
+    final timeText = '${formatSeconds(start)} - ${formatSeconds(end)}';
+    final text = rect.width >= 190
+        ? '$label  $timeText'
+        : rect.width >= 112
+        ? '${track == _DragTrack.video ? 'V' : 'A'}  ${formatSeconds(start)}'
+        : label.split(' ').first;
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: _clipTextColor.withValues(alpha: 0.92),
+          fontSize: rect.width >= 112 ? 9 : 8,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: math.max(0, rect.width - 12));
+    textPainter.paint(
+      canvas,
+      Offset(rect.left + 6, rect.center.dy - textPainter.height / 2),
+    );
   }
 
   void _drawPanIndicator(Canvas canvas, Size size, HighlightSegment segment) {
