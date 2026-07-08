@@ -2542,9 +2542,11 @@ class EditorController extends ChangeNotifier {
     );
     final riskCount = _shortsRiskCount(candidateSegments);
     final fillerCount = _shortsFillerCaptionCount(candidateSegments);
+    final offlineReviewCount = _shortsOfflineReviewCount(candidateSegments);
     final riskPenalty = (riskCount * 12 + fillerCount * 3)
         .clamp(0, 35)
         .toDouble();
+    final offlinePenalty = (offlineReviewCount * 16).clamp(0, 42).toDouble();
     final quality =
         (durationScore * 0.18) +
         (highlightScore * 0.26) +
@@ -2553,7 +2555,8 @@ class EditorController extends ChangeNotifier {
         (audioScore * 0.12) +
         (captionScore * 0.08) +
         (storyScore * 0.02) -
-        riskPenalty;
+        riskPenalty -
+        offlinePenalty;
     final score = quality.clamp(0.0, 100.0).toDouble();
     return candidate.copyWith(
       qualityScore: score,
@@ -2571,6 +2574,7 @@ class EditorController extends ChangeNotifier {
         duration: duration,
         riskCount: riskCount,
         fillerCount: fillerCount,
+        offlineReviewCount: offlineReviewCount,
         audioScore: audioScore,
         captionScore: captionScore,
         storyScore: storyScore,
@@ -2702,6 +2706,10 @@ class EditorController extends ChangeNotifier {
           .length;
     }
     return count;
+  }
+
+  int _shortsOfflineReviewCount(List<HighlightSegment> input) {
+    return input.where(_isOfflineReviewSegment).length;
   }
 
   List<RenderSafetyItem> _buildRenderSafetyChecklist(
@@ -3041,6 +3049,7 @@ class EditorController extends ChangeNotifier {
     required double duration,
     required int riskCount,
     required int fillerCount,
+    required int offlineReviewCount,
     required double audioScore,
     required double captionScore,
     required double storyScore,
@@ -3053,6 +3062,9 @@ class EditorController extends ChangeNotifier {
     }
     if (riskCount > 0) {
       issues.add('Risk review');
+    }
+    if (offlineReviewCount > 0) {
+      issues.add('Offline review');
     }
     if (fillerCount > 0) {
       issues.add('Filler captions');

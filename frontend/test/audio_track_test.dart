@@ -669,6 +669,48 @@ void main() {
     );
   });
 
+  test('shorts quality flags offline review candidates', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 240
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 20,
+          end: 65,
+          reason: 'STT 없이 오디오 활동 기반으로 잡은 검토용 후보',
+          source: 'fallback-audio-review',
+          score: 8,
+          audioNormalize: true,
+          tags: ['검토필요', '오디오활성', 'STT미설정'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 80,
+          end: 130,
+          reason: '검증된 핵심 설명',
+          script: '출처가 확인된 핵심 설명입니다',
+          score: 8,
+          audioNormalize: true,
+          tags: ['뉴스핵심', '근거'],
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(maxCandidates: 2);
+
+    expect(controller.hasShortsCandidates, isTrue);
+    expect(
+      controller.shortsCandidates.any(
+        (candidate) => candidate.issues.contains('Offline review'),
+      ),
+      isTrue,
+    );
+    final offlineCandidate = controller.shortsCandidates.firstWhere(
+      (candidate) => candidate.issues.contains('Offline review'),
+    );
+    expect(offlineCandidate.qualityScore, lessThan(85));
+    expect(offlineCandidate.qualityGrade, isNot('S'));
+  });
+
   test('selected shorts safety repair only updates selected candidates', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120
