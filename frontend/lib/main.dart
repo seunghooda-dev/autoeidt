@@ -114,6 +114,8 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.undo();
     } else if (isCtrl && key == LogicalKeyboardKey.keyK) {
       editor.addEditAtPlayhead();
+    } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyL) {
+      editor.toggleSelectedAudioLink();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyD) {
       editor.applyDefaultAudioTransition();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyD) {
