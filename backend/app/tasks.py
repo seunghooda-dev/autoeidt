@@ -18,6 +18,7 @@ from app.services.hybrid_cut import (
     refine_highlights_with_hybrid_cut,
     silence_ranges_to_dicts,
 )
+from app.services.editing_skills import align_highlights_to_transcript_boundaries
 from app.services.llm_service import analyze_highlights, fallback_review_highlights
 from app.services.reference_style import (
     analyze_reference_video,
@@ -515,6 +516,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         )
         if not refined:
             refined = raw_highlights
+        refined = align_highlights_to_transcript_boundaries(refined, transcript)
         refined = _normalize_highlights(refined, duration)
 
         _set_task_state(

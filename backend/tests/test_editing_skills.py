@@ -1,5 +1,7 @@
 from app.services.editing_skills import (
     TranscriptWindow,
+    align_highlights_to_transcript_boundaries,
+    enrich_highlights_with_skill_scores,
     score_window,
     select_highlights_with_skills,
 )
@@ -165,6 +167,79 @@ def test_verified_fact_skill_rewards_official_sourced_numbers() -> None:
     assert "근거" in window.tags
     assert "출처확인" in window.tags
     assert any("검증 가능한 뉴스 핵심" in reason for reason in window.reasons)
+
+
+def test_highlight_boundaries_snap_to_nearby_transcript_sentences() -> None:
+    transcript = [
+        {
+            "start": 10.0,
+            "end": 16.0,
+            "text": "먼저 이번 사고의 핵심은 안전 점검 실패였습니다",
+        },
+        {
+            "start": 16.0,
+            "end": 24.0,
+            "text": "공식 보고서에 따르면 피해 신고는 120건입니다",
+        },
+        {
+            "start": 24.0,
+            "end": 34.0,
+            "text": "회사 측은 재발 방지 대책을 발표했습니다",
+        },
+    ]
+
+    aligned = align_highlights_to_transcript_boundaries(
+        [
+            {
+                "start": 10.45,
+                "end": 23.55,
+                "reason": "LLM 선택 구간",
+                "tags": ["뉴스핵심"],
+            }
+        ],
+        transcript,
+    )
+
+    assert aligned[0]["start"] == 10.0
+    assert aligned[0]["end"] == 24.0
+    assert "문장경계" in aligned[0]["tags"]
+    assert aligned[0]["script"].startswith("먼저 이번 사고")
+    assert "공식 보고서" in aligned[0]["script"]
+
+
+def test_llm_enrichment_applies_transcript_boundary_alignment() -> None:
+    transcript = [
+        {"start": 0.0, "end": 8.0, "text": "도입 인사입니다"},
+        {
+            "start": 8.0,
+            "end": 18.0,
+            "text": "결과부터 보면 이번 사고의 핵심은 안전 점검 실패였습니다",
+        },
+        {
+            "start": 18.0,
+            "end": 31.0,
+            "text": "당국 공식 보고서에 따르면 피해 신고는 120건입니다",
+        },
+    ]
+
+    enriched = enrich_highlights_with_skill_scores(
+        [
+            {
+                "start": 8.6,
+                "end": 30.4,
+                "reason": "핵심 뉴스 구간",
+                "tags": ["뉴스핵심"],
+                "score": 5.0,
+            }
+        ],
+        transcript,
+    )
+
+    assert enriched[0]["start"] == 8.0
+    assert enriched[0]["end"] == 31.0
+    assert "문장경계" in enriched[0]["tags"]
+    assert "검증팩트" in enriched[0]["tags"]
+    assert "공식 보고서" in enriched[0]["script"]
 
 
 def test_news_engine_prioritizes_verified_fact_packet() -> None:

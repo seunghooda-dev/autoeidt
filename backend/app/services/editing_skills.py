@@ -706,6 +706,137 @@ def script_preview(window: TranscriptWindow, max_length: int = 120) -> str:
     return f"{text[: max_length - 1].rstrip()}…"
 
 
+def _timed_transcript_items(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for item in transcript:
+        try:
+            start = float(item.get("start", 0.0))
+            end = float(item.get("end", start))
+        except (TypeError, ValueError):
+            continue
+        text = str(item.get("text", "")).strip()
+        if end <= start or not text:
+            continue
+        items.append({"start": start, "end": end, "text": text})
+    return sorted(items, key=lambda item: (item["start"], item["end"]))
+
+
+def _items_overlapping_range(
+    items: list[dict[str, Any]],
+    start: float,
+    end: float,
+) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in items
+        if max(start, float(item["start"])) < min(end, float(item["end"]))
+    ]
+
+
+def _preview_for_transcript_items(
+    items: list[dict[str, Any]],
+    max_length: int = 120,
+) -> str:
+    text = re.sub(
+        r"\s+",
+        " ",
+        " ".join(str(item.get("text", "")).strip() for item in items),
+    ).strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 1].rstrip()}…"
+
+
+def _merge_highlight_tags(
+    existing_tags: list[str],
+    detected_tags: list[str],
+    limit: int = 6,
+) -> list[str]:
+    combined = [
+        tag
+        for tag in [*existing_tags, *detected_tags]
+        if str(tag).strip()
+    ]
+    output: list[str] = []
+
+    def add(tag: str) -> None:
+        if tag in combined and tag not in output and len(output) < limit:
+            output.append(tag)
+
+    for tag in ["뉴스핵심", "검증팩트", "근거", "출처확인", "발언", "문장경계"]:
+        add(tag)
+    for tag in combined:
+        add(tag)
+    return output
+
+
+def align_highlights_to_transcript_boundaries(
+    highlights: list[dict[str, Any]],
+    transcript: list[dict[str, Any]],
+    max_shift_seconds: float = 3.0,
+    max_expansion_seconds: float = 6.0,
+) -> list[dict[str, Any]]:
+    """Snap near-miss cuts to STT segment boundaries so speech is not clipped."""
+    transcript_items = _timed_transcript_items(transcript)
+    if not transcript_items:
+        return [{**highlight} for highlight in highlights]
+
+    aligned: list[dict[str, Any]] = []
+    for highlight in highlights:
+        item = {**highlight}
+        try:
+            start = float(item.get("start", 0.0))
+            end = float(item.get("end", start))
+        except (TypeError, ValueError):
+            aligned.append(item)
+            continue
+        if end <= start:
+            aligned.append(item)
+            continue
+
+        overlapping_items = _items_overlapping_range(transcript_items, start, end)
+        if not overlapping_items:
+            aligned.append(item)
+            continue
+
+        next_start = start
+        next_end = end
+        first_start = float(overlapping_items[0]["start"])
+        last_end = float(overlapping_items[-1]["end"])
+
+        if abs(start - first_start) <= max_shift_seconds:
+            next_start = first_start
+        if abs(last_end - end) <= max_shift_seconds:
+            next_end = last_end
+
+        expansion = max(0.0, start - next_start) + max(0.0, next_end - end)
+        changed = (
+            next_end > next_start
+            and expansion <= max_expansion_seconds
+            and (abs(next_start - start) > 0.001 or abs(next_end - end) > 0.001)
+        )
+        if not changed:
+            aligned.append(item)
+            continue
+
+        item["start"] = round(next_start, 3)
+        item["end"] = round(next_end, 3)
+        tags = [str(tag) for tag in item.get("tags", []) if str(tag).strip()]
+        item["tags"] = _merge_highlight_tags(tags, ["문장경계"])
+        reason = str(item.get("reason", "")).strip()
+        if reason and "문장 경계" not in reason:
+            item["reason"] = f"{reason} / STT 문장 경계 보정"
+        elif not reason:
+            item["reason"] = "STT 문장 경계에 맞춰 컷 시작/끝 보정"
+        refreshed_items = _items_overlapping_range(transcript_items, next_start, next_end)
+        preview = _preview_for_transcript_items(refreshed_items)
+        if preview:
+            item["script"] = preview
+        aligned.append(item)
+
+    return aligned
+
+
 def reason_for_window(window: TranscriptWindow) -> str:
     main = window.reasons[:2]
     tags = ", ".join(window.tags[:4])
@@ -1056,7 +1187,7 @@ def enrich_highlights_with_skill_scores(
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     skills = [*BUILT_IN_SKILLS, *load_external_skills()]
-    for highlight in highlights:
+    for highlight in align_highlights_to_transcript_boundaries(highlights, transcript):
         start = float(highlight.get("start", 0.0))
         end = float(highlight.get("end", start))
         items = [
@@ -1074,7 +1205,7 @@ def enrich_highlights_with_skill_scores(
         item.setdefault("script", script_preview(window))
         item["score"] = round(max(float(item.get("score", 0.0)), window.score), 2)
         existing_tags = [str(tag) for tag in item.get("tags", []) if str(tag).strip()]
-        item["tags"] = list(dict.fromkeys([*existing_tags, *window.tags]))[:6]
+        item["tags"] = _merge_highlight_tags(existing_tags, window.tags)
         if not str(item.get("reason", "")).strip():
             item["reason"] = reason_for_window(window)
         item.setdefault("source", "editorial-llm" if any(tag in window.tags for tag in NEWS_STRUCTURE_TAGS) else "llm")
