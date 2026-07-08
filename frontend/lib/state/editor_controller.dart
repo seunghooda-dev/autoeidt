@@ -343,6 +343,24 @@ class EditorController extends ChangeNotifier {
       .where((item) => item.status == EditorialCheckStatus.warn)
       .length;
 
+  List<AutoFixReviewItem> get autoFixQueue =>
+      _buildAutoFixQueue(segments, captions);
+
+  int get autoFixCount => autoFixQueue.length;
+
+  AutoFixReviewItem? get selectedAutoFixReview {
+    final order = selectedSegmentOrder;
+    if (order == null) {
+      return null;
+    }
+    for (final item in autoFixQueue) {
+      if (item.segmentOrder == order) {
+        return item;
+      }
+    }
+    return null;
+  }
+
   Map<String, int> get signalCounts {
     final counts = <String, int>{};
     for (final segment in segments) {
@@ -1733,6 +1751,128 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyAutoFixForSegment(int order, AutoFixAction action) {
+    if (segments.isEmpty) {
+      return;
+    }
+    final index = segments.indexWhere((segment) => segment.order == order);
+    if (index < 0) {
+      return;
+    }
+    if (action == AutoFixAction.selectForReview) {
+      selectedSegmentOrder = order;
+      notifyListeners();
+      return;
+    }
+    final result = _applyAutoFixToSegment(
+      segments[index],
+      action,
+      segmentCount: segments.length,
+    );
+    if (result == segments[index] && action != AutoFixAction.hideFiller) {
+      return;
+    }
+    if (result == null && segments.length <= 1) {
+      return;
+    }
+    _commitHistory();
+    if (action == AutoFixAction.hideFiller) {
+      captions = _hideFillerCaptionsForSegment(segments[index]);
+    }
+    if (result == null) {
+      if (segments.length <= 1) {
+        return;
+      }
+      final updated = [...segments]..removeAt(index);
+      segments = _reorderSegments(updated);
+      selectedSegmentOrder = segments.isEmpty
+          ? null
+          : index.clamp(0, segments.length - 1).toInt() + 1;
+    } else {
+      segments = _reorderSegments([
+        for (final segment in segments)
+          if (segment.order == order) result else segment,
+      ]);
+      selectedSegmentOrder = result.order.clamp(1, segments.length).toInt();
+    }
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void applyAllAutoFixes() {
+    if (segments.isEmpty) {
+      return;
+    }
+    var workingSegments = List<HighlightSegment>.of(segments);
+    var workingCaptions = List<CaptionSegment>.of(captions);
+    var applied = false;
+    for (var pass = 0; pass < 5; pass++) {
+      final queue = _buildAutoFixQueue(workingSegments, workingCaptions);
+      if (queue.isEmpty) {
+        break;
+      }
+      var appliedThisPass = false;
+      for (final item in queue.take(24)) {
+        if (item.action == AutoFixAction.selectForReview) {
+          continue;
+        }
+        final index = workingSegments.indexWhere(
+          (segment) => segment.order == item.segmentOrder,
+        );
+        if (index < 0) {
+          continue;
+        }
+        if (item.action == AutoFixAction.hideFiller) {
+          workingCaptions = _hideFillerCaptionsForSegment(
+            workingSegments[index],
+            sourceCaptions: workingCaptions,
+          );
+          applied = true;
+          appliedThisPass = true;
+          continue;
+        }
+        final result = _applyAutoFixToSegment(
+          workingSegments[index],
+          item.action,
+          segmentCount: workingSegments.length,
+        );
+        if (result == null) {
+          if (workingSegments.length <= 1) {
+            continue;
+          }
+          workingSegments.removeAt(index);
+          workingSegments = _reorderSegments(workingSegments);
+          applied = true;
+          appliedThisPass = true;
+        } else if (result != workingSegments[index]) {
+          workingSegments[index] = result;
+          workingSegments = _reorderSegments(workingSegments);
+          applied = true;
+          appliedThisPass = true;
+        }
+      }
+      if (!appliedThisPass) {
+        break;
+      }
+    }
+    if (!applied) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments(workingSegments);
+    captions = [
+      for (var index = 0; index < workingCaptions.length; index++)
+        workingCaptions[index].copyWith(order: index + 1),
+    ];
+    selectedSegmentOrder = segments.isEmpty
+        ? null
+        : (selectedSegmentOrder ?? segments.first.order)
+              .clamp(1, segments.length)
+              .toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void buildMultiShortsCandidates({
     int maxCandidates = 6,
     double minSeconds = 120,
@@ -2402,6 +2542,311 @@ class EditorController extends ChangeNotifier {
     ];
   }
 
+  List<AutoFixReviewItem> _buildAutoFixQueue(
+    List<HighlightSegment> sourceSegments,
+    List<CaptionSegment> sourceCaptions,
+  ) {
+    if (sourceSegments.isEmpty) {
+      return const [];
+    }
+    final average = _averageScoreFor(sourceSegments);
+    final weakThreshold = _weakScoreThreshold(average);
+    final targetMax = _targetMaxClipSeconds();
+    final targetIdeal = _targetIdealClipSeconds();
+    final output = <AutoFixReviewItem>[];
+    for (final segment in sourceSegments) {
+      final hasFillerCaption = sourceCaptions.any(
+        (caption) =>
+            caption.enabled &&
+            caption.start < segment.end &&
+            caption.end > segment.start &&
+            _fillerPattern.hasMatch(caption.text),
+      );
+      final hasRiskText =
+          _riskPattern.hasMatch(segment.script) ||
+          _riskPattern.hasMatch(segment.reason) ||
+          segment.tags.any((tag) => _riskPattern.hasMatch(tag));
+
+      if (!_segmentVideoReady(segment)) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'V1 video disabled',
+            detail: '검은 화면으로 나갈 수 있어 V1을 다시 켭니다.',
+            severity: AutoFixSeverity.block,
+            action: AutoFixAction.restoreVideo,
+          ),
+        );
+      }
+      if (!_segmentAudioReady(segment)) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'A1/A2 inactive',
+            detail: '오디오 채널 또는 음소거 상태를 방송 기본값으로 복구합니다.',
+            severity: AutoFixSeverity.block,
+            action: AutoFixAction.enableAudioPair,
+          ),
+        );
+      }
+      if (hasRiskText) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Risk wording',
+            detail: '루머/미확인 표현이 있어 직접 확인이 필요합니다.',
+            severity: AutoFixSeverity.block,
+            action: AutoFixAction.selectForReview,
+          ),
+        );
+      }
+      if (segment.duration < 2.5) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Clip too short',
+            detail: '문맥이 끊길 수 있어 앞뒤 여유를 붙입니다.',
+            severity: AutoFixSeverity.warn,
+            action: AutoFixAction.padContext,
+          ),
+        );
+      }
+      if (segment.duration > targetMax) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Clip too long',
+            detail: '${targetIdeal.round()}초 안팎으로 줄여 숏폼/하이라이트 호흡을 맞춥니다.',
+            severity: AutoFixSeverity.warn,
+            action: AutoFixAction.trimLongClip,
+          ),
+        );
+      }
+      if (sourceSegments.length > 1 &&
+          average > 0 &&
+          segment.score > 0 &&
+          segment.score < weakThreshold) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Low highlight score',
+            detail: '전체 평균 대비 약한 컷이라 제거 후보입니다.',
+            severity: AutoFixSeverity.warn,
+            action: AutoFixAction.removeWeak,
+          ),
+        );
+      }
+      if (_segmentNeedsAudioMix(segment)) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Audio needs mix',
+            detail: '정규화, 팬, 레벨을 기본 방송 믹스로 정리합니다.',
+            severity: AutoFixSeverity.warn,
+            action: AutoFixAction.mixAudio,
+          ),
+        );
+      }
+      if (hasFillerCaption) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Filler caption',
+            detail: '불필요한 추임새 자막을 숨깁니다.',
+            severity: AutoFixSeverity.polish,
+            action: AutoFixAction.hideFiller,
+          ),
+        );
+      }
+      if (_segmentNeedsFadePolish(segment)) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'No edge polish',
+            detail: '컷 시작/끝에 아주 짧은 페이드 안전값을 넣습니다.',
+            severity: AutoFixSeverity.polish,
+            action: AutoFixAction.addFades,
+          ),
+        );
+      }
+    }
+    output.sort((a, b) {
+      final severityCompare = a.severity.index.compareTo(b.severity.index);
+      if (severityCompare != 0) {
+        return severityCompare;
+      }
+      return a.segmentOrder.compareTo(b.segmentOrder);
+    });
+    return output;
+  }
+
+  HighlightSegment? _applyAutoFixToSegment(
+    HighlightSegment segment,
+    AutoFixAction action, {
+    required int segmentCount,
+  }) {
+    switch (action) {
+      case AutoFixAction.restoreVideo:
+        return _directorSegment(segment.copyWith(videoEnabled: true));
+      case AutoFixAction.enableAudioPair:
+        return _directorSegment(
+          segment.copyWith(
+            audioMuted: false,
+            audioChannel1Enabled: true,
+            audioChannel2Enabled: true,
+            audioNormalize: true,
+            audioPan: 0,
+            audioVolume: segment.audioVolume.clamp(0.85, 1.15).toDouble(),
+          ),
+        );
+      case AutoFixAction.padContext:
+        return _padSegmentForAutoFix(segment);
+      case AutoFixAction.trimLongClip:
+        return _trimLongSegmentForAutoFix(segment);
+      case AutoFixAction.removeWeak:
+        return segmentCount > 1 ? null : _trimLongSegmentForAutoFix(segment);
+      case AutoFixAction.mixAudio:
+        return _directorSegment(
+          segment.copyWith(
+            audioMuted: false,
+            audioChannel1Enabled:
+                segment.audioChannel1Enabled || !segment.audioChannel2Enabled,
+            audioNormalize: true,
+            audioPan: 0,
+            audioVolume: segment.audioVolume.clamp(0.85, 1.15).toDouble(),
+            audioFadeIn: segment.audioFadeIn == 0 ? 0.08 : segment.audioFadeIn,
+            audioFadeOut: segment.audioFadeOut == 0
+                ? 0.16
+                : segment.audioFadeOut,
+          ),
+        );
+      case AutoFixAction.addFades:
+        return _directorSegment(
+          segment.copyWith(
+            videoFadeIn: segment.videoFadeIn == 0 ? 0.08 : segment.videoFadeIn,
+            videoFadeOut: segment.videoFadeOut == 0
+                ? 0.12
+                : segment.videoFadeOut,
+            audioFadeIn: segment.audioFadeIn == 0 ? 0.08 : segment.audioFadeIn,
+            audioFadeOut: segment.audioFadeOut == 0
+                ? 0.16
+                : segment.audioFadeOut,
+          ),
+        );
+      case AutoFixAction.hideFiller:
+        return _directorSegment(segment);
+      case AutoFixAction.selectForReview:
+        return segment;
+    }
+  }
+
+  List<CaptionSegment> _hideFillerCaptionsForSegment(
+    HighlightSegment segment, {
+    List<CaptionSegment>? sourceCaptions,
+  }) {
+    final input = sourceCaptions ?? captions;
+    return [
+      for (final caption in input)
+        if (caption.enabled &&
+            caption.start < segment.end &&
+            caption.end > segment.start &&
+            _fillerPattern.hasMatch(caption.text))
+          caption.copyWith(enabled: false)
+        else
+          caption,
+    ];
+  }
+
+  HighlightSegment _padSegmentForAutoFix(HighlightSegment segment) {
+    final before = segment.start <= 1 ? 0.4 : 1.0;
+    final after = segment.end >= duration - 1 ? 0.4 : 1.0;
+    final start = _snapToFrame(_clampProjectTime(segment.start - before));
+    final end = _snapToFrame(_clampProjectTime(segment.end + after));
+    return _directorSegment(
+      segment.copyWith(
+        start: start,
+        end: end,
+        audioStart: segment.audioLinked ? start : segment.audioStart,
+        audioEnd: segment.audioLinked ? end : segment.audioEnd,
+      ),
+    );
+  }
+
+  HighlightSegment _trimLongSegmentForAutoFix(HighlightSegment segment) {
+    final target = _targetIdealClipSeconds();
+    if (segment.duration <= target) {
+      return segment;
+    }
+    final center = (segment.start + segment.end) / 2;
+    var start = center - target / 2;
+    var end = center + target / 2;
+    if (start < 0) {
+      end -= start;
+      start = 0;
+    }
+    if (duration > 0 && end > duration) {
+      start = math.max(0, start - (end - duration));
+      end = duration;
+    }
+    final snappedStart = _snapToFrame(_clampProjectTime(start));
+    final snappedEnd = _snapToFrame(_clampProjectTime(end));
+    return _directorSegment(
+      segment.copyWith(
+        start: snappedStart,
+        end: snappedEnd,
+        audioStart: segment.audioLinked ? snappedStart : segment.audioStart,
+        audioEnd: segment.audioLinked ? snappedEnd : segment.audioEnd,
+      ),
+    );
+  }
+
+  bool _segmentVideoReady(HighlightSegment segment) => segment.videoEnabled;
+
+  bool _segmentAudioReady(HighlightSegment segment) =>
+      !segment.audioMuted && segment.hasActiveAudioChannel;
+
+  bool _segmentNeedsAudioMix(HighlightSegment segment) {
+    if (!_segmentAudioReady(segment)) {
+      return false;
+    }
+    return !segment.audioNormalize ||
+        segment.audioPan.abs() > 0.001 ||
+        segment.audioVolume < 0.85 ||
+        segment.audioVolume > 1.15;
+  }
+
+  bool _segmentNeedsFadePolish(HighlightSegment segment) {
+    return segment.videoFadeIn == 0 &&
+        segment.videoFadeOut == 0 &&
+        segment.audioFadeIn == 0 &&
+        segment.audioFadeOut == 0;
+  }
+
+  double _averageScoreFor(List<HighlightSegment> input) {
+    final scored = input.where((segment) => segment.score > 0).toList();
+    if (scored.isEmpty) {
+      return 0;
+    }
+    return scored.fold<double>(0, (total, item) => total + item.score) /
+        scored.length;
+  }
+
+  double _targetMaxClipSeconds() {
+    final profileMax = activeStyleProfile?.targetSegmentSecondsMax;
+    if (profileMax != null && profileMax > 0) {
+      return profileMax * 1.35;
+    }
+    return exportAspectRatio == '9:16' ? 42 : 70;
+  }
+
+  double _targetIdealClipSeconds() {
+    final profileIdeal = activeStyleProfile?.targetSegmentSecondsIdeal;
+    if (profileIdeal != null && profileIdeal > 0) {
+      return profileIdeal;
+    }
+    return exportAspectRatio == '9:16' ? 24 : 38;
+  }
+
   double _weakScoreThreshold(double average) {
     return average <= 0 ? 0 : (average * 0.68).clamp(4.5, 8.0).toDouble();
   }
@@ -2797,6 +3242,36 @@ class EditorialCheckItem {
   final String label;
   final String detail;
   final EditorialCheckStatus status;
+}
+
+enum AutoFixSeverity { block, warn, polish }
+
+enum AutoFixAction {
+  restoreVideo,
+  enableAudioPair,
+  padContext,
+  trimLongClip,
+  removeWeak,
+  mixAudio,
+  addFades,
+  hideFiller,
+  selectForReview,
+}
+
+class AutoFixReviewItem {
+  const AutoFixReviewItem({
+    required this.segmentOrder,
+    required this.title,
+    required this.detail,
+    required this.severity,
+    required this.action,
+  });
+
+  final int segmentOrder;
+  final String title;
+  final String detail;
+  final AutoFixSeverity severity;
+  final AutoFixAction action;
 }
 
 class ShortsCandidate {

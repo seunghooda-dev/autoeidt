@@ -414,6 +414,81 @@ void main() {
     );
   });
 
+  test('auto fix queue detects and repairs common edit issues', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 180
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 11.4,
+          reason: 'too short',
+          videoEnabled: false,
+          audioMuted: true,
+          score: 8,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 20,
+          end: 95,
+          reason: 'too long',
+          audioNormalize: false,
+          score: 7,
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 120,
+          end: 132,
+          reason: 'weak',
+          script: '음 이제 반복 멘트입니다',
+          score: 2,
+        ),
+      ]
+      ..captions = const [
+        CaptionSegment(order: 1, start: 120, end: 123, text: '음 이제 반복입니다'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    expect(controller.autoFixCount, greaterThan(0));
+    expect(
+      controller.autoFixQueue.any(
+        (item) => item.action == AutoFixAction.restoreVideo,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.autoFixQueue.any(
+        (item) => item.action == AutoFixAction.trimLongClip,
+      ),
+      isTrue,
+    );
+
+    controller.applyAutoFixForSegment(1, AutoFixAction.restoreVideo);
+    expect(controller.segments.first.videoEnabled, isTrue);
+
+    controller.applyAllAutoFixes();
+    expect(controller.segments.any((segment) => segment.score == 2), isFalse);
+    expect(
+      controller.segments.every((segment) => segment.videoEnabled),
+      isTrue,
+    );
+    expect(controller.segments.every((segment) => !segment.audioMuted), isTrue);
+    expect(
+      controller.segments.every((segment) => segment.audioNormalize),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => segment.duration <= 70),
+      isTrue,
+    );
+    expect(
+      controller.autoFixQueue.any(
+        (item) => item.severity == AutoFixSeverity.block,
+      ),
+      isFalse,
+    );
+  });
+
   test('multi shorts candidates can be built edited and selected', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 1800

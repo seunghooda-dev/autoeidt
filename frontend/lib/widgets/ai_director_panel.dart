@@ -51,6 +51,11 @@ class AiDirectorPanel extends StatelessWidget {
               label: 'Filler',
               value: '${controller.fillerCaptionCount}',
             ),
+            _MetricTile(
+              icon: Icons.construction_outlined,
+              label: 'Fixes',
+              value: '${controller.autoFixCount}',
+            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -97,6 +102,8 @@ class AiDirectorPanel extends StatelessWidget {
           enabled: controller.segments.isNotEmpty,
           onPressed: context.read<EditorController>().applyFinishingPreset,
         ),
+        const SizedBox(height: 14),
+        const _AutoFixQueuePanel(),
         const SizedBox(height: 14),
         const _ReferenceStylePanel(),
         const SizedBox(height: 14),
@@ -438,6 +445,174 @@ class _CaptionPresetPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AutoFixQueuePanel extends StatelessWidget {
+  const _AutoFixQueuePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final queue = controller.autoFixQueue;
+    return _DirectorSection(
+      title: 'Auto Fix Queue',
+      icon: Icons.construction_outlined,
+      trailing: queue.isEmpty ? 'clean' : '${queue.length}',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: queue.isEmpty
+                      ? null
+                      : context.read<EditorController>().applyAllAutoFixes,
+                  icon: const Icon(Icons.done_all, size: 17),
+                  label: const Text('Fix All'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: queue.isEmpty
+                      ? null
+                      : () {
+                          final item = queue.first;
+                          context
+                              .read<EditorController>()
+                              .applyAutoFixForSegment(
+                                item.segmentOrder,
+                                item.action,
+                              );
+                        },
+                  icon: const Icon(Icons.build_circle_outlined, size: 17),
+                  label: const Text('Fix Top'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (queue.isEmpty)
+            Text(
+              '자동 수정할 컷 문제가 없습니다.',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            for (final item in queue.take(6)) _AutoFixTile(item: item),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutoFixTile extends StatelessWidget {
+  const _AutoFixTile({required this.item});
+
+  final AutoFixReviewItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = _severityColor(colorScheme, item.severity);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  'C${item.segmentOrder}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                _severityLabel(item.severity),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            item.detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => context
+                  .read<EditorController>()
+                  .applyAutoFixForSegment(item.segmentOrder, item.action),
+              icon: Icon(
+                item.action == AutoFixAction.selectForReview
+                    ? Icons.visibility_outlined
+                    : Icons.auto_fix_high,
+                size: 16,
+              ),
+              label: Text(
+                item.action == AutoFixAction.selectForReview ? 'Review' : 'Fix',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _severityColor(ColorScheme colorScheme, AutoFixSeverity severity) {
+    return switch (severity) {
+      AutoFixSeverity.block => colorScheme.error,
+      AutoFixSeverity.warn => colorScheme.tertiary,
+      AutoFixSeverity.polish => colorScheme.primary,
+    };
+  }
+
+  String _severityLabel(AutoFixSeverity severity) {
+    return switch (severity) {
+      AutoFixSeverity.block => 'BLOCK',
+      AutoFixSeverity.warn => 'WARN',
+      AutoFixSeverity.polish => 'POLISH',
+    };
   }
 }
 
