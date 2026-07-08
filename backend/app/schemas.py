@@ -299,6 +299,7 @@ class BatchRenderItemResult(BaseModel):
     output_name: str = ""
     duration_seconds: float = 0.0
     size_bytes: int = 0
+    warnings: list[str] = Field(default_factory=list)
     segments: list[HighlightSegment] = Field(default_factory=list)
 
 
@@ -315,6 +316,7 @@ class JobStatusResponse(BaseModel):
     render_url: str | None = None
     render_duration_seconds: float | None = None
     render_size_bytes: int | None = None
+    render_warnings: list[str] = Field(default_factory=list)
     batch_render_items: list[BatchRenderItemResult] = Field(default_factory=list)
     error: str | None = None
     style_profile: StyleProfile | None = None

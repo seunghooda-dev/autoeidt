@@ -121,6 +121,33 @@ class _RenderOutputRow extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+              if (output.warnings.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                for (final warning in output.warnings.take(2))
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 13,
+                        color: colorScheme.error,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          warning,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: colorScheme.error,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
               SelectableText(
                 output.url,
                 maxLines: compact ? 1 : 2,

@@ -896,6 +896,7 @@ void main() {
             renderPath: 'C:/AutoEdit/outputs/shorts_01.mp4',
             renderDurationSeconds: 45.5,
             renderSizeBytes: 123456,
+            renderWarnings: ['Shorts 02: 렌더 파일 크기가 매우 작습니다.'],
             renderUrl: '/api/jobs/job-4/download/shorts_01.mp4',
             batchRenderItems: [
               BatchRenderItemResult(
@@ -913,6 +914,7 @@ void main() {
                 path: 'C:/AutoEdit/outputs/shorts_02.mp4',
                 durationSeconds: 61.2,
                 sizeBytes: 234567,
+                warnings: ['렌더 파일 크기가 매우 작습니다.'],
               ),
             ],
           );
@@ -932,6 +934,7 @@ void main() {
     expect(outputs.last.path, 'C:/AutoEdit/outputs/shorts_02.mp4');
     expect(outputs.last.durationSeconds, 61.2);
     expect(outputs.last.sizeBytes, 234567);
+    expect(outputs.last.warnings.single, contains('파일 크기'));
   });
 
   test('multi shorts candidates can be built edited and selected', () {

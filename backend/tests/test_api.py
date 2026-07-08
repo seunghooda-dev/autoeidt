@@ -73,6 +73,7 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                 "render_url": "/api/jobs/rendered-job/download/shorts_01.mp4",
                 "render_duration_seconds": 45.5,
                 "render_size_bytes": 123456,
+                "render_warnings": ["Shorts 02: 렌더 파일 크기가 매우 작습니다."],
                 "batch_render_items": [
                     {
                         "label": "Shorts 01",
@@ -81,6 +82,7 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                         "output_name": "shorts_01.mp4",
                         "duration_seconds": 45.5,
                         "size_bytes": 123456,
+                        "warnings": [],
                         "segments": [],
                     },
                     {
@@ -90,6 +92,7 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                         "output_name": "shorts_02.mp4",
                         "duration_seconds": 61.2,
                         "size_bytes": 234567,
+                        "warnings": ["렌더 파일 크기가 매우 작습니다."],
                         "segments": [],
                     },
                 ],
@@ -104,7 +107,11 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
     assert payload["render_path"] == "C:/AutoEdit/outputs/shorts_01.mp4"
     assert payload["render_duration_seconds"] == 45.5
     assert payload["render_size_bytes"] == 123456
+    assert payload["render_warnings"] == ["Shorts 02: 렌더 파일 크기가 매우 작습니다."]
     assert len(payload["batch_render_items"]) == 2
     assert payload["batch_render_items"][1]["path"].endswith("shorts_02.mp4")
     assert payload["batch_render_items"][1]["duration_seconds"] == 61.2
     assert payload["batch_render_items"][1]["size_bytes"] == 234567
+    assert payload["batch_render_items"][1]["warnings"] == [
+        "렌더 파일 크기가 매우 작습니다."
+    ]

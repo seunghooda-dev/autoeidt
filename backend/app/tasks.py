@@ -78,6 +78,20 @@ def _render_file_size_bytes(path: Path) -> int:
         return 0
 
 
+def _render_output_warnings(
+    duration_seconds: float,
+    size_bytes: int,
+) -> list[str]:
+    warnings: list[str] = []
+    if size_bytes <= 0:
+        warnings.append("렌더 파일 크기가 0B입니다. 결과 파일을 다시 생성해 주세요.")
+    elif size_bytes < 64 * 1024:
+        warnings.append("렌더 파일 크기가 매우 작습니다. 재생 상태를 확인해 주세요.")
+    if 0 < duration_seconds < 1:
+        warnings.append("렌더 길이가 1초 미만입니다. 인/아웃 구간을 확인해 주세요.")
+    return warnings
+
+
 def _snap_to_timecode_frame(seconds: float) -> float:
     if seconds <= 0:
         return 0.0
@@ -666,6 +680,10 @@ def render_video_job(
         )
         render_duration_seconds = _render_output_duration_seconds(normalized)
         render_size_bytes = _render_file_size_bytes(rendered_path)
+        render_warnings = _render_output_warnings(
+            render_duration_seconds,
+            render_size_bytes,
+        )
 
         _set_task_state(
             task,
@@ -678,6 +696,7 @@ def render_video_job(
             render_url=f"/api/jobs/{job_id}/download",
             render_duration_seconds=render_duration_seconds,
             render_size_bytes=render_size_bytes,
+            render_warnings=render_warnings,
         )
         return store.load(job_id)
     except Exception as exc:
@@ -744,6 +763,10 @@ def render_batch_video_job(
             )
             render_duration_seconds = _render_output_duration_seconds(normalized)
             render_size_bytes = _render_file_size_bytes(rendered_path)
+            render_warnings = _render_output_warnings(
+                render_duration_seconds,
+                render_size_bytes,
+            )
             rendered_items.append(
                 {
                     "label": str(item.get("label") or f"Shorts {index:02}"),
@@ -752,6 +775,7 @@ def render_batch_video_job(
                     "output_name": rendered_path.name,
                     "duration_seconds": render_duration_seconds,
                     "size_bytes": render_size_bytes,
+                    "warnings": render_warnings,
                     "segments": normalized,
                 }
             )
@@ -770,6 +794,11 @@ def render_batch_video_job(
             render_url=rendered_items[0]["url"],
             render_duration_seconds=rendered_items[0]["duration_seconds"],
             render_size_bytes=rendered_items[0]["size_bytes"],
+            render_warnings=[
+                f"{item['label']}: {warning}"
+                for item in rendered_items
+                for warning in item.get("warnings", [])
+            ],
         )
         return store.load(job_id)
     except Exception as exc:

@@ -141,6 +141,7 @@ void main() {
                 path: r'C:\AutoEdit outputs\shorts_01.mp4',
                 durationSeconds: 61.2,
                 sizeBytes: 234567,
+                warnings: ['렌더 파일 크기가 매우 작습니다.'],
               ),
             ],
             onRevealPath: (path) async {
@@ -157,6 +158,7 @@ void main() {
     await tester.tap(find.byTooltip('Open rendered file'));
     await tester.pump();
 
+    expect(find.text('렌더 파일 크기가 매우 작습니다.'), findsOneWidget);
     expect(find.textContaining('229 KB'), findsOneWidget);
     expect(openedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
     expect(find.text('shorts_01.mp4 opened'), findsOneWidget);

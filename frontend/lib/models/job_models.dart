@@ -112,6 +112,7 @@ class JobStatusResponse {
     this.renderUrl,
     this.renderDurationSeconds,
     this.renderSizeBytes,
+    this.renderWarnings = const [],
     this.error,
     this.styleProfile,
     this.analysisWarnings = const [],
@@ -130,6 +131,7 @@ class JobStatusResponse {
   final String? renderUrl;
   final double? renderDurationSeconds;
   final int? renderSizeBytes;
+  final List<String> renderWarnings;
   final String? error;
   final StyleProfile? styleProfile;
   final List<String> analysisWarnings;
@@ -141,6 +143,8 @@ class JobStatusResponse {
     final rawBatchItems =
         json['batch_render_items'] as List<dynamic>? ?? const [];
     final rawWarnings = json['analysis_warnings'] as List<dynamic>? ?? const [];
+    final rawRenderWarnings =
+        json['render_warnings'] as List<dynamic>? ?? const [];
     return JobStatusResponse(
       jobId: json['job_id'] as String,
       status: json['status'] as String,
@@ -154,6 +158,7 @@ class JobStatusResponse {
       renderDurationSeconds: (json['render_duration_seconds'] as num?)
           ?.toDouble(),
       renderSizeBytes: (json['render_size_bytes'] as num?)?.toInt(),
+      renderWarnings: rawRenderWarnings.map((item) => item.toString()).toList(),
       error: json['error'] as String?,
       styleProfile: json['style_profile'] == null
           ? null
@@ -184,6 +189,7 @@ class BatchRenderItemResult {
     this.path = '',
     this.durationSeconds = 0,
     this.sizeBytes = 0,
+    this.warnings = const [],
   });
 
   final String label;
@@ -192,8 +198,10 @@ class BatchRenderItemResult {
   final String path;
   final double durationSeconds;
   final int sizeBytes;
+  final List<String> warnings;
 
   factory BatchRenderItemResult.fromJson(Map<String, dynamic> json) {
+    final rawWarnings = json['warnings'] as List<dynamic>? ?? const [];
     return BatchRenderItemResult(
       label: json['label'] as String? ?? 'Shorts',
       outputName: json['output_name'] as String? ?? '',
@@ -201,6 +209,7 @@ class BatchRenderItemResult {
       path: json['path'] as String? ?? '',
       durationSeconds: (json['duration_seconds'] as num?)?.toDouble() ?? 0,
       sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+      warnings: rawWarnings.map((item) => item.toString()).toList(),
     );
   }
 }

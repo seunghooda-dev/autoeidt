@@ -148,6 +148,7 @@ class EditorController extends ChangeNotifier {
               path: item.path,
               durationSeconds: item.durationSeconds,
               sizeBytes: item.sizeBytes,
+              warnings: item.warnings,
             ),
       ];
     }
@@ -160,6 +161,7 @@ class EditorController extends ChangeNotifier {
         path: job?.renderPath ?? '',
         durationSeconds: job?.renderDurationSeconds ?? 0,
         sizeBytes: job?.renderSizeBytes ?? 0,
+        warnings: job?.renderWarnings ?? const [],
       ),
     ];
   }
