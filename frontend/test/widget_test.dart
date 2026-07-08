@@ -97,6 +97,37 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyL, control: true);
     expect(controller.selectedSegment!.audioLinked, isFalse);
 
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.arrowRight,
+      control: true,
+      alt: true,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioStart),
+      142,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioEnd),
+      382,
+    );
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.arrowLeft,
+      control: true,
+      alt: true,
+      shift: true,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioStart),
+      132,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioEnd),
+      372,
+    );
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyL, control: true);
     expect(controller.selectedSegment!.audioLinked, isTrue);
 
@@ -212,6 +243,64 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.timelineZoom, 1.0);
+  });
+
+  testWidgets('timeline context menu exposes detached audio nudge commands', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 35,
+          reason: 'test',
+          audioStart: 12,
+          audioEnd: 37,
+          audioLinked: false,
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    final timelineBox = tester.renderObject<RenderBox>(
+      find.byType(TimelineEditor).first,
+    );
+    final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
+    final menuPoint = timelineTopLeft + const Offset(170, 98);
+
+    await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Move detached audio earlier 1f'), findsOneWidget);
+    expect(find.text('Ctrl+Alt+Left'), findsOneWidget);
+    expect(find.text('Move detached audio later 10f'), findsOneWidget);
+    expect(find.text('Ctrl+Alt+Shift+Right'), findsOneWidget);
+
+    await tester.tap(find.text('Move detached audio later 1f'));
+    await tester.pumpAndSettle();
+
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioStart),
+      361,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.selectedSegment!.effectiveAudioEnd),
+      1111,
+    );
   });
 
   testWidgets('render output panel can reveal local file location', (

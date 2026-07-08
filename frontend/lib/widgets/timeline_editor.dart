@@ -42,6 +42,10 @@ enum _TimelineMenuAction {
   slipLaterFrame,
   slipEarlierTenFrames,
   slipLaterTenFrames,
+  nudgeAudioEarlierFrame,
+  nudgeAudioLaterFrame,
+  nudgeAudioEarlierTenFrames,
+  nudgeAudioLaterTenFrames,
   applyVideoTransition,
   applyAudioTransition,
   split,
@@ -89,6 +93,7 @@ class TimelineEditor extends StatefulWidget {
     this.onJumpToMarkIn,
     this.onJumpToMarkOut,
     this.onSlipSelectedSegmentFrames,
+    this.onNudgeSelectedAudioFrames,
     this.onAddMarkerAt,
     this.onJumpToPreviousMarker,
     this.onJumpToNextMarker,
@@ -146,6 +151,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onJumpToMarkIn;
   final VoidCallback? onJumpToMarkOut;
   final ValueChanged<int>? onSlipSelectedSegmentFrames;
+  final ValueChanged<int>? onNudgeSelectedAudioFrames;
   final ValueChanged<double>? onAddMarkerAt;
   final VoidCallback? onJumpToPreviousMarker;
   final VoidCallback? onJumpToNextMarker;
@@ -427,6 +433,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onSlipSelectedSegmentFrames?.call(-10);
       case _TimelineMenuAction.slipLaterTenFrames:
         widget.onSlipSelectedSegmentFrames?.call(10);
+      case _TimelineMenuAction.nudgeAudioEarlierFrame:
+        widget.onNudgeSelectedAudioFrames?.call(-1);
+      case _TimelineMenuAction.nudgeAudioLaterFrame:
+        widget.onNudgeSelectedAudioFrames?.call(1);
+      case _TimelineMenuAction.nudgeAudioEarlierTenFrames:
+        widget.onNudgeSelectedAudioFrames?.call(-10);
+      case _TimelineMenuAction.nudgeAudioLaterTenFrames:
+        widget.onNudgeSelectedAudioFrames?.call(10);
       case _TimelineMenuAction.applyVideoTransition:
         widget.onApplyVideoTransition?.call();
       case _TimelineMenuAction.applyAudioTransition:
@@ -464,6 +478,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final videoLocked = widget.videoTrackLocked;
     final audioLocked = widget.audioTrackLocked;
     final clipEditable = segment != null && !videoLocked && !audioLocked;
+    final detachedAudioEditable =
+        segment != null &&
+        !audioLocked &&
+        !segment.audioLinked &&
+        widget.onNudgeSelectedAudioFrames != null;
+    final showAudioNudge = detachedAudioEditable && _isAudioTrack(track);
     final hasMarkedRange =
         widget.markIn != null &&
         widget.markOut != null &&
@@ -489,6 +509,34 @@ class _TimelineEditorState extends State<TimelineEditor> {
         ),
       ),
       const PopupMenuDivider(),
+      if (showAudioNudge) ...[
+        _menuHeader('Audio Sync'),
+        _menuItem(
+          Icons.graphic_eq,
+          'Move detached audio earlier 1f',
+          _TimelineMenuAction.nudgeAudioEarlierFrame,
+          shortcut: 'Ctrl+Alt+Left',
+        ),
+        _menuItem(
+          Icons.graphic_eq,
+          'Move detached audio later 1f',
+          _TimelineMenuAction.nudgeAudioLaterFrame,
+          shortcut: 'Ctrl+Alt+Right',
+        ),
+        _menuItem(
+          Icons.keyboard_double_arrow_left,
+          'Move detached audio earlier 10f',
+          _TimelineMenuAction.nudgeAudioEarlierTenFrames,
+          shortcut: 'Ctrl+Alt+Shift+Left',
+        ),
+        _menuItem(
+          Icons.keyboard_double_arrow_right,
+          'Move detached audio later 10f',
+          _TimelineMenuAction.nudgeAudioLaterTenFrames,
+          shortcut: 'Ctrl+Alt+Shift+Right',
+        ),
+        const PopupMenuDivider(),
+      ],
       _menuHeader('Premiere Cut Shortcuts'),
       _menuItem(
         Icons.near_me_outlined,
@@ -843,14 +891,23 @@ class _TimelineEditorState extends State<TimelineEditor> {
         children: [
           Icon(icon, size: 18),
           const SizedBox(width: 10),
-          Expanded(child: Text(label)),
+          Expanded(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
           if (shortcut != null) ...[
             const SizedBox(width: 14),
-            Text(
-              shortcut,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontFeatures: const [FontFeature.tabularFigures()],
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  shortcut,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ),
           ],

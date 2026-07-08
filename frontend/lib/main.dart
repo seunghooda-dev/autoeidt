@@ -198,6 +198,26 @@ class _EditorDashboardState extends State<EditorDashboard> {
         isShift &&
         key == LogicalKeyboardKey.arrowRight) {
       editor.slipSelectedSegmentFrames(10);
+    } else if (isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowLeft) {
+      editor.nudgeSelectedAudioFrames(-1);
+    } else if (isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowRight) {
+      editor.nudgeSelectedAudioFrames(1);
+    } else if (isCtrl &&
+        isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.arrowLeft) {
+      editor.nudgeSelectedAudioFrames(-10);
+    } else if (isCtrl &&
+        isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.arrowRight) {
+      editor.nudgeSelectedAudioFrames(10);
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1151,6 +1171,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onSlipSelectedSegmentFrames: context
           .read<EditorController>()
           .slipSelectedSegmentFrames,
+      onNudgeSelectedAudioFrames: context
+          .read<EditorController>()
+          .nudgeSelectedAudioFrames,
       onAddMarkerAt: context.read<EditorController>().addTimelineMarkerAt,
       onJumpToPreviousMarker: context
           .read<EditorController>()
