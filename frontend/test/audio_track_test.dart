@@ -694,6 +694,46 @@ void main() {
     expect(selected.audioLinked, isFalse);
   });
 
+  test('auto fix repairs detached audio length drift', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 20,
+          reason: 'test',
+          audioStart: 30,
+          audioEnd: 45,
+          audioLinked: false,
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    expect(
+      controller.audioVideoLengthDriftFrames(controller.segments.first),
+      150,
+    );
+    expect(
+      controller.segmentHasAudioLengthDrift(controller.segments.first),
+      isTrue,
+    );
+    expect(
+      controller.autoFixQueue.any(
+        (item) => item.action == AutoFixAction.syncAudioLength,
+      ),
+      isTrue,
+    );
+
+    controller.applyAutoFixForSegment(1, AutoFixAction.syncAudioLength);
+
+    final selected = controller.selectedSegment!;
+    expect(selected.audioLinked, isFalse);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioStart), 900);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioEnd), 1200);
+    expect(controller.segmentHasAudioLengthDrift(selected), isFalse);
+  });
+
   test('slip edit moves source frames while preserving clip duration', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120

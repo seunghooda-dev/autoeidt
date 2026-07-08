@@ -111,6 +111,7 @@ class EditorController extends ChangeNotifier {
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
   double _manualPlayheadSeconds = 0;
+  static const int _avSyncLengthToleranceFrames = 2;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
     'mp4',
@@ -462,6 +463,17 @@ class EditorController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  int audioVideoLengthDriftFrames(HighlightSegment segment) {
+    final videoFrames = secondsToTimecodeFrame(segment.duration);
+    final audioFrames = secondsToTimecodeFrame(segment.audioDuration);
+    return (audioFrames - videoFrames).abs();
+  }
+
+  bool segmentHasAudioLengthDrift(HighlightSegment segment) {
+    return _segmentAudioReady(segment) &&
+        audioVideoLengthDriftFrames(segment) >= _avSyncLengthToleranceFrames;
   }
 
   double get outputDurationSeconds {
@@ -2078,6 +2090,16 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void syncSelectedAudioToVideoLength() {
+    final selected = selectedSegment;
+    if (selected == null ||
+        anyAudioTrackEditLocked ||
+        !segmentHasAudioLengthDrift(selected)) {
+      return;
+    }
+    updateSegment(_syncSegmentAudioLength(selected));
   }
 
   void toggleSelectedAudioLink() {
@@ -5887,6 +5909,18 @@ class EditorController extends ChangeNotifier {
           ),
         );
       }
+      if (segmentHasAudioLengthDrift(segment)) {
+        final driftFrames = audioVideoLengthDriftFrames(segment);
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'A/V length drift',
+            detail: '비디오와 오디오 길이가 $driftFrames프레임 달라 말소리 컷이 어긋날 수 있습니다.',
+            severity: AutoFixSeverity.warn,
+            action: AutoFixAction.syncAudioLength,
+          ),
+        );
+      }
       if (hasRiskText) {
         output.add(
           AutoFixReviewItem(
@@ -6092,6 +6126,10 @@ class EditorController extends ChangeNotifier {
       );
       changed = true;
     }
+    if (segmentHasAudioLengthDrift(next)) {
+      next = _syncSegmentAudioLength(next);
+      changed = true;
+    }
 
     final maxVideoFade = (next.duration / 3).clamp(0.04, 0.18).toDouble();
     if (next.videoFadeIn + next.videoFadeOut >= next.duration) {
@@ -6163,6 +6201,8 @@ class EditorController extends ChangeNotifier {
                 : segment.audioFadeOut,
           ),
         );
+      case AutoFixAction.syncAudioLength:
+        return _syncSegmentAudioLength(segment);
       case AutoFixAction.addFades:
         return _directorSegment(
           segment.copyWith(
@@ -6256,6 +6296,35 @@ class EditorController extends ChangeNotifier {
         segment.audioPan.abs() > 0.001 ||
         segment.audioVolume < 0.85 ||
         segment.audioVolume > 1.15;
+  }
+
+  HighlightSegment _syncSegmentAudioLength(HighlightSegment segment) {
+    final videoFrames = math.max(1, secondsToTimecodeFrame(segment.duration));
+    final maxFrame = duration > 0
+        ? math.max(videoFrames, secondsToTimecodeFrame(duration))
+        : null;
+    var audioStartFrame = secondsToTimecodeFrame(segment.effectiveAudioStart);
+    var audioEndFrame = audioStartFrame + videoFrames;
+    if (maxFrame != null && audioEndFrame > maxFrame) {
+      audioEndFrame = maxFrame;
+      audioStartFrame = math.max(0, audioEndFrame - videoFrames);
+    }
+    final audioStart = timecodeFrameToSeconds(audioStartFrame);
+    final audioEnd = timecodeFrameToSeconds(audioEndFrame);
+    final videoStartFrame = secondsToTimecodeFrame(segment.start);
+    final videoEndFrame = secondsToTimecodeFrame(segment.end);
+    final shouldRelink =
+        segment.audioLinked ||
+        (audioStartFrame == videoStartFrame && audioEndFrame == videoEndFrame);
+    return _directorSegment(
+      _normalizeSegmentAudio(
+        segment.copyWith(
+          audioStart: audioStart,
+          audioEnd: audioEnd,
+          audioLinked: shouldRelink,
+        ),
+      ),
+    );
   }
 
   bool _segmentNeedsFadePolish(HighlightSegment segment) {
@@ -7333,6 +7402,7 @@ enum AutoFixAction {
   trimLongClip,
   removeWeak,
   mixAudio,
+  syncAudioLength,
   addFades,
   hideFiller,
   selectForReview,

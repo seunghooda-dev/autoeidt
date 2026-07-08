@@ -19,6 +19,8 @@ class ClipInspector extends StatelessWidget {
 
     final colorScheme = Theme.of(context).colorScheme;
     final editor = context.read<EditorController>();
+    final avDriftFrames = controller.audioVideoLengthDriftFrames(selected);
+    final hasAvDrift = controller.segmentHasAudioLengthDrift(selected);
     return ListView(
       children: [
         Row(
@@ -63,6 +65,15 @@ class ClipInspector extends StatelessWidget {
           start: formatSeconds(selected.effectiveAudioStart),
           end: formatSeconds(selected.effectiveAudioEnd),
         ),
+        if (hasAvDrift) ...[
+          const SizedBox(height: 8),
+          _SyncWarning(
+            driftFrames: avDriftFrames,
+            onPressed: controller.anyAudioTrackEditLocked
+                ? null
+                : editor.syncSelectedAudioToVideoLength,
+          ),
+        ],
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -325,6 +336,52 @@ class ClipInspector extends StatelessWidget {
               : editor.setSelectedAudioFadeOut,
         ),
       ],
+    );
+  }
+}
+
+class _SyncWarning extends StatelessWidget {
+  const _SyncWarning({required this.driftFrames, required this.onPressed});
+
+  final int driftFrames;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.tertiaryContainer.withValues(alpha: 0.55),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.sync_problem,
+            size: 18,
+            color: colorScheme.onTertiaryContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'A/V length drift ${driftFrames}f',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onTertiaryContainer,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onPressed,
+            icon: const Icon(Icons.sync, size: 16),
+            label: const Text('Sync'),
+          ),
+        ],
+      ),
     );
   }
 }
