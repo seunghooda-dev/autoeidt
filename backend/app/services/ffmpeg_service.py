@@ -12,6 +12,9 @@ from typing import Any
 
 from app.config import get_settings
 
+RENDER_FRAME_RATE = 30
+RENDER_FRAME_RATE_LABEL = str(RENDER_FRAME_RATE)
+
 
 class FFmpegError(RuntimeError):
     pass
@@ -274,7 +277,9 @@ def create_preview_proxy(
             "-t",
             f"{proxy_seconds:.3f}",
             "-vf",
-            "scale=-2:540,format=yuv420p",
+            f"scale=-2:540,fps={RENDER_FRAME_RATE_LABEL},format=yuv420p",
+            "-r",
+            RENDER_FRAME_RATE_LABEL,
             "-c:v",
             "libx264",
             "-preset",
@@ -891,11 +896,14 @@ def _render_reencode_with_video_args(
     if caption_file is not None:
         force_style = _caption_style_force_style(caption_style)
         filter_complex += (
-            f";{video_chain}subtitles='{_subtitle_filter_path(caption_file)}':"
-            f"force_style='{force_style}'[outv]"
+            f";{video_chain}fps={RENDER_FRAME_RATE_LABEL},"
+            f"subtitles='{_subtitle_filter_path(caption_file)}':"
+            f"force_style='{force_style}',format=yuv420p[outv]"
         )
     else:
-        filter_complex += f";{video_chain}format=yuv420p[outv]"
+        filter_complex += (
+            f";{video_chain}fps={RENDER_FRAME_RATE_LABEL},format=yuv420p[outv]"
+        )
 
     _run(
         [
@@ -910,10 +918,18 @@ def _render_reencode_with_video_args(
             "-map",
             "[outa]",
             *video_args,
+            "-r",
+            RENDER_FRAME_RATE_LABEL,
             "-c:a",
             "aac",
             "-b:a",
             "192k",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
+            "-write_tmcd",
+            "0",
             "-movflags",
             "+faststart",
             str(output_path),
