@@ -1007,6 +1007,7 @@ class _TimelineEditorBody extends StatelessWidget {
           .read<EditorController>()
           .toggleSelectedVideoEnabled,
       onResetAudioPan: context.read<EditorController>().resetSelectedAudioPan,
+      onZoomDelta: context.read<EditorController>().zoomTimeline,
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/highlight_segment.dart';
@@ -76,6 +77,7 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleAudioMute,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
+    this.onZoomDelta,
   });
 
   final double duration;
@@ -115,6 +117,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleAudioMute;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
+  final ValueChanged<double>? onZoomDelta;
 
   @override
   State<TimelineEditor> createState() => _TimelineEditorState();
@@ -133,6 +136,33 @@ class _TimelineEditorState extends State<TimelineEditor> {
   _DragTrack? _activeTrack;
   bool _isScrubbing = false;
   final ScrollController _scrollController = ScrollController();
+  double _lastViewportWidth = 0;
+  double? _pendingZoomFocalRatio;
+  double? _pendingZoomViewportX;
+
+  @override
+  void didUpdateWidget(covariant TimelineEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.zoom == widget.zoom || _pendingZoomFocalRatio == null) {
+      return;
+    }
+    final focalRatio = _pendingZoomFocalRatio!;
+    final viewportX = _pendingZoomViewportX ?? 0;
+    _pendingZoomFocalRatio = null;
+    _pendingZoomViewportX = null;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          _lastViewportWidth <= 0) {
+        return;
+      }
+      final targetOffset =
+          focalRatio * _lastViewportWidth * widget.zoom - viewportX;
+      final maxOffset = _scrollController.position.maxScrollExtent;
+      _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset).toDouble());
+    });
+  }
 
   @override
   void dispose() {
@@ -144,50 +174,56 @@ class _TimelineEditorState extends State<TimelineEditor> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        _lastViewportWidth = constraints.maxWidth;
         final width = constraints.maxWidth * widget.zoom;
-        return Scrollbar(
-          controller: _scrollController,
-          thumbVisibility: widget.zoom > 1.0,
-          child: SingleChildScrollView(
+        return Listener(
+          onPointerSignal: _handlePointerSignal,
+          child: Scrollbar(
             controller: _scrollController,
-            scrollDirection: Axis.horizontal,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => _tap(details.localPosition, width),
-              onSecondaryTapDown: (details) => _showContextMenu(details, width),
-              onPanStart: (details) => _startDrag(details.localPosition, width),
-              onPanUpdate: (details) =>
-                  _updateDrag(details.localPosition.dx, width),
-              onPanEnd: (_) => _finishDrag(),
-              onPanCancel: _finishDrag,
-              child: SizedBox(
-                width: width,
-                height: 168,
-                child: CustomPaint(
-                  painter: _TimelinePainter(
-                    duration: widget.duration,
-                    segments: widget.segments,
-                    playheadSeconds: widget.playheadSeconds,
-                    selectedSegmentOrder: widget.selectedSegmentOrder,
-                    markIn: widget.markIn,
-                    markOut: widget.markOut,
-                    waveform: widget.waveform,
-                    activeIndex: _activeIndex,
-                    activeEdge: _activeEdge,
-                    activeTrack: _activeTrack,
-                    colorScheme: Theme.of(context).colorScheme,
-                  ),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 140),
-                      child: SizedBox(
-                        width: width,
-                        child: Text(
-                          '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1 분리 ${_detachedAudioCount()}개',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelMedium,
+            thumbVisibility: widget.zoom > 1.0,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) => _tap(details.localPosition, width),
+                onSecondaryTapDown: (details) =>
+                    _showContextMenu(details, width),
+                onPanStart: (details) =>
+                    _startDrag(details.localPosition, width),
+                onPanUpdate: (details) =>
+                    _updateDrag(details.localPosition.dx, width),
+                onPanEnd: (_) => _finishDrag(),
+                onPanCancel: _finishDrag,
+                child: SizedBox(
+                  width: width,
+                  height: 168,
+                  child: CustomPaint(
+                    painter: _TimelinePainter(
+                      duration: widget.duration,
+                      segments: widget.segments,
+                      playheadSeconds: widget.playheadSeconds,
+                      selectedSegmentOrder: widget.selectedSegmentOrder,
+                      markIn: widget.markIn,
+                      markOut: widget.markOut,
+                      waveform: widget.waveform,
+                      activeIndex: _activeIndex,
+                      activeEdge: _activeEdge,
+                      activeTrack: _activeTrack,
+                      colorScheme: Theme.of(context).colorScheme,
+                    ),
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 140),
+                        child: SizedBox(
+                          width: width,
+                          child: Text(
+                            '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1 분리 ${_detachedAudioCount()}개',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
                         ),
                       ),
                     ),
@@ -199,6 +235,35 @@ class _TimelineEditorState extends State<TimelineEditor> {
         );
       },
     );
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    final onZoomDelta = widget.onZoomDelta;
+    if (onZoomDelta == null || event is! PointerScrollEvent) {
+      return;
+    }
+    final scrollDy = event.scrollDelta.dy;
+    if (scrollDy == 0 || _lastViewportWidth <= 0) {
+      return;
+    }
+    final direction = scrollDy < 0 ? 1.0 : -1.0;
+    final notches = (scrollDy.abs() / 120).clamp(1.0, 3.0).toDouble();
+    final delta = direction * 0.35 * notches;
+    final nextZoom = (widget.zoom + delta).clamp(1.0, 6.0).toDouble();
+    if (nextZoom == widget.zoom) {
+      return;
+    }
+
+    final viewportX = event.localPosition.dx
+        .clamp(0.0, _lastViewportWidth)
+        .toDouble();
+    final currentOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final contentWidth = math.max(_lastViewportWidth * widget.zoom, 1.0);
+    _pendingZoomFocalRatio = (currentOffset + viewportX) / contentWidth;
+    _pendingZoomViewportX = viewportX;
+    onZoomDelta(delta);
   }
 
   void _tap(Offset position, double width) {

@@ -1,7 +1,9 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/main.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
+import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:provider/provider.dart';
 
 import 'package:highlight_editor_app/state/editor_controller.dart';
@@ -75,6 +77,46 @@ void main() {
       shift: true,
     );
     expect(controller.segments, isEmpty);
+  });
+
+  testWidgets('mouse wheel zooms the timeline track', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 35, reason: 'test'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    final timelineCenter = tester.getCenter(find.byType(TimelineEditor).first);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: timelineCenter,
+        scrollDelta: Offset(0, -120),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.timelineZoom, greaterThan(1.0));
+
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: timelineCenter, scrollDelta: Offset(0, 120)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.timelineZoom, 1.0);
   });
 }
 
