@@ -277,6 +277,19 @@ class TimelineResponse(BaseModel):
     waveform: list[float] = Field(default_factory=list)
 
 
+class TimelineMarker(BaseModel):
+    id: int = 0
+    seconds: float
+    label: str = "Marker"
+    color: str = "amber"
+    note: str = ""
+
+    @field_validator("seconds")
+    @classmethod
+    def seconds_must_be_non_negative(cls, value: float) -> float:
+        return max(0.0, float(value))
+
+
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
     captions: list[CaptionSegment] = Field(default_factory=list)
@@ -344,6 +357,7 @@ class ProjectState(BaseModel):
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
+    timeline_markers: list[TimelineMarker] = Field(default_factory=list)
     shorts_candidates: list[dict[str, Any]] = Field(default_factory=list)
     selected_shorts_id: int | None = None
     include_captions: bool = True

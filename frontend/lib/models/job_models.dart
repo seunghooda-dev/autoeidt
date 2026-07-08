@@ -493,6 +493,85 @@ class TimelineResponse {
   }
 }
 
+class TimelineMarker {
+  const TimelineMarker({
+    required this.id,
+    required this.seconds,
+    required this.label,
+    this.color = 'amber',
+    this.note = '',
+  });
+
+  final int id;
+  final double seconds;
+  final String label;
+  final String color;
+  final String note;
+
+  factory TimelineMarker.fromJson(Map<String, dynamic> json) {
+    return TimelineMarker(
+      id: _intFromJson(json['id'], 0),
+      seconds: _doubleFromJson(json['seconds'], 0),
+      label: _stringFromJson(json['label'], 'Marker'),
+      color: _stringFromJson(json['color'], 'amber'),
+      note: _stringFromJson(json['note'], ''),
+    );
+  }
+
+  TimelineMarker copyWith({
+    int? id,
+    double? seconds,
+    String? label,
+    String? color,
+    String? note,
+  }) {
+    return TimelineMarker(
+      id: id ?? this.id,
+      seconds: seconds ?? this.seconds,
+      label: label ?? this.label,
+      color: color ?? this.color,
+      note: note ?? this.note,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'seconds': seconds,
+      'label': label,
+      'color': color,
+      if (note.isNotEmpty) 'note': note,
+    };
+  }
+}
+
+double _doubleFromJson(Object? value, double fallback) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value) ?? fallback;
+  }
+  return fallback;
+}
+
+int _intFromJson(Object? value, int fallback) {
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value) ?? fallback;
+  }
+  return fallback;
+}
+
+String _stringFromJson(Object? value, String fallback) {
+  if (value is String && value.trim().isNotEmpty) {
+    return value;
+  }
+  return fallback;
+}
+
 class ProjectState {
   const ProjectState({
     required this.name,
@@ -500,6 +579,7 @@ class ProjectState {
     required this.segments,
     required this.captions,
     required this.waveform,
+    this.timelineMarkers = const [],
     this.shortsCandidates = const [],
     this.selectedShortsId,
     this.includeCaptions = true,
@@ -518,6 +598,7 @@ class ProjectState {
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
   final List<double> waveform;
+  final List<TimelineMarker> timelineMarkers;
   final List<Map<String, dynamic>> shortsCandidates;
   final int? selectedShortsId;
   final bool includeCaptions;
@@ -530,6 +611,8 @@ class ProjectState {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
+    final rawTimelineMarkers =
+        json['timeline_markers'] as List<dynamic>? ?? const [];
     final rawShortsCandidates =
         json['shorts_candidates'] as List<dynamic>? ?? const [];
     return ProjectState(
@@ -546,6 +629,12 @@ class ProjectState {
           .map((item) => CaptionSegment.fromJson(item as Map<String, dynamic>))
           .toList(),
       waveform: rawWaveform.map((item) => (item as num).toDouble()).toList(),
+      timelineMarkers: rawTimelineMarkers
+          .whereType<Map>()
+          .map(
+            (item) => TimelineMarker.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(),
       shortsCandidates: rawShortsCandidates
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
@@ -568,6 +657,7 @@ class ProjectState {
       'segments': segments.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
+      'timeline_markers': timelineMarkers.map((item) => item.toJson()).toList(),
       'shorts_candidates': shortsCandidates,
       if (selectedShortsId != null) 'selected_shorts_id': selectedShortsId,
       'include_captions': includeCaptions,

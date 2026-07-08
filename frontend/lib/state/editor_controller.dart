@@ -53,6 +53,7 @@ class EditorController extends ChangeNotifier {
   List<TranscriptSegment> transcript = [];
   List<CaptionSegment> captions = [];
   List<double> waveform = [];
+  List<TimelineMarker> timelineMarkers = [];
   String? renderUrl;
   int? selectedSegmentOrder;
   double? markIn;
@@ -128,6 +129,7 @@ class EditorController extends ChangeNotifier {
       comparisonDefaultSegments.isNotEmpty &&
       comparisonReferenceSegments.isNotEmpty;
   bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
+  bool get hasTimelineMarkers => timelineMarkers.isNotEmpty;
   List<BatchRenderItemResult> get renderOutputs {
     final currentRenderUrl = renderUrl;
     if (currentRenderUrl == null || currentRenderUrl.isEmpty) {
@@ -492,6 +494,7 @@ class EditorController extends ChangeNotifier {
       segments: segments,
       captions: captions,
       waveform: waveform,
+      timelineMarkers: timelineMarkers,
       shortsCandidates: _serializeShortsCandidates(shortsCandidates),
       selectedShortsId: selectedShortsId,
       includeCaptions: includeCaptions,
@@ -557,6 +560,7 @@ class EditorController extends ChangeNotifier {
     transcript = [];
     captions = [];
     waveform = [];
+    timelineMarkers = [];
     renderUrl = null;
     selectedSegmentOrder = null;
     markIn = null;
@@ -988,6 +992,58 @@ class EditorController extends ChangeNotifier {
     }
     _commitHistory();
     markOut = null;
+    notifyListeners();
+  }
+
+  void addTimelineMarkerAtPlayhead() {
+    addTimelineMarkerAt(currentPositionSeconds);
+  }
+
+  void addTimelineMarkerAt(double seconds, {String? label, String? note}) {
+    final sourceDuration = timelineSourceDuration;
+    if (sourceDuration <= 0) {
+      return;
+    }
+    final point = _snapToFrame(seconds.clamp(0.0, sourceDuration).toDouble());
+    final id =
+        timelineMarkers.fold<int>(
+          0,
+          (maxId, marker) => math.max(maxId, marker.id),
+        ) +
+        1;
+    final markerLabel = label ?? 'M${id.toString().padLeft(2, '0')}';
+    _commitHistory();
+    timelineMarkers = _normalizeTimelineMarkers([
+      ...timelineMarkers,
+      TimelineMarker(
+        id: id,
+        seconds: point,
+        label: markerLabel,
+        color: _markerColorFor(id),
+        note: note ?? '',
+      ),
+    ]);
+    notifyListeners();
+  }
+
+  void deleteTimelineMarker(int id) {
+    if (!timelineMarkers.any((marker) => marker.id == id)) {
+      return;
+    }
+    _commitHistory();
+    timelineMarkers = [
+      for (final marker in timelineMarkers)
+        if (marker.id != id) marker,
+    ];
+    notifyListeners();
+  }
+
+  void clearTimelineMarkers() {
+    if (timelineMarkers.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    timelineMarkers = [];
     notifyListeners();
   }
 
@@ -3679,6 +3735,45 @@ class EditorController extends ChangeNotifier {
     return value.clamp(0.0, duration).toDouble();
   }
 
+  List<TimelineMarker> _normalizeTimelineMarkers(List<TimelineMarker> input) {
+    final normalized = <TimelineMarker>[];
+    final usedIds = <int>{};
+    for (final marker in input) {
+      var id = marker.id <= 0 ? normalized.length + 1 : marker.id;
+      while (usedIds.contains(id)) {
+        id += 1;
+      }
+      usedIds.add(id);
+      final label = marker.label.trim().isEmpty
+          ? 'M${id.toString().padLeft(2, '0')}'
+          : marker.label.trim();
+      normalized.add(
+        marker.copyWith(
+          id: id,
+          seconds: _snapToFrame(_clampProjectTime(marker.seconds)),
+          label: label,
+          color: marker.color.trim().isEmpty
+              ? _markerColorFor(id)
+              : marker.color,
+          note: marker.note.trim(),
+        ),
+      );
+    }
+    normalized.sort((a, b) {
+      final timeCompare = a.seconds.compareTo(b.seconds);
+      if (timeCompare != 0) {
+        return timeCompare;
+      }
+      return a.id.compareTo(b.id);
+    });
+    return normalized;
+  }
+
+  String _markerColorFor(int id) {
+    const colors = ['amber', 'cyan', 'green', 'rose', 'violet'];
+    return colors[(id - 1).clamp(0, 9999) % colors.length];
+  }
+
   HighlightSegment _normalizeSegmentAudio(HighlightSegment segment) {
     final start = _snapToFrame(_clampProjectTime(segment.start));
     var end = _snapToFrame(_clampProjectTime(segment.end));
@@ -4572,6 +4667,7 @@ class EditorController extends ChangeNotifier {
         project.captions[index].copyWith(order: index + 1),
     ];
     waveform = project.waveform;
+    timelineMarkers = _normalizeTimelineMarkers(project.timelineMarkers);
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
@@ -4600,6 +4696,7 @@ class EditorController extends ChangeNotifier {
     return _EditorSnapshot(
       segments: List<HighlightSegment>.of(segments),
       captions: List<CaptionSegment>.of(captions),
+      timelineMarkers: List<TimelineMarker>.of(timelineMarkers),
       selectedSegmentOrder: selectedSegmentOrder,
       markIn: markIn,
       markOut: markOut,
@@ -4622,6 +4719,7 @@ class EditorController extends ChangeNotifier {
     }
     markIn = snapshot.markIn;
     markOut = snapshot.markOut;
+    timelineMarkers = _normalizeTimelineMarkers(snapshot.timelineMarkers);
     includeCaptions = snapshot.includeCaptions;
     captionStylePreset = snapshot.captionStylePreset;
     exportAspectRatio = snapshot.exportAspectRatio;
@@ -4751,6 +4849,29 @@ class EditorController extends ChangeNotifier {
     ];
     waveform = [
       for (var index = 0; index < 180; index++) ((index % 13) + 4) / 17,
+    ];
+    timelineMarkers = const [
+      TimelineMarker(
+        id: 1,
+        seconds: 18,
+        label: 'Hook',
+        color: 'cyan',
+        note: '초반 유지율 검토 지점',
+      ),
+      TimelineMarker(
+        id: 2,
+        seconds: 118,
+        label: 'Evidence',
+        color: 'green',
+        note: '핵심 근거 시작',
+      ),
+      TimelineMarker(
+        id: 3,
+        seconds: 384,
+        label: 'Review',
+        color: 'rose',
+        note: 'CTA 또는 삭제 후보',
+      ),
     ];
     selectedSegmentOrder = 1;
   }
@@ -4955,6 +5076,7 @@ class _EditorSnapshot {
   const _EditorSnapshot({
     required this.segments,
     required this.captions,
+    required this.timelineMarkers,
     required this.selectedSegmentOrder,
     required this.markIn,
     required this.markOut,
@@ -4965,6 +5087,7 @@ class _EditorSnapshot {
 
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
+  final List<TimelineMarker> timelineMarkers;
   final int? selectedSegmentOrder;
   final double? markIn;
   final double? markOut;

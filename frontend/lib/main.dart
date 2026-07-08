@@ -123,6 +123,8 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.applyDefaultVideoTransition();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyX) {
       editor.clearMarks();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyM) {
+      editor.clearTimelineMarkers();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyI) {
       editor.clearMarkIn();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyO) {
@@ -147,6 +149,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyO) {
       editor.setMarkOutFromPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyM) {
+      editor.addTimelineMarkerAtPlayhead();
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -450,6 +457,20 @@ class _CommandBar extends StatelessWidget {
               label: 'Clear',
               onPressed: controller.markIn != null || controller.markOut != null
                   ? editor.clearMarks
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.bookmark_add_outlined,
+              label: 'Marker',
+              onPressed: controller.hasTimelineSource
+                  ? editor.addTimelineMarkerAtPlayhead
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.bookmark_remove_outlined,
+              label: 'Clear M',
+              onPressed: controller.hasTimelineMarkers
+                  ? editor.clearTimelineMarkers
                   : null,
             ),
             const _ToolbarDivider(),
@@ -984,6 +1005,7 @@ class _TimelineEditorBody extends StatelessWidget {
       selectedSegmentOrder: controller.selectedSegmentOrder,
       markIn: controller.markIn,
       markOut: controller.markOut,
+      timelineMarkers: controller.timelineMarkers,
       waveform: controller.waveform,
       zoom: controller.timelineZoom,
       videoTrackLocked: controller.videoTrackLocked,
@@ -999,6 +1021,11 @@ class _TimelineEditorBody extends StatelessWidget {
       onClearMarks: context.read<EditorController>().clearMarks,
       onClearMarkIn: context.read<EditorController>().clearMarkIn,
       onClearMarkOut: context.read<EditorController>().clearMarkOut,
+      onAddMarkerAt: context.read<EditorController>().addTimelineMarkerAt,
+      onDeleteMarker: context.read<EditorController>().deleteTimelineMarker,
+      onClearTimelineMarkers: context
+          .read<EditorController>()
+          .clearTimelineMarkers,
       onMarkClip: context.read<EditorController>().markSelectedClip,
       onAddEditAt: context.read<EditorController>().addEditAt,
       onRippleTrimStartTo: context

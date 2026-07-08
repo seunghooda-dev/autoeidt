@@ -67,6 +67,17 @@ void main() {
     expect(controller.selectedSegment!.audioFadeIn, 0.12);
     expect(controller.selectedSegment!.audioFadeOut, 0.12);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.keyM);
+    expect(controller.timelineMarkers.length, 1);
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.keyM,
+      control: true,
+      shift: true,
+    );
+    expect(controller.timelineMarkers, isEmpty);
+
     await _pressShortcut(tester, LogicalKeyboardKey.delete);
     expect(controller.segments, isEmpty);
 

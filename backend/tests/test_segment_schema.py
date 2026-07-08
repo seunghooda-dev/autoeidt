@@ -57,6 +57,14 @@ def test_project_state_accepts_render_settings() -> None:
         export_aspect_ratio="9:16",
         mark_in=12.5,
         mark_out=58.0,
+        timeline_markers=[
+            {
+                "id": 1,
+                "seconds": -3.0,
+                "label": "Hook",
+                "color": "cyan",
+            }
+        ],
         shorts_candidates=[
             {
                 "id": 1,
@@ -74,5 +82,7 @@ def test_project_state_accepts_render_settings() -> None:
     assert project.export_aspect_ratio == "9:16"
     assert project.mark_in == 12.5
     assert project.mark_out == 58.0
+    assert project.timeline_markers[0].seconds == 0.0
+    assert project.timeline_markers[0].label == "Hook"
     assert project.shorts_candidates[0]["label"] == "Hook 01"
     assert project.selected_shorts_id == 1

@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/highlight_segment.dart';
+import '../models/job_models.dart';
 import 'time_format.dart';
 
 enum _DragEdge { start, end }
@@ -19,6 +20,9 @@ enum _TimelineMenuAction {
   clearMarks,
   clearIn,
   clearOut,
+  addMarker,
+  deleteMarker,
+  clearTimelineMarkers,
   addEdit,
   rippleTrimStart,
   rippleTrimEnd,
@@ -48,6 +52,7 @@ class TimelineEditor extends StatefulWidget {
     required this.selectedSegmentOrder,
     required this.markIn,
     required this.markOut,
+    required this.timelineMarkers,
     required this.waveform,
     required this.zoom,
     required this.videoTrackLocked,
@@ -61,6 +66,9 @@ class TimelineEditor extends StatefulWidget {
     this.onClearMarks,
     this.onClearMarkIn,
     this.onClearMarkOut,
+    this.onAddMarkerAt,
+    this.onDeleteMarker,
+    this.onClearTimelineMarkers,
     this.onMarkClip,
     this.onAddEditAt,
     this.onRippleTrimStartTo,
@@ -90,6 +98,7 @@ class TimelineEditor extends StatefulWidget {
   final int? selectedSegmentOrder;
   final double? markIn;
   final double? markOut;
+  final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
   final double zoom;
   final bool videoTrackLocked;
@@ -103,6 +112,9 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearMarks;
   final VoidCallback? onClearMarkIn;
   final VoidCallback? onClearMarkOut;
+  final ValueChanged<double>? onAddMarkerAt;
+  final ValueChanged<int>? onDeleteMarker;
+  final VoidCallback? onClearTimelineMarkers;
   final VoidCallback? onMarkClip;
   final ValueChanged<double>? onAddEditAt;
   final ValueChanged<double>? onRippleTrimStartTo;
@@ -214,6 +226,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                       selectedSegmentOrder: widget.selectedSegmentOrder,
                       markIn: widget.markIn,
                       markOut: widget.markOut,
+                      timelineMarkers: widget.timelineMarkers,
                       waveform: widget.waveform,
                       activeIndex: _activeIndex,
                       activeEdge: _activeEdge,
@@ -292,6 +305,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final position = details.localPosition;
     final track = _trackAt(position.dy);
     final hitIndex = _segmentIndexAt(position.dx, width, track);
+    final marker = _markerAt(position.dx, width);
     final seconds = _snapToFrame(_xToSeconds(position.dx, width));
     final segment = hitIndex == null ? null : widget.segments[hitIndex];
 
@@ -307,7 +321,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         details.globalPosition.dx,
         details.globalPosition.dy,
       ),
-      items: _contextMenuItems(segment, track),
+      items: _contextMenuItems(segment, track, marker),
     );
 
     if (!mounted || action == null) {
@@ -331,6 +345,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onClearMarkIn?.call();
       case _TimelineMenuAction.clearOut:
         widget.onClearMarkOut?.call();
+      case _TimelineMenuAction.addMarker:
+        widget.onAddMarkerAt?.call(seconds);
+      case _TimelineMenuAction.deleteMarker:
+        if (marker != null) {
+          widget.onDeleteMarker?.call(marker.id);
+        }
+      case _TimelineMenuAction.clearTimelineMarkers:
+        widget.onClearTimelineMarkers?.call();
       case _TimelineMenuAction.addEdit:
         widget.onAddEditAt?.call(seconds);
       case _TimelineMenuAction.rippleTrimStart:
@@ -373,6 +395,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
   List<PopupMenuEntry<_TimelineMenuAction>> _contextMenuItems(
     HighlightSegment? segment,
     _DragTrack? track,
+    TimelineMarker? marker,
   ) {
     final videoLocked = widget.videoTrackLocked;
     final audioLocked = widget.audioTrackLocked;
@@ -441,6 +464,30 @@ class _TimelineEditorState extends State<TimelineEditor> {
         'Clear In/Out',
         _TimelineMenuAction.clearMarks,
         shortcut: 'Ctrl+Shift+X',
+      ),
+      const PopupMenuDivider(),
+      _menuHeader('Timeline Markers'),
+      _menuItem(
+        Icons.bookmark_add_outlined,
+        'Add marker here',
+        _TimelineMenuAction.addMarker,
+        shortcut: 'M',
+        enabled: widget.onAddMarkerAt != null,
+      ),
+      _menuItem(
+        Icons.bookmark_remove_outlined,
+        marker == null ? 'Delete nearest marker' : 'Delete ${marker.label}',
+        _TimelineMenuAction.deleteMarker,
+        enabled: marker != null && widget.onDeleteMarker != null,
+      ),
+      _menuItem(
+        Icons.bookmarks_outlined,
+        'Clear timeline markers',
+        _TimelineMenuAction.clearTimelineMarkers,
+        shortcut: 'Ctrl+Shift+M',
+        enabled:
+            widget.timelineMarkers.isNotEmpty &&
+            widget.onClearTimelineMarkers != null,
       ),
       const PopupMenuDivider(),
       _menuItem(
@@ -808,6 +855,20 @@ class _TimelineEditorState extends State<TimelineEditor> {
     return null;
   }
 
+  TimelineMarker? _markerAt(double x, double width) {
+    TimelineMarker? closest;
+    var closestDistance = double.infinity;
+    for (final marker in widget.timelineMarkers) {
+      final markerX = _secondsToX(marker.seconds, width);
+      final distance = (x - markerX).abs();
+      if (distance < closestDistance) {
+        closest = marker;
+        closestDistance = distance;
+      }
+    }
+    return closestDistance <= 10 ? closest : null;
+  }
+
   double _totalOutputSeconds() {
     return widget.segments.fold<double>(
       0,
@@ -844,6 +905,7 @@ class _TimelinePainter extends CustomPainter {
     required this.selectedSegmentOrder,
     required this.markIn,
     required this.markOut,
+    required this.timelineMarkers,
     required this.waveform,
     required this.activeIndex,
     required this.activeEdge,
@@ -869,6 +931,7 @@ class _TimelinePainter extends CustomPainter {
   final int? selectedSegmentOrder;
   final double? markIn;
   final double? markOut;
+  final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
   final int? activeIndex;
   final _DragEdge? activeEdge;
@@ -1494,6 +1557,9 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawMarkers(Canvas canvas, Size size) {
+    for (final marker in timelineMarkers) {
+      _drawTimelineMarker(canvas, size, marker);
+    }
     final inPoint = markIn;
     final outPoint = markOut;
     if (inPoint != null) {
@@ -1501,6 +1567,69 @@ class _TimelinePainter extends CustomPainter {
     }
     if (outPoint != null) {
       _drawMarker(canvas, size, outPoint, 'OUT', colorScheme.error);
+    }
+  }
+
+  void _drawTimelineMarker(Canvas canvas, Size size, TimelineMarker marker) {
+    final x = _secondsToX(marker.seconds, size.width);
+    final color = _timelineMarkerColor(marker.color);
+    final linePaint = Paint()
+      ..color = color.withValues(alpha: 0.62)
+      ..strokeWidth = 1.1;
+    canvas.drawLine(
+      Offset(x, 25),
+      Offset(x, _audio2Top + _laneHeight + 10),
+      linePaint,
+    );
+
+    final head = Path()
+      ..moveTo(x, 27)
+      ..lineTo(x - 5, 33)
+      ..lineTo(x, 39)
+      ..lineTo(x + 5, 33)
+      ..close();
+    canvas.drawPath(head, Paint()..color = color);
+    canvas.drawPath(
+      head,
+      Paint()
+        ..color = colorScheme.surface.withValues(alpha: 0.65)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: marker.label,
+        style: TextStyle(
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 72);
+    final labelX = (x + 7)
+        .clamp(2.0, math.max(2.0, size.width - textPainter.width - 2))
+        .toDouble();
+    textPainter.paint(canvas, Offset(labelX, 29));
+  }
+
+  Color _timelineMarkerColor(String color) {
+    switch (color) {
+      case 'cyan':
+        return colorScheme.primary;
+      case 'green':
+        return colorScheme.secondary;
+      case 'rose':
+        return colorScheme.error;
+      case 'violet':
+        return const Color(0xFFC084FC);
+      case 'amber':
+      default:
+        return colorScheme.tertiary;
     }
   }
 
@@ -1571,6 +1700,7 @@ class _TimelinePainter extends CustomPainter {
         selectedSegmentOrder != oldDelegate.selectedSegmentOrder ||
         markIn != oldDelegate.markIn ||
         markOut != oldDelegate.markOut ||
+        timelineMarkers != oldDelegate.timelineMarkers ||
         waveform != oldDelegate.waveform ||
         activeIndex != oldDelegate.activeIndex ||
         activeEdge != oldDelegate.activeEdge ||

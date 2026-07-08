@@ -272,6 +272,7 @@ def get_project(job_id: str) -> ProjectResponse:
         segments=job.get("segments") or [],
         captions=job.get("captions") or [],
         waveform=job.get("waveform") or [],
+        timeline_markers=job.get("timeline_markers") or [],
         shorts_candidates=job.get("shorts_candidates") or [],
         selected_shorts_id=job.get("selected_shorts_id"),
         include_captions=bool(job.get("include_captions", True)),
@@ -292,6 +293,9 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         segments=[segment.model_dump() for segment in payload.segments],
         captions=[caption.model_dump() for caption in payload.captions],
         waveform=payload.waveform,
+        timeline_markers=[
+            marker.model_dump() for marker in payload.timeline_markers
+        ],
         shorts_candidates=payload.shorts_candidates,
         selected_shorts_id=payload.selected_shorts_id,
         include_captions=payload.include_captions,
@@ -308,6 +312,7 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         segments=updated.get("segments") or [],
         captions=updated.get("captions") or [],
         waveform=updated.get("waveform") or [],
+        timeline_markers=updated.get("timeline_markers") or [],
         shorts_candidates=updated.get("shorts_candidates") or [],
         selected_shorts_id=updated.get("selected_shorts_id"),
         include_captions=bool(updated.get("include_captions", True)),

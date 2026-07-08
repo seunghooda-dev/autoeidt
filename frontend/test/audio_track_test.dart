@@ -87,6 +87,15 @@ void main() {
       segments: [],
       captions: [],
       waveform: [],
+      timelineMarkers: [
+        TimelineMarker(
+          id: 1,
+          seconds: 12.5,
+          label: 'Hook',
+          color: 'cyan',
+          note: 'opening marker',
+        ),
+      ],
       includeCaptions: false,
       captionStylePreset: 'shorts',
       exportAspectRatio: '9:16',
@@ -122,6 +131,9 @@ void main() {
     expect(restored.exportAspectRatio, '9:16');
     expect(restored.markIn, 10.5);
     expect(restored.markOut, 88.0);
+    expect(restored.timelineMarkers.single.label, 'Hook');
+    expect(restored.timelineMarkers.single.seconds, 12.5);
+    expect(restored.timelineMarkers.single.note, 'opening marker');
     expect(restored.shortsCandidates.single['label'], 'News 03');
     expect(restored.shortsCandidates.single['quality_score'], 88.0);
     expect(restored.selectedShortsId, 3);
@@ -135,6 +147,9 @@ void main() {
       ..exportAspectRatio = '9:16'
       ..markIn = 10.5
       ..markOut = 88.0
+      ..timelineMarkers = const [
+        TimelineMarker(id: 1, seconds: 14, label: 'Fact', color: 'green'),
+      ]
       ..shortsCandidates = const [
         ShortsCandidate(
           id: 4,
@@ -168,6 +183,8 @@ void main() {
     expect(project.exportAspectRatio, '9:16');
     expect(project.markIn, 10.5);
     expect(project.markOut, 88.0);
+    expect(project.timelineMarkers.single.label, 'Fact');
+    expect(project.timelineMarkers.single.color, 'green');
     expect(project.shortsCandidates.single['id'], 4);
     expect(project.shortsCandidates.single['strategy_kind'], 'hook');
     expect(project.selectedShortsId, 4);
@@ -179,6 +196,9 @@ void main() {
         EditorController(apiClient: apiClient, autoStartEngine: false)
           ..jobId = 'job-1'
           ..duration = 120
+          ..timelineMarkers = const [
+            TimelineMarker(id: 2, seconds: 30, label: 'Review', color: 'rose'),
+          ]
           ..shortsCandidates = const [
             ShortsCandidate(
               id: 7,
@@ -207,11 +227,44 @@ void main() {
     await controller.saveProjectToBackend();
 
     expect(apiClient.savedProjectJobId, 'job-1');
+    expect(apiClient.savedProject?.timelineMarkers.single.label, 'Review');
     expect(apiClient.savedProject?.shortsCandidates.single['id'], 7);
     expect(apiClient.savedProject?.shortsCandidates.single['label'], 'News 07');
     expect(apiClient.savedProject?.selectedShortsId, 7);
     expect(controller.shortsCandidates.single.label, 'News 07');
     expect(controller.selectedShortsId, 7);
+  });
+
+  test('timeline markers can be added cleared and undone', () {
+    final controller = EditorController(autoStartEngine: false)..duration = 120;
+
+    controller.addTimelineMarkerAt(12.345, label: 'Hook');
+
+    expect(controller.timelineMarkers.length, 1);
+    expect(
+      secondsToTimecodeFrame(controller.timelineMarkers.single.seconds),
+      370,
+    );
+    expect(controller.timelineMarkers.single.label, 'Hook');
+
+    controller.addTimelineMarkerAt(35, label: 'Fact');
+    expect(controller.timelineMarkers.map((marker) => marker.label), [
+      'Hook',
+      'Fact',
+    ]);
+
+    final markerId = controller.timelineMarkers.first.id;
+    controller.deleteTimelineMarker(markerId);
+    expect(controller.timelineMarkers.single.label, 'Fact');
+
+    controller.undo();
+    expect(controller.timelineMarkers.length, 2);
+
+    controller.clearTimelineMarkers();
+    expect(controller.timelineMarkers, isEmpty);
+
+    controller.undo();
+    expect(controller.timelineMarkers.length, 2);
   });
 
   test('linked audio follows video trim', () {
