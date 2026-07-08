@@ -124,6 +124,8 @@ void main() {
             },
           ],
           'quality_score': 88.0,
+          'hook_score': 91.0,
+          'completion_score': 76.0,
           'story_flow': ['Hook', 'Evidence'],
           'selected': true,
         },
@@ -146,6 +148,8 @@ void main() {
     expect(restored.timelineMarkers.single.enabled, isFalse);
     expect(restored.shortsCandidates.single['label'], 'News 03');
     expect(restored.shortsCandidates.single['quality_score'], 88.0);
+    expect(restored.shortsCandidates.single['hook_score'], 91.0);
+    expect(restored.shortsCandidates.single['completion_score'], 76.0);
     expect(restored.selectedShortsId, 3);
   });
 
@@ -325,6 +329,8 @@ void main() {
     expect(project.timelineMarkers.single.enabled, isFalse);
     expect(project.shortsCandidates.single['id'], 4);
     expect(project.shortsCandidates.single['strategy_kind'], 'hook');
+    expect(project.shortsCandidates.single['hook_score'], 0);
+    expect(project.shortsCandidates.single['completion_score'], 0);
     expect(project.selectedShortsId, 4);
   });
 
@@ -375,6 +381,11 @@ void main() {
     expect(apiClient.savedProject?.timelineMarkers.single.enabled, isFalse);
     expect(apiClient.savedProject?.shortsCandidates.single['id'], 7);
     expect(apiClient.savedProject?.shortsCandidates.single['label'], 'News 07');
+    expect(apiClient.savedProject?.shortsCandidates.single['hook_score'], 0);
+    expect(
+      apiClient.savedProject?.shortsCandidates.single['completion_score'],
+      0,
+    );
     expect(apiClient.savedProject?.selectedShortsId, 7);
     expect(controller.shortsCandidates.single.label, 'News 07');
     expect(controller.selectedShortsId, 7);
@@ -1692,6 +1703,8 @@ void main() {
     );
     expect(controller.shortsCandidates.first.storyFlow, isNotEmpty);
     expect(controller.shortsCandidates.first.storyScore, greaterThan(0));
+    expect(controller.shortsCandidates.first.hookScore, greaterThan(0));
+    expect(controller.shortsCandidates.first.completionScore, greaterThan(0));
     expect(controller.shortsCandidates.first.storyFlow.first, 'Hook');
     expect(
       controller.shortsCandidates
@@ -1712,6 +1725,8 @@ void main() {
     );
     expect(updatedCandidate.segments.first.end, closeTo(60, 0.01));
     expect(updatedCandidate.qualityScore, greaterThan(0));
+    expect(updatedCandidate.hookScore, greaterThan(0));
+    expect(updatedCandidate.completionScore, greaterThan(0));
     expect(updatedCandidate.storyFlow, isNotEmpty);
 
     controller.duplicateShortsCandidate(selectedId);
@@ -1895,7 +1910,9 @@ void main() {
       'Resolution',
     ]);
     expect(storyCandidate.storyScore, 100);
+    expect(storyCandidate.completionScore, greaterThanOrEqualTo(90));
     expect(storyCandidate.strengths, contains('Story'));
+    expect(storyCandidate.strengths, contains('Complete'));
   });
 
   test('verified fact tag drives news shorts signal scoring', () {

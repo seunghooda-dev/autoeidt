@@ -3320,6 +3320,80 @@ class EditorController extends ChangeNotifier {
     return score.clamp(0.0, 100.0).toDouble();
   }
 
+  double _shortsCompletionScore(
+    List<HighlightSegment> input,
+    String strategyKind,
+  ) {
+    if (input.isEmpty) {
+      return 0;
+    }
+    final roles = [
+      for (final segment in input) _shortsStoryRole(segment, strategyKind),
+    ];
+    final tagText = input
+        .expand((segment) => segment.tags)
+        .join(' ')
+        .toLowerCase();
+    final scriptText = input
+        .map((segment) => '${segment.reason} ${segment.script}')
+        .join(' ')
+        .toLowerCase();
+    final hasHook =
+        roles.first == 'hook' ||
+        roles.contains('hook') ||
+        _containsAny(scriptText, const ['결과', '핵심', '문제', '왜', '충격']);
+    final hasEvidence =
+        roles.contains('evidence') ||
+        tagText.contains('근거') ||
+        tagText.contains('검증팩트') ||
+        tagText.contains('출처확인') ||
+        _containsAny(scriptText, const ['공식', '출처', '확인', '발표', '보고서']);
+    final hasContext =
+        roles.contains('context') ||
+        tagText.contains('문제해결') ||
+        tagText.contains('구체성') ||
+        _containsAny(scriptText, const ['원인', '이유', '방법', '차이']);
+    final hasConsequence =
+        roles.contains('impact') ||
+        roles.contains('resolution') ||
+        roles.contains('close') ||
+        tagText.contains('영향') ||
+        tagText.contains('대응') ||
+        _containsAny(scriptText, const ['영향', '대응', '결론', '다음', '앞으로']);
+
+    var score = 30.0;
+    if (hasHook) {
+      score += 20;
+    } else {
+      score -= 10;
+    }
+    if (hasEvidence || hasContext) {
+      score += 18;
+    } else {
+      score -= 8;
+    }
+    if (hasEvidence && hasContext) {
+      score += 6;
+    }
+    if (hasConsequence) {
+      score += 18;
+    } else {
+      score -= 10;
+    }
+    if (roles.length >= 3) {
+      score += 8;
+    }
+    if (const {'impact', 'resolution', 'close'}.contains(roles.last)) {
+      score += 6;
+    }
+    for (var index = 1; index < roles.length; index++) {
+      if (_shortsRoleRank(roles[index]) < _shortsRoleRank(roles[index - 1])) {
+        score -= 5;
+      }
+    }
+    return score.clamp(0.0, 100.0).toDouble();
+  }
+
   ShortsCandidate _scoreShortsCandidate(ShortsCandidate candidate) {
     final candidateSegments = candidate.segments;
     if (candidateSegments.isEmpty) {
@@ -3331,6 +3405,8 @@ class EditorController extends ChangeNotifier {
         issues: const ['No clips'],
         storyFlow: const [],
         storyScore: 0,
+        hookScore: 0,
+        completionScore: 0,
       );
     }
 
@@ -3353,6 +3429,10 @@ class EditorController extends ChangeNotifier {
       candidateSegments,
       candidate.strategyKind,
     );
+    final completionScore = _shortsCompletionScore(
+      candidateSegments,
+      candidate.strategyKind,
+    );
     final riskCount = _shortsRiskCount(candidateSegments);
     final fillerCount = _shortsFillerCaptionCount(candidateSegments);
     final offlineReviewCount = _shortsOfflineReviewCount(candidateSegments);
@@ -3361,13 +3441,14 @@ class EditorController extends ChangeNotifier {
         .toDouble();
     final offlinePenalty = (offlineReviewCount * 16).clamp(0, 42).toDouble();
     final quality =
-        (durationScore * 0.18) +
-        (highlightScore * 0.26) +
+        (durationScore * 0.15) +
+        (highlightScore * 0.22) +
         (hookScore * 0.18) +
-        (signalScore * 0.16) +
-        (audioScore * 0.12) +
-        (captionScore * 0.08) +
-        (storyScore * 0.02) -
+        (signalScore * 0.13) +
+        (completionScore * 0.13) +
+        (audioScore * 0.10) +
+        (captionScore * 0.05) +
+        (storyScore * 0.04) -
         riskPenalty -
         offlinePenalty;
     final score = quality.clamp(0.0, 100.0).toDouble();
@@ -3375,6 +3456,8 @@ class EditorController extends ChangeNotifier {
       qualityScore: score,
       qualityGrade: _shortsGrade(score),
       riskCount: riskCount,
+      hookScore: hookScore,
+      completionScore: completionScore,
       strengths: _shortsStrengths(
         durationScore: durationScore,
         hookScore: hookScore,
@@ -3382,15 +3465,18 @@ class EditorController extends ChangeNotifier {
         audioScore: audioScore,
         captionScore: captionScore,
         storyScore: storyScore,
+        completionScore: completionScore,
       ),
       issues: _shortsIssues(
         duration: duration,
         riskCount: riskCount,
         fillerCount: fillerCount,
         offlineReviewCount: offlineReviewCount,
+        hookScore: hookScore,
         audioScore: audioScore,
         captionScore: captionScore,
         storyScore: storyScore,
+        completionScore: completionScore,
       ),
       storyFlow: _shortsStoryFlow(candidateSegments, candidate.strategyKind),
       storyScore: storyScore,
@@ -3853,19 +3939,23 @@ class EditorController extends ChangeNotifier {
     required double audioScore,
     required double captionScore,
     required double storyScore,
+    required double completionScore,
   }) {
     final strengths = <String>[];
     if (hookScore >= 78) {
       strengths.add('Hook');
     }
-    if (durationScore >= 78) {
-      strengths.add('Runtime');
+    if (storyScore >= 78) {
+      strengths.add('Story');
+    }
+    if (completionScore >= 72) {
+      strengths.add('Complete');
     }
     if (signalScore >= 72) {
       strengths.add('Signals');
     }
-    if (storyScore >= 78) {
-      strengths.add('Story');
+    if (durationScore >= 78) {
+      strengths.add('Runtime');
     }
     if (audioScore >= 90) {
       strengths.add('Audio');
@@ -3881,9 +3971,11 @@ class EditorController extends ChangeNotifier {
     required int riskCount,
     required int fillerCount,
     required int offlineReviewCount,
+    required double hookScore,
     required double audioScore,
     required double captionScore,
     required double storyScore,
+    required double completionScore,
   }) {
     final issues = <String>[];
     if (duration < 90) {
@@ -3896,6 +3988,12 @@ class EditorController extends ChangeNotifier {
     }
     if (offlineReviewCount > 0) {
       issues.add('Offline review');
+    }
+    if (hookScore < 50) {
+      issues.add('Weak hook');
+    }
+    if (completionScore < 55) {
+      issues.add('Incomplete');
     }
     if (fillerCount > 0) {
       issues.add('Filler captions');
@@ -5329,6 +5427,8 @@ class EditorController extends ChangeNotifier {
           'strategy_label': candidate.strategyLabel,
           'quality_score': candidate.qualityScore,
           'quality_grade': candidate.qualityGrade,
+          'hook_score': candidate.hookScore,
+          'completion_score': candidate.completionScore,
           'risk_count': candidate.riskCount,
           'strengths': candidate.strengths,
           'issues': candidate.issues,
@@ -5384,6 +5484,14 @@ class EditorController extends ChangeNotifier {
         qualityGrade: _stringFromProjectJson(
           raw['quality_grade'] ?? raw['qualityGrade'],
           'C',
+        ),
+        hookScore: _doubleFromProjectJson(
+          raw['hook_score'] ?? raw['hookScore'],
+          0,
+        ),
+        completionScore: _doubleFromProjectJson(
+          raw['completion_score'] ?? raw['completionScore'],
+          0,
         ),
         riskCount: _intFromProjectJson(
           raw['risk_count'] ?? raw['riskCount'],
@@ -5938,6 +6046,8 @@ class ShortsCandidate {
     this.strategyLabel = 'Balanced',
     this.qualityScore = 0,
     this.qualityGrade = 'C',
+    this.hookScore = 0,
+    this.completionScore = 0,
     this.riskCount = 0,
     this.strengths = const [],
     this.issues = const [],
@@ -5954,6 +6064,8 @@ class ShortsCandidate {
   final String strategyLabel;
   final double qualityScore;
   final String qualityGrade;
+  final double hookScore;
+  final double completionScore;
   final int riskCount;
   final List<String> strengths;
   final List<String> issues;
@@ -5974,12 +6086,18 @@ class ShortsCandidate {
   bool get isPublishReady =>
       qualityScore >= 70 &&
       storyScore >= 58 &&
+      hookScore >= 50 &&
+      completionScore >= 55 &&
       !hasSeriousReviewIssue &&
       !issues.contains('Story flow') &&
+      !issues.contains('Weak hook') &&
+      !issues.contains('Incomplete') &&
       !issues.contains('Audio mix');
 
   bool get needsEditorialReview =>
-      !isPublishReady && qualityScore >= 55 && !issues.contains('No clips');
+      !isPublishReady &&
+      !issues.contains('No clips') &&
+      (qualityScore >= 55 || hasSeriousReviewIssue && qualityScore >= 35);
 
   String get readinessLabel {
     if (isPublishReady) {
@@ -6013,6 +6131,8 @@ class ShortsCandidate {
     String? strategyLabel,
     double? qualityScore,
     String? qualityGrade,
+    double? hookScore,
+    double? completionScore,
     int? riskCount,
     List<String>? strengths,
     List<String>? issues,
@@ -6029,6 +6149,8 @@ class ShortsCandidate {
       strategyLabel: strategyLabel ?? this.strategyLabel,
       qualityScore: qualityScore ?? this.qualityScore,
       qualityGrade: qualityGrade ?? this.qualityGrade,
+      hookScore: hookScore ?? this.hookScore,
+      completionScore: completionScore ?? this.completionScore,
       riskCount: riskCount ?? this.riskCount,
       strengths: strengths ?? this.strengths,
       issues: issues ?? this.issues,

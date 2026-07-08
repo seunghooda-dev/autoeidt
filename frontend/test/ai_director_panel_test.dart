@@ -24,6 +24,8 @@ void main() {
           ],
           qualityScore: 82,
           qualityGrade: 'A',
+          hookScore: 88,
+          completionScore: 74,
           storyFlow: ['Hook', 'Evidence'],
           storyScore: 72,
           strengths: ['Story'],
@@ -49,6 +51,8 @@ void main() {
 
     expect(find.text('Story Arc'), findsOneWidget);
     expect(find.text('S72'), findsOneWidget);
+    expect(find.text('H 88'), findsOneWidget);
+    expect(find.text('C 74'), findsOneWidget);
     expect(find.text('Hook'), findsWidgets);
     expect(find.text('Evidence'), findsOneWidget);
     expect(find.text('Impact'), findsOneWidget);

@@ -376,6 +376,16 @@ class _ShortsCandidateTile extends StatelessWidget {
                   _CandidateStrategyBadge(candidate: candidate),
                   _CandidateReadinessBadge(candidate: candidate),
                   _CandidateQualityBadge(candidate: candidate),
+                  _CandidateMetricBadge(
+                    label: 'H',
+                    value: candidate.hookScore,
+                    color: colorScheme.primary,
+                  ),
+                  _CandidateMetricBadge(
+                    label: 'C',
+                    value: candidate.completionScore,
+                    color: colorScheme.secondary,
+                  ),
                 ],
               ),
               const SizedBox(height: 5),
@@ -695,6 +705,39 @@ class _CandidateQualityBadge extends StatelessWidget {
       'C' => colorScheme.outline,
       _ => colorScheme.error,
     };
+  }
+}
+
+class _CandidateMetricBadge extends StatelessWidget {
+  const _CandidateMetricBadge({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final double value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final rounded = value.round().clamp(0, 100);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.48)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '$label $rounded',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
   }
 }
 
