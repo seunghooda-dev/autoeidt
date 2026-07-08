@@ -556,19 +556,91 @@ class _MediaPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
-          _PanelHeader(title: 'Project Media', icon: Icons.perm_media_outlined),
-          SizedBox(height: 10),
-          _EngineStatus(),
-          SizedBox(height: 10),
-          StatusPanel(),
-          Spacer(),
+        children: [
+          const _PanelHeader(
+            title: 'Project Media',
+            icon: Icons.perm_media_outlined,
+          ),
+          const SizedBox(height: 10),
+          const _EngineStatus(),
+          const SizedBox(height: 10),
+          const StatusPanel(),
+          if (controller.selectedFile != null) ...[
+            const SizedBox(height: 10),
+            _ImportedMediaTile(controller: controller),
+          ],
+          const Spacer(),
         ],
       ),
+    );
+  }
+}
+
+class _ImportedMediaTile extends StatelessWidget {
+  const _ImportedMediaTile({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = controller.selectedFile;
+    if (file == null) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final duration = controller.timelineSourceDuration;
+    final tile = Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        border: Border.all(color: colorScheme.outline),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.movie_creation_outlined, color: colorScheme.primary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                Text(
+                  duration > 0
+                      ? 'Drag to timeline · ${formatSeconds(duration)}'
+                      : 'Drag to timeline',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.drag_indicator, color: colorScheme.onSurfaceVariant),
+        ],
+      ),
+    );
+
+    return Draggable<String>(
+      data: 'selected-media',
+      feedback: Material(
+        color: Colors.transparent,
+        child: SizedBox(width: 280, child: Opacity(opacity: 0.92, child: tile)),
+      ),
+      childWhenDragging: Opacity(opacity: 0.42, child: tile),
+      child: tile,
     );
   }
 }
@@ -638,111 +710,160 @@ class _TimelinePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final editor = context.read<EditorController>();
+    final timelineContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: Row(
+            children: [
+              const _PanelHeader(
+                title: 'Timeline',
+                icon: Icons.view_timeline_outlined,
+              ),
+              const SizedBox(width: 10),
+              _SmallPill(label: '${controller.segments.length} clips'),
+              const SizedBox(width: 6),
+              _TrackControlButton(
+                label: controller.videoTrackLocked ? 'V1 Locked' : 'V1',
+                icon: controller.videoTrackLocked
+                    ? Icons.lock
+                    : Icons.lock_open,
+                tooltip: controller.videoTrackLocked
+                    ? 'V1 영상 트랙 잠금 해제'
+                    : 'V1 영상 트랙 잠금',
+                selected: controller.videoTrackLocked,
+                onPressed: editor.toggleVideoTrackLock,
+              ),
+              const SizedBox(width: 6),
+              _TrackControlButton(
+                label: controller.audioTrackLocked ? 'A1 Locked' : 'A1',
+                icon: controller.audioTrackLocked
+                    ? Icons.lock
+                    : Icons.lock_open,
+                tooltip: controller.audioTrackLocked
+                    ? 'A1 오디오 트랙 잠금 해제'
+                    : 'A1 오디오 트랙 잠금',
+                selected: controller.audioTrackLocked,
+                onPressed: editor.toggleAudioTrackLock,
+              ),
+              const SizedBox(width: 6),
+              _TrackControlButton(
+                label: controller.allAudioMuted ? 'A1 Muted' : 'A1 Mix',
+                icon: controller.allAudioMuted
+                    ? Icons.volume_off_outlined
+                    : Icons.volume_up_outlined,
+                tooltip: controller.allAudioMuted
+                    ? 'A1 전체 음소거 해제'
+                    : 'A1 전체 음소거',
+                selected: controller.allAudioMuted,
+                onPressed: editor.toggleAllAudioMute,
+              ),
+              const Spacer(),
+              _SmallPill(
+                label:
+                    'Out ${formatSeconds(controller.segments.fold<double>(0, (total, segment) => total + segment.outputDuration))}',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: EditControls(),
+        ),
+        const SizedBox(height: 8),
+        if (compact)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: _TimelineEditorBody(controller: controller),
+          )
+        else
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: _TimelineEditorBody(controller: controller),
+            ),
+          ),
+      ],
+    );
     return Padding(
       padding: compact
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(14, 0, 14, 14),
       child: _SurfacePanel(
         padding: EdgeInsets.zero,
-        child: controller.hasTimeline
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                    child: Row(
-                      children: [
-                        const _PanelHeader(
-                          title: 'Timeline',
-                          icon: Icons.view_timeline_outlined,
-                        ),
-                        const SizedBox(width: 10),
-                        _SmallPill(
-                          label: '${controller.segments.length} clips',
-                        ),
-                        const SizedBox(width: 6),
-                        _TrackControlButton(
-                          label: controller.videoTrackLocked
-                              ? 'V1 Locked'
-                              : 'V1',
-                          icon: controller.videoTrackLocked
-                              ? Icons.lock
-                              : Icons.lock_open,
-                          tooltip: controller.videoTrackLocked
-                              ? 'V1 영상 트랙 잠금 해제'
-                              : 'V1 영상 트랙 잠금',
-                          selected: controller.videoTrackLocked,
-                          onPressed: editor.toggleVideoTrackLock,
-                        ),
-                        const SizedBox(width: 6),
-                        _TrackControlButton(
-                          label: controller.audioTrackLocked
-                              ? 'A1 Locked'
-                              : 'A1',
-                          icon: controller.audioTrackLocked
-                              ? Icons.lock
-                              : Icons.lock_open,
-                          tooltip: controller.audioTrackLocked
-                              ? 'A1 오디오 트랙 잠금 해제'
-                              : 'A1 오디오 트랙 잠금',
-                          selected: controller.audioTrackLocked,
-                          onPressed: editor.toggleAudioTrackLock,
-                        ),
-                        const SizedBox(width: 6),
-                        _TrackControlButton(
-                          label: controller.allAudioMuted
-                              ? 'A1 Muted'
-                              : 'A1 Mix',
-                          icon: controller.allAudioMuted
-                              ? Icons.volume_off_outlined
-                              : Icons.volume_up_outlined,
-                          tooltip: controller.allAudioMuted
-                              ? 'A1 전체 음소거 해제'
-                              : 'A1 전체 음소거',
-                          selected: controller.allAudioMuted,
-                          onPressed: editor.toggleAllAudioMute,
-                        ),
-                        const Spacer(),
-                        _SmallPill(
-                          label:
-                              'Out ${formatSeconds(controller.segments.fold<double>(0, (total, segment) => total + segment.outputDuration))}',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: EditControls(),
-                  ),
-                  const SizedBox(height: 8),
-                  if (compact)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                      child: _TimelineEditorBody(controller: controller),
-                    )
-                  else
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                        child: _TimelineEditorBody(controller: controller),
-                      ),
-                    ),
-                ],
-              )
-            : Center(
-                child: SizedBox(
-                  height: compact ? 150 : null,
-                  child: Center(
-                    child: Text(
-                      controller.job?.stage == 'queued'
-                          ? '분석 대기 중'
-                          : '타임라인 대기 중',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
+        child: _TimelineDropTarget(child: timelineContent),
+      ),
+    );
+  }
+}
+
+class _TimelineDropTarget extends StatelessWidget {
+  const _TimelineDropTarget({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final editor = context.read<EditorController>();
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) =>
+          details.data == 'selected-media' && controller.canStartUpload,
+      onAcceptWithDetails: (_) {
+        editor.dropSelectedFileOnTimeline();
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovering = candidateData.isNotEmpty;
+        return Stack(
+          children: [
+            child,
+            if (isHovering)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _TimelineDropOverlay(
+                    message: 'Drop to analyze on V1/A1',
                   ),
                 ),
               ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TimelineDropOverlay extends StatelessWidget {
+  const _TimelineDropOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withValues(alpha: 0.12),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.72),
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: colorScheme.outline),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Text(message, style: Theme.of(context).textTheme.labelLarge),
+          ),
+        ),
       ),
     );
   }
@@ -830,7 +951,7 @@ class _TimelineEditorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TimelineEditor(
-      duration: controller.duration,
+      duration: controller.timelineSourceDuration,
       segments: controller.segments,
       playheadSeconds: controller.currentPositionSeconds,
       selectedSegmentOrder: controller.selectedSegmentOrder,

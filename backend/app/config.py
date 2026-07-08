@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     openai_llm_model: str = "gpt-4.1-mini"
     use_openai_whisper: bool = True
     use_openai_llm: bool = True
+    use_local_whisper: bool = True
+    local_whisper_model: str = "tiny"
+    local_whisper_device: str = "cpu"
+    local_whisper_compute_type: str = "int8"
 
     target_highlight_seconds_min: int = 180
     target_highlight_seconds_max: int = 240

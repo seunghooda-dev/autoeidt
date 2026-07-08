@@ -43,6 +43,13 @@ Windows 실행 파일 빌드에는 Visual Studio의 `Desktop development with C+
 워크로드가 필요합니다. Windows 앱의 영상 프리뷰는 `video_player_media_kit`과
 `media_kit_libs_windows_video` 백엔드를 사용합니다.
 
+OpenAI API 키가 없어도 데스크톱 엔진은 `faster-whisper` 로컬 STT를 우선 시도합니다.
+처음 실행 시 모델 파일을 내려받으며, 이후에는 PC CPU/GPU로 음성 인식을 수행합니다.
+기본 무료 모드는 `LOCAL_WHISPER_MODEL=tiny`, `LOCAL_WHISPER_DEVICE=cpu`, `LOCAL_WHISPER_COMPUTE_TYPE=int8`입니다.
+정확도가 더 필요하면 `small` 또는 `medium`으로 올릴 수 있지만 처리 시간과 메모리 사용량이 늘어납니다.
+OpenAI 키가 있으면 OpenAI STT/LLM을 우선 사용하고, 키가 없으면 로컬 STT와 내장 편집
+스킬 엔진으로 동작합니다.
+
 로컬 PC에서 빌드 도구를 설치하려면 관리자 권한 승인 후 아래 스크립트를 실행합니다.
 
 ```powershell
@@ -161,4 +168,4 @@ flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000
 ```
 
-OpenAI 키가 없으면 백엔드는 개발용 스크립트와 휴리스틱 하이라이트를 생성합니다. 실제 품질 검증은 `.env`에 `OPENAI_API_KEY`를 설정한 뒤 진행해야 합니다.
+OpenAI 키가 없으면 백엔드는 로컬 `faster-whisper` STT를 먼저 사용합니다. 로컬 모델 설치나 실행에 실패하면 앱은 검토용 후보만 생성하고 경고를 표시합니다.

@@ -5,6 +5,7 @@ celery==5.5.3
 redis==6.2.0
 pydantic-settings==2.10.1
 openai==1.93.0
+faster-whisper==1.2.1
 opencv-python-headless==4.11.0.86
 numpy==2.2.6
 pytest==8.4.1

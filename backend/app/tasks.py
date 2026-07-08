@@ -250,8 +250,30 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         transcript = transcribe_audio(audio_path, duration)
         analysis_warnings: list[str] = []
         if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
+            fallback_reason = str(transcript[0].get("fallback_reason") or "")
+            if fallback_reason.startswith("local_whisper_failed:"):
+                message = (
+                    "무료 로컬 Whisper 음성 인식이 실패하여 실제 대화 내용 분석 대신 "
+                    "검토용 후보를 생성했습니다. 첫 실행 모델 다운로드, GPU/CPU 메모리, "
+                    "또는 오디오 코덱 문제를 확인해 주세요."
+                )
+            elif fallback_reason == "openai_key_missing_and_local_whisper_disabled":
+                message = (
+                    "OPENAI_API_KEY가 없고 무료 로컬 Whisper가 비활성화되어 "
+                    "실제 STT/LLM 내용 분석 대신 검토용 후보만 생성했습니다."
+                )
+            elif fallback_reason == "local_whisper_empty_transcript":
+                message = (
+                    "무료 로컬 Whisper가 실행됐지만 인식 가능한 음성을 찾지 못해 "
+                    "실제 대화 내용 분석 대신 검토용 후보를 생성했습니다."
+                )
+            else:
+                message = (
+                    "음성 인식 엔진을 사용할 수 없어 실제 STT/LLM 내용 분석 대신 "
+                    "검토용 후보만 생성했습니다."
+                )
             analysis_warnings.append(
-                "OPENAI_API_KEY가 없어 실제 STT/LLM 내용 분석은 건너뛰고 검토용 후보만 생성했습니다."
+                message
             )
         captions = _captions_from_transcript(transcript)
         waveform = generate_waveform(audio_path)

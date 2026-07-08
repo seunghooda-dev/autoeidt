@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -63,13 +64,69 @@ def transcribe_with_openai(audio_path: Path) -> list[dict[str, Any]]:
     return _normalize_transcript(_plain_model(transcription))
 
 
-def fallback_transcript(duration: float) -> list[dict[str, Any]]:
+@lru_cache(maxsize=2)
+def _local_whisper_model(
+    model_name: str,
+    device: str,
+    compute_type: str,
+) -> Any:
+    from faster_whisper import WhisperModel
+
+    return WhisperModel(
+        model_name,
+        device=device,
+        compute_type=compute_type,
+    )
+
+
+def transcribe_with_local_whisper(audio_path: Path) -> list[dict[str, Any]]:
+    settings = get_settings()
+    model = _local_whisper_model(
+        settings.local_whisper_model,
+        settings.local_whisper_device,
+        settings.local_whisper_compute_type,
+    )
+    segments, _info = model.transcribe(
+        str(audio_path),
+        beam_size=5,
+        vad_filter=True,
+        word_timestamps=True,
+    )
+    transcript: list[dict[str, Any]] = []
+    for segment in segments:
+        words = [
+            {
+                "start": float(word.start or segment.start),
+                "end": float(word.end or segment.end),
+                "word": str(word.word or "").strip(),
+            }
+            for word in (segment.words or [])
+            if str(word.word or "").strip()
+        ]
+        text = str(segment.text or "").strip()
+        if not text:
+            continue
+        transcript.append(
+            {
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": text,
+                "source": "local_whisper",
+                "words": words,
+            }
+        )
+    return transcript
+
+
+def fallback_transcript(
+    duration: float,
+    reason: str = "stt_not_available",
+) -> list[dict[str, Any]]:
     if duration <= 0:
         duration = 60.0
     chunk = 30.0
     transcript: list[dict[str, Any]] = []
     cursor = 0.0
-    index = 1
     while cursor < duration:
         end = min(duration, cursor + chunk)
         transcript.append(
@@ -80,11 +137,11 @@ def fallback_transcript(duration: float) -> list[dict[str, Any]]:
                     "음성 인식이 설정되지 않아 실제 대화 내용은 분석되지 않았습니다."
                 ),
                 "source": "fallback_stt",
+                "fallback_reason": reason,
                 "words": [],
             }
         )
         cursor = end
-        index += 1
     return transcript
 
 
@@ -92,4 +149,12 @@ def transcribe_audio(audio_path: Path, duration: float) -> list[dict[str, Any]]:
     settings = get_settings()
     if settings.use_openai_whisper and settings.openai_api_key:
         return transcribe_with_openai(audio_path)
-    return fallback_transcript(duration)
+    if settings.use_local_whisper:
+        try:
+            transcript = transcribe_with_local_whisper(audio_path)
+            if transcript:
+                return transcript
+            return fallback_transcript(duration, "local_whisper_empty_transcript")
+        except Exception as exc:
+            return fallback_transcript(duration, f"local_whisper_failed: {exc}")
+    return fallback_transcript(duration, "openai_key_missing_and_local_whisper_disabled")

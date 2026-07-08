@@ -101,6 +101,15 @@ class EditorController extends ChangeNotifier {
 
   bool get hasFile => selectedFile != null;
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
+  bool get hasTimelineSource => hasTimeline || hasFile;
+  double get timelineSourceDuration {
+    if (duration > 0) {
+      return duration;
+    }
+    final probeDuration = selectedMediaProbe?.duration ?? 0;
+    return probeDuration > 0 ? probeDuration : 0;
+  }
+
   bool get canStartUpload =>
       hasFile &&
       !isUploading &&
@@ -523,6 +532,18 @@ class EditorController extends ChangeNotifier {
       errorMessage = '분석 요청 실패: $error';
     }
     notifyListeners();
+  }
+
+  Future<void> dropSelectedFileOnTimeline() async {
+    if (!hasFile) {
+      errorMessage = '타임라인에 올릴 파일을 먼저 Import해 주세요';
+      notifyListeners();
+      return;
+    }
+    if (!canStartUpload) {
+      return;
+    }
+    await startUpload();
   }
 
   Future<void> pickReferenceVideos() async {
