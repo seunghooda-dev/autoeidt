@@ -23,6 +23,8 @@ enum _TimelineMenuAction {
   clearOut,
   liftMarkedRange,
   extractMarkedRange,
+  insertMarkedSegment,
+  overwriteMarkedSegment,
   stepBackwardFrame,
   stepForwardFrame,
   previousEdit,
@@ -104,6 +106,8 @@ class TimelineEditor extends StatefulWidget {
     this.onClearMarkOut,
     this.onLiftMarkedRange,
     this.onExtractMarkedRange,
+    this.onInsertMarkedSegment,
+    this.onOverwriteMarkedSegment,
     this.onStepBackwardFrame,
     this.onStepForwardFrame,
     this.onJumpToPreviousEdit,
@@ -178,6 +182,8 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearMarkOut;
   final VoidCallback? onLiftMarkedRange;
   final VoidCallback? onExtractMarkedRange;
+  final VoidCallback? onInsertMarkedSegment;
+  final VoidCallback? onOverwriteMarkedSegment;
   final VoidCallback? onStepBackwardFrame;
   final VoidCallback? onStepForwardFrame;
   final VoidCallback? onJumpToPreviousEdit;
@@ -446,6 +452,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onLiftMarkedRange?.call();
       case _TimelineMenuAction.extractMarkedRange:
         widget.onExtractMarkedRange?.call();
+      case _TimelineMenuAction.insertMarkedSegment:
+        widget.onInsertMarkedSegment?.call();
+      case _TimelineMenuAction.overwriteMarkedSegment:
+        widget.onOverwriteMarkedSegment?.call();
       case _TimelineMenuAction.stepBackwardFrame:
         widget.onStepBackwardFrame?.call();
       case _TimelineMenuAction.stepForwardFrame:
@@ -576,6 +586,21 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.segments.any(
           (item) => item.start < widget.markOut! && item.end > widget.markIn!,
         );
+    final markedTargetsUnlocked =
+        (!widget.videoTrackTargeted || !videoLocked) &&
+        (!(widget.audioTrack1Targeted || widget.audioTrack2Targeted) ||
+            !audioLocked);
+    final canInsertMarked =
+        hasMarkedRange &&
+        markedTargetsUnlocked &&
+        (widget.videoTrackTargeted ||
+            widget.audioTrack1Targeted ||
+            widget.audioTrack2Targeted) &&
+        widget.onInsertMarkedSegment != null;
+    final canOverwriteMarked =
+        canInsertMarked &&
+        segment != null &&
+        widget.onOverwriteMarkedSegment != null;
     final showAudioBus = _isAudioTrack(track) && widget.segments.isNotEmpty;
     final allA1Enabled =
         widget.segments.isNotEmpty &&
@@ -789,6 +814,20 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.extractMarkedRange,
         shortcut: "'",
         enabled: canEditMarkedRange && widget.onExtractMarkedRange != null,
+      ),
+      _menuItem(
+        Icons.playlist_add,
+        'Insert In/Out before clip',
+        _TimelineMenuAction.insertMarkedSegment,
+        shortcut: ',',
+        enabled: canInsertMarked,
+      ),
+      _menuItem(
+        Icons.published_with_changes,
+        'Overwrite selected with In/Out',
+        _TimelineMenuAction.overwriteMarkedSegment,
+        shortcut: '.',
+        enabled: canOverwriteMarked,
       ),
       const PopupMenuDivider(),
       _menuHeader('Frame Navigation'),

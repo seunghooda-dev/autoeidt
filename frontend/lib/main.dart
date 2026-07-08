@@ -315,6 +315,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
+        key == LogicalKeyboardKey.comma) {
+      editor.insertMarkedSegmentAtSelection();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.period) {
+      editor.overwriteSelectedSegmentWithMarks();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
         key == LogicalKeyboardKey.semicolon) {
       editor.liftMarkedRange();
     } else if (!isCtrl &&
@@ -1325,6 +1335,12 @@ class _TimelineEditorBody extends StatelessWidget {
       onClearMarkOut: context.read<EditorController>().clearMarkOut,
       onLiftMarkedRange: context.read<EditorController>().liftMarkedRange,
       onExtractMarkedRange: context.read<EditorController>().extractMarkedRange,
+      onInsertMarkedSegment: context
+          .read<EditorController>()
+          .insertMarkedSegmentAtSelection,
+      onOverwriteMarkedSegment: context
+          .read<EditorController>()
+          .overwriteSelectedSegmentWithMarks,
       onStepBackwardFrame: () =>
           unawaited(context.read<EditorController>().stepPlayheadByFrames(-1)),
       onStepForwardFrame: () =>

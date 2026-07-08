@@ -364,6 +364,13 @@ class EditorController extends ChangeNotifier {
       );
   bool get canLiftOrExtractSelectedSegment =>
       selectedSegment != null && hasAnyTrackTarget && targetedTracksUnlocked;
+  bool get canInsertMarkedSegment =>
+      hasValidMarks && hasAnyTrackTarget && targetedTracksUnlocked;
+  bool get canOverwriteMarkedSegment =>
+      hasValidMarks &&
+      selectedSegment != null &&
+      hasAnyTrackTarget &&
+      targetedTracksUnlocked;
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -1568,6 +1575,69 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void insertMarkedSegmentAtSelection() {
+    if (!canInsertMarkedSegment) {
+      return;
+    }
+    final insertIndex = selectedSegmentOrder == null
+        ? segments.length
+        : (selectedSegmentOrder! - 1).clamp(0, segments.length).toInt();
+    final inserted = _markedEditSegment(
+      order: insertIndex + 1,
+      reason: 'Insert In/Out edit',
+      source: 'manual+insert',
+    );
+    _commitHistory();
+    final output = <HighlightSegment>[
+      ...segments.take(insertIndex),
+      inserted,
+      ...segments.skip(insertIndex),
+    ];
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = insertIndex + 1;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void overwriteSelectedSegmentWithMarks() {
+    final selected = selectedSegment;
+    if (selected == null || !canOverwriteMarkedSegment) {
+      return;
+    }
+    final audioTargeted = audioTrack1Targeted || audioTrack2Targeted;
+    final originalAudioStart = selected.effectiveAudioStart;
+    final originalAudioEnd = selected.effectiveAudioEnd;
+    var next = selected.copyWith(
+      start: videoTrackTargeted ? markIn! : selected.start,
+      end: videoTrackTargeted ? markOut! : selected.end,
+      reason: 'Overwrite In/Out edit',
+      script: videoTrackTargeted
+          ? _scriptPreviewFor(markIn!, markOut!)
+          : selected.script,
+      source: _appendSource(selected.source, 'overwrite'),
+      videoEnabled: videoTrackTargeted ? true : selected.videoEnabled,
+      audioStart: audioTargeted ? markIn! : originalAudioStart,
+      audioEnd: audioTargeted ? markOut! : originalAudioEnd,
+      audioMuted: audioTargeted ? false : selected.audioMuted,
+      audioVolume: audioTargeted ? selected.audioVolume : selected.audioVolume,
+      audioChannel1Enabled: audioTargeted
+          ? audioTrack1Targeted
+          : selected.audioChannel1Enabled,
+      audioChannel2Enabled: audioTargeted
+          ? audioTrack2Targeted
+          : selected.audioChannel2Enabled,
+      audioLinked: videoTrackTargeted && audioTargeted,
+    );
+    if (videoTrackTargeted && !audioTargeted) {
+      next = next.copyWith(
+        audioStart: originalAudioStart,
+        audioEnd: originalAudioEnd,
+        audioLinked: false,
+      );
+    }
+    updateSegment(next);
   }
 
   void liftMarkedRange() {
@@ -5254,6 +5324,37 @@ class EditorController extends ChangeNotifier {
       videoFadeOut: videoFadeOut,
       audioFadeIn: audioFadeIn,
       audioFadeOut: audioFadeOut,
+    );
+  }
+
+  HighlightSegment _markedEditSegment({
+    required int order,
+    required String reason,
+    required String source,
+  }) {
+    final start = _snapToFrame(_clampProjectTime(markIn!));
+    final end = _snapToFrame(_clampProjectTime(markOut!));
+    final audioTargeted = audioTrack1Targeted || audioTrack2Targeted;
+    return _normalizeSegmentAudio(
+      HighlightSegment(
+        order: order,
+        start: start,
+        end: end,
+        reason: reason,
+        script: _scriptPreviewFor(start, end),
+        source: source,
+        videoEnabled: videoTrackTargeted,
+        audioStart: start,
+        audioEnd: end,
+        audioMuted: !audioTargeted,
+        audioVolume: audioTargeted ? 1.0 : 0.0,
+        audioNormalize: audioTargeted,
+        audioLinked: true,
+        audioChannel1Enabled: audioTrack1Targeted,
+        audioChannel2Enabled: audioTrack2Targeted,
+        score: 0,
+        tags: const ['manual'],
+      ),
     );
   }
 

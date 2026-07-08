@@ -297,6 +297,42 @@ void main() {
     expect(controller.selectedSegment!.reason, 'three');
   });
 
+  testWidgets('insert and overwrite shortcuts use marked source range', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'two'),
+      ]
+      ..selectedSegmentOrder = 2;
+    controller.setMarkInAt(40);
+    controller.setMarkOutAt(46);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.comma);
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegment!.reason, 'Insert In/Out edit');
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 1200);
+
+    controller.setMarkInAt(50);
+    controller.setMarkOutAt(56);
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.period);
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegment!.reason, 'Overwrite In/Out edit');
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 1500);
+  });
+
   testWidgets('mouse wheel zooms the timeline track', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -417,6 +453,8 @@ void main() {
         ),
       ]
       ..selectedSegmentOrder = 1;
+    controller.setMarkInAt(42);
+    controller.setMarkOutAt(48);
 
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
@@ -452,6 +490,10 @@ void main() {
     expect(find.text('Ctrl+;'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);
     expect(find.text("Ctrl+'"), findsOneWidget);
+    expect(find.text('Insert In/Out before clip'), findsOneWidget);
+    expect(find.text(','), findsOneWidget);
+    expect(find.text('Overwrite selected with In/Out'), findsOneWidget);
+    expect(find.text('.'), findsOneWidget);
 
     await tester.tap(find.text('Move detached audio later 1f'));
     await tester.pumpAndSettle();

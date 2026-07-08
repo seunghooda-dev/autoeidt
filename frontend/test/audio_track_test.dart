@@ -1039,6 +1039,64 @@ void main() {
     expect(secondsToTimecodeFrame(controller.segments.last.start), 240);
   });
 
+  test('insert and overwrite edits use marked source range', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'two'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    controller.setMarkInAt(40);
+    controller.setMarkOutAt(46);
+    controller.insertMarkedSegmentAtSelection();
+
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegmentOrder, 2);
+    expect(controller.segments[1].reason, 'Insert In/Out edit');
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 1200);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 1380);
+    expect(controller.segments[2].reason, 'two');
+
+    controller.setMarkInAt(50);
+    controller.setMarkOutAt(58);
+    controller.overwriteSelectedSegmentWithMarks();
+
+    expect(controller.segments.length, 3);
+    expect(controller.segments[1].reason, 'Overwrite In/Out edit');
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 1500);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 1740);
+    expect(controller.segments[1].source, contains('overwrite'));
+  });
+
+  test('audio only overwrite preserves selected video range', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 30, reason: 'sync'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.toggleVideoTrackTarget();
+    expect(controller.videoTrackTargeted, isFalse);
+    expect(controller.audioTrack1Targeted, isTrue);
+    expect(controller.audioTrack2Targeted, isTrue);
+
+    controller.setMarkInAt(50);
+    controller.setMarkOutAt(60);
+    controller.overwriteSelectedSegmentWithMarks();
+
+    final selected = controller.selectedSegment!;
+    expect(secondsToTimecodeFrame(selected.start), 300);
+    expect(secondsToTimecodeFrame(selected.end), 900);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioStart), 1500);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioEnd), 1800);
+    expect(selected.audioLinked, isFalse);
+    expect(selected.videoEnabled, isTrue);
+    expect(selected.audioMuted, isFalse);
+  });
+
   test('rolling trim preserves total timeline duration across edit points', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 60
