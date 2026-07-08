@@ -128,6 +128,36 @@ class EditorController extends ChangeNotifier {
       comparisonDefaultSegments.isNotEmpty &&
       comparisonReferenceSegments.isNotEmpty;
   bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
+  List<BatchRenderItemResult> get renderOutputs {
+    final currentRenderUrl = renderUrl;
+    if (currentRenderUrl == null || currentRenderUrl.isEmpty) {
+      return const [];
+    }
+
+    final batchItems = job?.batchRenderItems ?? const [];
+    if (batchItems.isNotEmpty) {
+      return [
+        for (final item in batchItems)
+          if (item.url.isNotEmpty)
+            BatchRenderItemResult(
+              label: item.label,
+              outputName: item.outputName.isEmpty
+                  ? _outputNameFromUrl(item.url)
+                  : item.outputName,
+              url: _apiClient.absoluteUrl(item.url),
+            ),
+      ];
+    }
+
+    return [
+      BatchRenderItemResult(
+        label: 'Export',
+        outputName: _outputNameFromUrl(currentRenderUrl),
+        url: currentRenderUrl,
+      ),
+    ];
+  }
+
   ShortsCandidate? get selectedShortsCandidate {
     final id = selectedShortsId;
     if (id == null) {
@@ -139,6 +169,15 @@ class EditorController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  String _outputNameFromUrl(String url) {
+    final uri = Uri.tryParse(url);
+    final segments = uri?.pathSegments ?? const [];
+    if (segments.isEmpty) {
+      return 'render.mp4';
+    }
+    return Uri.decodeComponent(segments.last);
   }
 
   int get selectedShortsCount =>

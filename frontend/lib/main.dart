@@ -9,6 +9,7 @@ import 'widgets/caption_editor.dart';
 import 'widgets/clip_inspector.dart';
 import 'widgets/edit_controls.dart';
 import 'widgets/highlight_cards.dart';
+import 'widgets/render_outputs_panel.dart';
 import 'widgets/status_panel.dart';
 import 'widgets/time_format.dart';
 import 'widgets/timeline_editor.dart';
@@ -954,13 +955,11 @@ class _InspectorPanel extends StatelessWidget {
                   ],
                 ),
               ),
-              if (controller.renderUrl != null) ...[
+              if (controller.renderOutputs.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                SelectableText(
-                  controller.renderUrl!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                RenderOutputsPanel(
+                  outputs: controller.renderOutputs,
+                  compact: true,
                 ),
               ],
             ],

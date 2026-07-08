@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/job_models.dart';
 import '../state/editor_controller.dart';
+import 'render_outputs_panel.dart';
 
 class StatusPanel extends StatelessWidget {
   const StatusPanel({super.key});
@@ -117,13 +118,11 @@ class StatusPanel extends StatelessWidget {
               const SizedBox(height: 12),
               _AnalysisWarnings(warnings: controller.job!.analysisWarnings),
             ],
-            if (controller.renderUrl != null) ...[
+            if (controller.renderOutputs.isNotEmpty) ...[
               const SizedBox(height: 12),
-              SelectableText(
-                controller.renderUrl!,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colorScheme.primary),
+              RenderOutputsPanel(
+                outputs: controller.renderOutputs,
+                compact: true,
               ),
             ],
           ],
