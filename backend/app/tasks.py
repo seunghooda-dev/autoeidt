@@ -215,6 +215,48 @@ def _silences_overlapping_highlights(
     return output
 
 
+def _detect_scene_points_for_analysis(
+    video_path: Path,
+    threshold: float,
+    analysis_warnings: list[str],
+) -> list[float]:
+    try:
+        return detect_scene_changes(video_path, threshold=threshold)
+    except Exception as exc:
+        analysis_warnings.append(
+            "화면 전환 탐지에 실패해 오디오/STT 기반 분석으로 계속 진행합니다. "
+            f"원인: {exc}"
+        )
+        return []
+
+
+def _build_protected_silences_for_analysis(
+    video_path: Path,
+    candidate_silences: list,
+    scene_points: list[float],
+    analysis_warnings: list[str],
+) -> list:
+    try:
+        return build_protected_silences(
+            video_path,
+            candidate_silences,
+            scene_points=scene_points,
+        )
+    except Exception as exc:
+        analysis_warnings.append(
+            "시각적 모션 보호 검사에 실패해 무음 컷 보호를 최소화했습니다. "
+            f"원인: {exc}"
+        )
+        return [
+            silence
+            for silence in candidate_silences
+            if any(
+                silence.start <= point <= silence.end
+                for point in scene_points
+            )
+        ]
+
+
 def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
     settings = get_settings()
     try:
@@ -339,9 +381,10 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             "시각적 변화 보호 구간 확인 중",
             silences=silence_ranges_to_dicts(silence_ranges),
         )
-        scene_points = detect_scene_changes(
+        scene_points = _detect_scene_points_for_analysis(
             video_path,
-            threshold=settings.scene_change_threshold,
+            settings.scene_change_threshold,
+            analysis_warnings,
         )
         if transcript and all(
             item.get("source") == "fallback_stt" for item in transcript
@@ -361,10 +404,11 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             raw_highlights,
         )
 
-        protected_silences = build_protected_silences(
+        protected_silences = _build_protected_silences_for_analysis(
             video_path,
             candidate_silences,
-            scene_points=scene_points,
+            scene_points,
+            analysis_warnings,
         )
 
         refined = refine_highlights_with_hybrid_cut(
