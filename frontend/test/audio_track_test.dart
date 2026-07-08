@@ -285,6 +285,20 @@ void main() {
     controller.undo();
     expect(controller.timelineMarkers.length, 2);
 
+    controller.updateTimelineMarker(
+      controller.timelineMarkers.first.copyWith(
+        label: 'Edited',
+        note: 'review point',
+        color: 'violet',
+      ),
+    );
+    expect(controller.timelineMarkers.first.label, 'Edited');
+    expect(controller.timelineMarkers.first.note, 'review point');
+    expect(controller.timelineMarkers.first.color, 'violet');
+
+    controller.undo();
+    expect(controller.timelineMarkers.first.label, 'Hook');
+
     controller.clearTimelineMarkers();
     expect(controller.timelineMarkers, isEmpty);
 

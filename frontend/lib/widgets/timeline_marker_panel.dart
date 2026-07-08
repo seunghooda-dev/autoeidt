@@ -142,7 +142,7 @@ class _MarkerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.read<EditorController>();
     final colorScheme = Theme.of(context).colorScheme;
-    final markerColor = _markerColor(colorScheme, marker.color);
+    final markerColor = _timelineMarkerColor(colorScheme, marker.color);
     final borderColor = isActive ? markerColor : colorScheme.outline;
 
     return Material(
@@ -210,6 +210,12 @@ class _MarkerTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               IconButton(
+                tooltip: '${marker.label} 마커 편집',
+                onPressed: () => _showMarkerEditor(context, marker),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
                 tooltip: '${marker.label} 마커 삭제',
                 onPressed: () => controller.deleteTimelineMarker(marker.id),
                 icon: const Icon(Icons.close, size: 18),
@@ -222,19 +228,147 @@ class _MarkerTile extends StatelessWidget {
     );
   }
 
-  Color _markerColor(ColorScheme colorScheme, String color) {
-    switch (color) {
-      case 'cyan':
-        return colorScheme.primary;
-      case 'green':
-        return colorScheme.secondary;
-      case 'rose':
-        return colorScheme.error;
-      case 'violet':
-        return const Color(0xFFC084FC);
-      case 'amber':
-      default:
-        return colorScheme.tertiary;
+  Future<void> _showMarkerEditor(
+    BuildContext context,
+    TimelineMarker marker,
+  ) async {
+    final controller = context.read<EditorController>();
+    final result = await showDialog<TimelineMarker>(
+      context: context,
+      builder: (context) => _MarkerEditDialog(marker: marker),
+    );
+    if (result == null) {
+      return;
     }
+    controller.updateTimelineMarker(result);
+  }
+}
+
+class _MarkerEditDialog extends StatefulWidget {
+  const _MarkerEditDialog({required this.marker});
+
+  final TimelineMarker marker;
+
+  @override
+  State<_MarkerEditDialog> createState() => _MarkerEditDialogState();
+}
+
+class _MarkerEditDialogState extends State<_MarkerEditDialog> {
+  late final TextEditingController _labelController;
+  late final TextEditingController _noteController;
+  late String _color;
+
+  static const _colorOptions = <({String value, String label, IconData icon})>[
+    (value: 'amber', label: 'Amber', icon: Icons.bookmark),
+    (value: 'cyan', label: 'Cyan', icon: Icons.bookmark),
+    (value: 'green', label: 'Green', icon: Icons.bookmark),
+    (value: 'rose', label: 'Rose', icon: Icons.bookmark),
+    (value: 'violet', label: 'Violet', icon: Icons.bookmark),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _labelController = TextEditingController(text: widget.marker.label);
+    _noteController = TextEditingController(text: widget.marker.note);
+    _color = widget.marker.color;
+  }
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('마커 편집'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const Key('marker-label-field'),
+              controller: _labelController,
+              autofocus: true,
+              maxLength: 32,
+              decoration: const InputDecoration(
+                labelText: '이름',
+                prefixIcon: Icon(Icons.label_outline),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('marker-note-field'),
+              controller: _noteController,
+              maxLines: 3,
+              maxLength: 160,
+              decoration: const InputDecoration(
+                labelText: '메모',
+                prefixIcon: Icon(Icons.notes_outlined),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in _colorOptions)
+                  ChoiceChip(
+                    selected: _color == option.value,
+                    onSelected: (_) => setState(() => _color = option.value),
+                    avatar: Icon(
+                      option.icon,
+                      size: 16,
+                      color: _timelineMarkerColor(colorScheme, option.value),
+                    ),
+                    label: Text(option.label),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('취소'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final label = _labelController.text.trim();
+            Navigator.of(context).pop(
+              widget.marker.copyWith(
+                label: label.isEmpty ? widget.marker.label : label,
+                note: _noteController.text.trim(),
+                color: _color,
+              ),
+            );
+          },
+          child: const Text('저장'),
+        ),
+      ],
+    );
+  }
+}
+
+Color _timelineMarkerColor(ColorScheme colorScheme, String color) {
+  switch (color) {
+    case 'cyan':
+      return colorScheme.primary;
+    case 'green':
+      return colorScheme.secondary;
+    case 'rose':
+      return colorScheme.error;
+    case 'violet':
+      return const Color(0xFFC084FC);
+    case 'amber':
+    default:
+      return colorScheme.tertiary;
   }
 }

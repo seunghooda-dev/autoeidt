@@ -38,7 +38,29 @@ void main() {
     await tester.pump();
     expect(controller.currentPositionSeconds, 5);
 
-    await tester.tap(find.byTooltip('Hook 마커 삭제'));
+    await tester.tap(find.byTooltip('Hook 마커 편집'));
+    await tester.pumpAndSettle();
+    expect(find.text('마커 편집'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('marker-label-field')),
+      'Cold open',
+    );
+    await tester.enterText(
+      find.byKey(const Key('marker-note-field')),
+      'tighten this intro',
+    );
+    await tester.tap(find.text('Violet'));
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+
+    expect(controller.timelineMarkers.first.label, 'Cold open');
+    expect(controller.timelineMarkers.first.note, 'tighten this intro');
+    expect(controller.timelineMarkers.first.color, 'violet');
+    expect(find.text('Cold open'), findsOneWidget);
+    expect(find.text('tighten this intro'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Cold open 마커 삭제'));
     await tester.pump();
     expect(controller.timelineMarkers.map((marker) => marker.label), ['Fact']);
   });

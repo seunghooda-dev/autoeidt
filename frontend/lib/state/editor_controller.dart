@@ -1044,6 +1044,23 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateTimelineMarker(
+    TimelineMarker updated, {
+    bool preserveHistory = true,
+  }) {
+    if (!timelineMarkers.any((marker) => marker.id == updated.id)) {
+      return;
+    }
+    if (preserveHistory) {
+      _commitHistory();
+    }
+    timelineMarkers = _normalizeTimelineMarkers([
+      for (final marker in timelineMarkers)
+        if (marker.id == updated.id) updated else marker,
+    ]);
+    notifyListeners();
+  }
+
   void clearTimelineMarkers() {
     if (timelineMarkers.isEmpty) {
       return;
