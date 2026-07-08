@@ -1606,6 +1606,96 @@ void main() {
     );
   });
 
+  test('multi shorts candidates avoid near duplicate source coverage', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 720
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 60,
+          reason: '결과부터 보는 뉴스 핵심',
+          script: '공식 보고서로 확인된 첫 번째 핵심 장면입니다',
+          score: 9,
+          tags: ['뉴스핵심', '검증팩트', '근거', '유지율'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 8,
+          end: 68,
+          reason: '같은 뉴스 핵심 반복',
+          script: '공식 보고서로 확인된 첫 번째 핵심 장면을 다시 설명합니다',
+          score: 8.8,
+          tags: ['뉴스핵심', '근거', '유지율'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 16,
+          end: 76,
+          reason: '같은 구간의 정보 설명',
+          script: '첫 번째 핵심 장면의 수치와 원인을 덧붙입니다',
+          score: 8.6,
+          tags: ['문제해결', '구체성'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 4,
+          start: 180,
+          end: 240,
+          reason: '피해 영향',
+          script: '주민 피해와 현장 영향을 정리합니다',
+          score: 8,
+          tags: ['영향'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 5,
+          start: 280,
+          end: 340,
+          reason: '대응',
+          script: '정부와 회사의 후속 대응을 설명합니다',
+          score: 7.8,
+          tags: ['대응'],
+          audioNormalize: true,
+        ),
+        HighlightSegment(
+          order: 6,
+          start: 420,
+          end: 480,
+          reason: '추가 근거',
+          script: '추가 자료와 통계로 확인된 근거입니다',
+          score: 7.6,
+          tags: ['근거', '출처확인'],
+          audioNormalize: true,
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 6,
+      minSeconds: 45,
+      maxSeconds: 70,
+    );
+
+    expect(controller.shortsCandidates.length, greaterThanOrEqualTo(3));
+    for (var left = 0; left < controller.shortsCandidates.length; left++) {
+      for (
+        var right = left + 1;
+        right < controller.shortsCandidates.length;
+        right++
+      ) {
+        expect(
+          _candidateTemporalOverlapRatio(
+            controller.shortsCandidates[left],
+            controller.shortsCandidates[right],
+          ),
+          lessThan(0.72),
+        );
+      }
+    }
+  });
+
   test('backend story arc tags drive shorts flow scoring', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 900
@@ -1723,6 +1813,34 @@ void main() {
     expect(verifiedCandidate.strengths, contains('Signals'));
     expect(verifiedCandidate.qualityScore, greaterThanOrEqualTo(70));
   });
+}
+
+double _candidateTemporalOverlapRatio(
+  ShortsCandidate left,
+  ShortsCandidate right,
+) {
+  final denominator = left.durationSeconds < right.durationSeconds
+      ? left.durationSeconds
+      : right.durationSeconds;
+  if (denominator <= 0) {
+    return 0;
+  }
+
+  var overlap = 0.0;
+  for (final leftSegment in left.segments) {
+    for (final rightSegment in right.segments) {
+      final start = leftSegment.start > rightSegment.start
+          ? leftSegment.start
+          : rightSegment.start;
+      final end = leftSegment.end < rightSegment.end
+          ? leftSegment.end
+          : rightSegment.end;
+      if (end > start) {
+        overlap += end - start;
+      }
+    }
+  }
+  return overlap / denominator;
 }
 
 class _RecordingApiClient extends ApiClient {

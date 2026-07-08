@@ -2479,11 +2479,12 @@ class EditorController extends ChangeNotifier {
     for (final strategy in strategies) {
       final strategyUsed = <int>{};
       var strategyCount = 0;
+      final strategyPoolLimit = math.max(strategy.maxCandidates, maxCandidates);
       for (final seed in _rankSegmentsForShortsStrategy(
         strategy.kind,
         ranked,
       )) {
-        if (strategyCount >= strategy.maxCandidates) {
+        if (strategyCount >= strategyPoolLimit) {
           break;
         }
         if (_skipSeedForShortsStrategy(strategy.kind, seed)) {
@@ -2607,14 +2608,18 @@ class EditorController extends ChangeNotifier {
     final selected = <ShortsCandidate>[];
     final signatures = <String>{};
 
-    void addCandidate(ShortsCandidate candidate) {
+    bool addCandidate(ShortsCandidate candidate) {
       if (selected.length >= maxCandidates) {
-        return;
+        return false;
       }
       final signature = _shortsCandidateSignature(candidate);
-      if (signatures.add(signature)) {
-        selected.add(candidate);
+      if (signatures.contains(signature) ||
+          _shortsCandidateTooSimilar(candidate, selected)) {
+        return false;
       }
+      signatures.add(signature);
+      selected.add(candidate);
+      return true;
     }
 
     for (final strategy in strategies) {
@@ -2623,8 +2628,10 @@ class EditorController extends ChangeNotifier {
               .where((candidate) => candidate.strategyKind == strategy.kind)
               .toList()
             ..sort((a, b) => b.qualityScore.compareTo(a.qualityScore));
-      if (strategyCandidates.isNotEmpty) {
-        addCandidate(strategyCandidates.first);
+      for (final candidate in strategyCandidates) {
+        if (addCandidate(candidate)) {
+          break;
+        }
       }
     }
 
@@ -2639,6 +2646,130 @@ class EditorController extends ChangeNotifier {
     return selected.isEmpty
         ? rankedPool.take(maxCandidates).toList()
         : selected;
+  }
+
+  bool _shortsCandidateTooSimilar(
+    ShortsCandidate candidate,
+    List<ShortsCandidate> selected,
+  ) {
+    for (final existing in selected) {
+      final overlap = _shortsCandidateTemporalOverlapRatio(candidate, existing);
+      if (overlap >= 0.72) {
+        return true;
+      }
+      final textSimilarity = _shortsCandidateTextSimilarity(
+        candidate,
+        existing,
+      );
+      if (overlap >= 0.35 && textSimilarity >= 0.82) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  double _shortsCandidateTemporalOverlapRatio(
+    ShortsCandidate left,
+    ShortsCandidate right,
+  ) {
+    final leftIntervals = _mergedCandidateIntervals(left);
+    final rightIntervals = _mergedCandidateIntervals(right);
+    final leftDuration = _intervalsDuration(leftIntervals);
+    final rightDuration = _intervalsDuration(rightIntervals);
+    final denominator = math.min(leftDuration, rightDuration);
+    if (denominator <= 0) {
+      return 0;
+    }
+
+    var overlap = 0.0;
+    for (final leftInterval in leftIntervals) {
+      for (final rightInterval in rightIntervals) {
+        overlap += math.max(
+          0.0,
+          math.min(leftInterval.end, rightInterval.end) -
+              math.max(leftInterval.start, rightInterval.start),
+        );
+      }
+    }
+    return (overlap / denominator).clamp(0.0, 1.0).toDouble();
+  }
+
+  List<({double start, double end})> _mergedCandidateIntervals(
+    ShortsCandidate candidate,
+  ) {
+    final intervals =
+        candidate.segments
+            .where((segment) => segment.end > segment.start)
+            .map((segment) => (start: segment.start, end: segment.end))
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+    if (intervals.isEmpty) {
+      return const [];
+    }
+
+    final merged = <({double start, double end})>[];
+    var current = intervals.first;
+    for (final interval in intervals.skip(1)) {
+      if (interval.start <= current.end) {
+        current = (
+          start: current.start,
+          end: math.max(current.end, interval.end),
+        );
+      } else {
+        merged.add(current);
+        current = interval;
+      }
+    }
+    merged.add(current);
+    return merged;
+  }
+
+  double _intervalsDuration(List<({double start, double end})> intervals) {
+    return intervals.fold<double>(
+      0,
+      (total, interval) => total + math.max(0.0, interval.end - interval.start),
+    );
+  }
+
+  double _shortsCandidateTextSimilarity(
+    ShortsCandidate left,
+    ShortsCandidate right,
+  ) {
+    final leftTokens = _shortsCandidateTokens(left);
+    final rightTokens = _shortsCandidateTokens(right);
+    if (leftTokens.isEmpty || rightTokens.isEmpty) {
+      return 0;
+    }
+    final intersection = leftTokens.intersection(rightTokens).length;
+    final union = leftTokens.union(rightTokens).length;
+    return union == 0 ? 0 : intersection / union;
+  }
+
+  Set<String> _shortsCandidateTokens(ShortsCandidate candidate) {
+    final text = candidate.segments
+        .map(
+          (segment) =>
+              '${segment.reason} ${segment.script} ${segment.tags.join(' ')}',
+        )
+        .join(' ')
+        .toLowerCase();
+    return RegExp(r'[가-힣A-Za-z0-9]{2,}')
+        .allMatches(text)
+        .map((match) => match.group(0)!)
+        .where(
+          (token) => !const {
+            '그리고',
+            '하지만',
+            '이번',
+            '관련',
+            '합니다',
+            '했습니다',
+            'the',
+            'and',
+            'this',
+          }.contains(token),
+        )
+        .toSet();
   }
 
   String _shortsCandidateSignature(ShortsCandidate candidate) {
