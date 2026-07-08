@@ -481,6 +481,7 @@ def build_windows(
 def score_window(
     window: TranscriptWindow,
     skills: list[EditingSkill] | None = None,
+    style_profile: dict[str, Any] | None = None,
 ) -> TranscriptWindow:
     active_skills = skills or [*BUILT_IN_SKILLS, *load_external_skills()]
     base_score = min(window.duration / 12.0, 3.5)
@@ -506,11 +507,86 @@ def score_window(
         if signal.reason not in window.reasons:
             window.reasons.append(signal.reason)
 
+    _apply_style_profile_score(window, style_profile)
+
     if not window.tags:
         window.tags.append("문맥")
     if not window.reasons:
         window.reasons.append("문맥이 이어지는 후보 구간")
     return window
+
+
+def _style_float(
+    style_profile: dict[str, Any] | None,
+    key: str,
+    fallback: float,
+) -> float:
+    if not style_profile:
+        return fallback
+    try:
+        return float(style_profile.get(key, fallback))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _style_weight(
+    style_profile: dict[str, Any] | None,
+    key: str,
+    fallback: float,
+) -> float:
+    weights = style_profile.get("scoring_weights", {}) if style_profile else {}
+    try:
+        return float(weights.get(key, fallback))
+    except (TypeError, ValueError, AttributeError):
+        return fallback
+
+
+def _apply_style_profile_score(
+    window: TranscriptWindow,
+    style_profile: dict[str, Any] | None,
+) -> None:
+    if not style_profile:
+        return
+
+    target_min = _style_float(style_profile, "target_segment_seconds_min", 18.0)
+    target_ideal = _style_float(style_profile, "target_segment_seconds_ideal", 36.0)
+    target_max = _style_float(style_profile, "target_segment_seconds_max", 52.0)
+    hook_window = _style_float(style_profile, "hook_window_seconds", 15.0)
+    style_weight = _style_weight(style_profile, "style_duration", 1.0)
+    hook_weight = _style_weight(style_profile, "hook", 1.0)
+    info_weight = _style_weight(style_profile, "information_density", 1.0)
+    news_weight = _style_weight(style_profile, "news_structure", 1.0)
+
+    if target_min <= window.duration <= target_max:
+        distance = abs(window.duration - target_ideal) / max(target_ideal, 1.0)
+        window.score += max(0.0, 1.4 - distance) * style_weight
+        if "레퍼런스길이" not in window.tags:
+            window.tags.append("레퍼런스길이")
+        window.reasons.append("레퍼런스 영상의 컷 길이와 유사함")
+    else:
+        window.score -= 0.8 * style_weight
+        if "길이불일치" not in window.risks:
+            window.risks.append("길이불일치")
+
+    if window.start <= hook_window:
+        window.score += 0.9 * hook_weight
+        if "레퍼런스훅" not in window.tags:
+            window.tags.append("레퍼런스훅")
+        window.reasons.append("레퍼런스 스타일의 초반 후킹 구간에 해당")
+
+    if any(tag in window.tags for tag in ["고밀도", "정보밀도", "구체성", "근거"]):
+        window.score += 0.45 * info_weight
+
+    if bool(style_profile.get("prefer_news_structure", False)) and any(
+        tag in window.tags for tag in NEWS_STRUCTURE_TAGS
+    ):
+        window.score += 0.55 * news_weight
+
+    pace = str(style_profile.get("pace", "balanced"))
+    if pace in {"very_fast", "fast"} and window.duration > target_max:
+        window.score -= 1.2
+    if pace == "slow" and window.duration < target_min:
+        window.score -= 0.8
 
 
 def text_tokens(text: str) -> set[str]:
@@ -597,6 +673,7 @@ def select_highlights_with_skills(
     duration: float,
     target_min_seconds: float,
     target_max_seconds: float,
+    style_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     effective_min_seconds = min(target_min_seconds, max(20.0, duration * 0.35))
     effective_max_seconds = min(
@@ -618,9 +695,18 @@ def select_highlights_with_skills(
         ]
 
     skills = [*BUILT_IN_SKILLS, *load_external_skills()]
+    window_min = _style_float(style_profile, "target_segment_seconds_min", 18.0)
+    window_ideal = _style_float(style_profile, "target_segment_seconds_ideal", 42.0)
+    window_max = _style_float(style_profile, "target_segment_seconds_max", 58.0)
     candidates = [
-        score_window(window, skills)
-        for window in build_windows(transcript, source_duration=duration)
+        score_window(window, skills, style_profile)
+        for window in build_windows(
+            transcript,
+            min_seconds=window_min,
+            ideal_seconds=window_ideal,
+            max_seconds=window_max,
+            source_duration=duration,
+        )
     ]
     if not candidates:
         candidates = [
@@ -633,6 +719,7 @@ def select_highlights_with_skills(
                     source_duration=duration,
                 ),
                 skills,
+                style_profile,
             )
         ]
 
@@ -680,6 +767,7 @@ def select_highlights_with_skills(
 def enrich_highlights_with_skill_scores(
     highlights: list[dict[str, Any]],
     transcript: list[dict[str, Any]],
+    style_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     skills = [*BUILT_IN_SKILLS, *load_external_skills()]
@@ -695,6 +783,7 @@ def enrich_highlights_with_skill_scores(
         window = score_window(
             TranscriptWindow(start=start, end=end, items=items, text=text),
             skills,
+            style_profile,
         )
         item = {**highlight}
         item.setdefault("script", script_preview(window))

@@ -28,15 +28,21 @@ class EditorController extends ChangeNotifier {
   final ApiClient _apiClient;
   final LocalEngineService _engineService;
   Timer? _pollTimer;
+  Timer? _stylePollTimer;
   final List<_EditorSnapshot> _undoStack = [];
   final List<_EditorSnapshot> _redoStack = [];
 
   LocalEngineState engineState = LocalEngineState.idle();
   PlatformFile? selectedFile;
+  List<PlatformFile> referenceFiles = [];
   String? jobId;
   JobStatusResponse? job;
+  StyleProfile? activeStyleProfile;
+  StyleProfile? trainingStyleProfile;
   double uploadProgress = 0;
+  double styleUploadProgress = 0;
   bool isUploading = false;
+  bool isTrainingStyle = false;
   bool isRendering = false;
   String? errorMessage;
   double duration = 0;
@@ -68,6 +74,21 @@ class EditorController extends ChangeNotifier {
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get canStartUpload =>
       hasFile && !isUploading && job?.status != 'processing';
+  bool get hasReadyStyle => activeStyleProfile?.isReady ?? false;
+  String get styleStatusText {
+    final profile = trainingStyleProfile ?? activeStyleProfile;
+    if (profile == null) {
+      return 'No reference';
+    }
+    if (profile.status == 'failed') {
+      return profile.error ?? 'Reference failed';
+    }
+    if (profile.isReady) {
+      return '${profile.pace} · ${profile.averageCutSeconds.toStringAsFixed(1)}s cut';
+    }
+    return profile.message.isEmpty ? 'Reference training' : profile.message;
+  }
+
   bool get canRender =>
       jobId != null &&
       hasTimeline &&
@@ -236,6 +257,7 @@ class EditorController extends ChangeNotifier {
     try {
       final response = await _apiClient.uploadVideo(
         file,
+        styleId: hasReadyStyle ? activeStyleProfile!.styleId : null,
         onSendProgress: (sent, total) {
           if (total <= 0) {
             return;
@@ -256,6 +278,77 @@ class EditorController extends ChangeNotifier {
       isUploading = false;
       errorMessage = '업로드 실패: $error';
     }
+    notifyListeners();
+  }
+
+  Future<void> pickReferenceVideos() async {
+    errorMessage = null;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: true,
+      withData: kIsWeb,
+      withReadStream: !kIsWeb,
+    );
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+    referenceFiles = result.files.take(8).toList();
+    notifyListeners();
+  }
+
+  Future<void> trainReferenceStyle(String urlsText) async {
+    final urls = urlsText
+        .split(RegExp(r'[\n,]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .take(8)
+        .toList();
+    if (referenceFiles.isEmpty && urls.isEmpty) {
+      errorMessage = '레퍼런스 파일 또는 URL을 먼저 추가해 주세요';
+      notifyListeners();
+      return;
+    }
+
+    isTrainingStyle = true;
+    styleUploadProgress = 0;
+    trainingStyleProfile = null;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiClient.trainStyleProfile(
+        name: 'Company Reference Style',
+        urls: urls,
+        files: referenceFiles,
+        onSendProgress: (sent, total) {
+          if (total <= 0) {
+            return;
+          }
+          styleUploadProgress = sent / total;
+          notifyListeners();
+        },
+      );
+      trainingStyleProfile = response.profile;
+      if (response.profile?.isReady ?? false) {
+        activeStyleProfile = response.profile;
+        isTrainingStyle = false;
+      } else {
+        _startStylePolling(response.styleId);
+      }
+    } catch (error) {
+      isTrainingStyle = false;
+      errorMessage = '레퍼런스 학습 요청 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  void clearReferenceStyle() {
+    _stylePollTimer?.cancel();
+    referenceFiles = [];
+    activeStyleProfile = null;
+    trainingStyleProfile = null;
+    isTrainingStyle = false;
+    styleUploadProgress = 0;
     notifyListeners();
   }
 
@@ -1247,6 +1340,37 @@ class EditorController extends ChangeNotifier {
     _pollOnce();
   }
 
+  void _startStylePolling(String styleId) {
+    _stylePollTimer?.cancel();
+    _stylePollTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _pollStyleProfile(styleId),
+    );
+    unawaited(_pollStyleProfile(styleId));
+  }
+
+  Future<void> _pollStyleProfile(String styleId) async {
+    try {
+      final profile = await _apiClient.getStyleProfile(styleId);
+      trainingStyleProfile = profile;
+      if (profile.isReady) {
+        activeStyleProfile = profile;
+        isTrainingStyle = false;
+        _stylePollTimer?.cancel();
+      } else if (profile.status == 'failed') {
+        isTrainingStyle = false;
+        errorMessage = profile.error ?? '레퍼런스 스타일 학습 실패';
+        _stylePollTimer?.cancel();
+      }
+      notifyListeners();
+    } catch (error) {
+      isTrainingStyle = false;
+      errorMessage = '레퍼런스 상태 조회 실패: $error';
+      _stylePollTimer?.cancel();
+      notifyListeners();
+    }
+  }
+
   Future<void> _pollOnce() async {
     final id = jobId;
     if (id == null) {
@@ -1676,6 +1800,7 @@ class EditorController extends ChangeNotifier {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _stylePollTimer?.cancel();
     videoController?.dispose();
     unawaited(_engineService.dispose());
     super.dispose();

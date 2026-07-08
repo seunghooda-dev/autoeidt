@@ -13,6 +13,13 @@ class JobStatus(StrEnum):
     failed = "failed"
 
 
+class StyleStatus(StrEnum):
+    queued = "queued"
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"
+
+
 class TranscriptWord(BaseModel):
     start: float
     end: float
@@ -122,6 +129,56 @@ class UploadJobResponse(BaseModel):
     duration: float | None = None
 
 
+class StyleReferenceSource(BaseModel):
+    label: str
+    kind: str = "file"
+    path: str | None = None
+    url: str | None = None
+    duration: float = 0.0
+    scene_count: int = 0
+    scene_rate_per_minute: float = 0.0
+    average_cut_seconds: float = 0.0
+    silence_ratio: float = 0.0
+    speech_ratio: float = 0.0
+    error: str | None = None
+
+
+class StyleProfile(BaseModel):
+    style_id: str
+    name: str = "Reference Style"
+    status: StyleStatus = StyleStatus.queued
+    message: str = ""
+    progress: int = 0
+    source_count: int = 0
+    ready_source_count: int = 0
+    pace: str = "balanced"
+    average_cut_seconds: float = 6.0
+    median_cut_seconds: float = 6.0
+    hook_window_seconds: float = 15.0
+    silence_aggressiveness: float = 0.6
+    visual_change_sensitivity: float = 0.5
+    target_segment_seconds_min: float = 18.0
+    target_segment_seconds_ideal: float = 36.0
+    target_segment_seconds_max: float = 52.0
+    prefer_news_structure: bool = True
+    prefer_shorts_structure: bool = False
+    caption_density: str = "medium"
+    transition_style: str = "hard_cut"
+    scoring_weights: dict[str, float] = Field(default_factory=dict)
+    sources: list[StyleReferenceSource] = Field(default_factory=list)
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class StyleTrainingResponse(BaseModel):
+    style_id: str
+    status: StyleStatus
+    progress: int
+    message: str = ""
+    profile: StyleProfile | None = None
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: JobStatus
@@ -133,6 +190,7 @@ class JobStatusResponse(BaseModel):
     segments: list[HighlightSegment] = Field(default_factory=list)
     render_url: str | None = None
     error: str | None = None
+    style_profile: StyleProfile | None = None
 
 
 class TimelineResponse(BaseModel):

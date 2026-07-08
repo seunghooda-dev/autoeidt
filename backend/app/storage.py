@@ -24,7 +24,9 @@ class JobStore:
         settings = get_settings()
         self.root = root or settings.data_dir
         self.jobs_dir = self.root / "jobs"
+        self.styles_dir = self.root / "styles"
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        self.styles_dir.mkdir(parents=True, exist_ok=True)
 
     def create_job(self, original_filename: str, video_path: Path) -> dict[str, Any]:
         job_id = uuid.uuid4().hex
@@ -69,6 +71,22 @@ class JobStore:
     def job_file(self, job_id: str) -> Path:
         return self.job_dir(job_id) / "job.json"
 
+    def style_dir(self, style_id: str) -> Path:
+        return self.styles_dir / style_id
+
+    def style_upload_dir(self, style_id: str) -> Path:
+        path = self.style_dir(style_id) / "references"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def style_work_dir(self, style_id: str) -> Path:
+        path = self.style_dir(style_id) / "work"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def style_file(self, style_id: str) -> Path:
+        return self.style_dir(style_id) / "style.json"
+
     def load(self, job_id: str) -> dict[str, Any]:
         path = self.job_file(job_id)
         if not path.exists():
@@ -91,6 +109,39 @@ class JobStore:
         data = self.load(job_id)
         data.update(fields)
         return self.save(job_id, data)
+
+    def load_style(self, style_id: str) -> dict[str, Any]:
+        path = self.style_file(style_id)
+        if not path.exists():
+            raise FileNotFoundError(f"style profile not found: {style_id}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def save_style(self, style_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        data["updated_at"] = now_iso()
+        path = self.style_file(style_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        temp_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        os.replace(temp_path, path)
+        return data
+
+    def update_style(self, style_id: str, **fields: Any) -> dict[str, Any]:
+        data = self.load_style(style_id)
+        data.update(fields)
+        return self.save_style(style_id, data)
+
+    def list_styles(self) -> list[dict[str, Any]]:
+        styles: list[dict[str, Any]] = []
+        for path in sorted(self.styles_dir.glob("*/style.json")):
+            try:
+                styles.append(json.loads(path.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+        styles.sort(key=lambda item: str(item.get("updated_at", "")), reverse=True)
+        return styles
 
 
 store = JobStore()

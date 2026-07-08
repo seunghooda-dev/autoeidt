@@ -27,9 +27,13 @@ class ApiClient {
   Future<UploadJobResponse> uploadVideo(
     PlatformFile file, {
     required ProgressCallback onSendProgress,
+    String? styleId,
   }) async {
     final multipartFile = await _multipartFromPlatformFile(file);
-    final formData = FormData.fromMap({'file': multipartFile});
+    final formData = FormData.fromMap({
+      'file': multipartFile,
+      if (styleId != null && styleId.isNotEmpty) 'style_id': styleId,
+    });
     final response = await _dio.post<Map<String, dynamic>>(
       '$baseUrl/api/jobs/upload',
       data: formData,
@@ -37,6 +41,48 @@ class ApiClient {
       options: Options(contentType: 'multipart/form-data'),
     );
     return UploadJobResponse.fromJson(response.data!);
+  }
+
+  Future<StyleTrainingResponse> trainStyleProfile({
+    required String name,
+    List<String> urls = const [],
+    List<PlatformFile> files = const [],
+    required ProgressCallback onSendProgress,
+  }) async {
+    final formData = FormData();
+    formData.fields.add(MapEntry('name', name));
+    for (final url in urls) {
+      final trimmed = url.trim();
+      if (trimmed.isNotEmpty) {
+        formData.fields.add(MapEntry('urls', trimmed));
+      }
+    }
+    for (final file in files) {
+      formData.files.add(
+        MapEntry('files', await _multipartFromPlatformFile(file)),
+      );
+    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/styles/train',
+      data: formData,
+      onSendProgress: onSendProgress,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    return StyleTrainingResponse.fromJson(response.data!);
+  }
+
+  Future<StyleProfile> getStyleProfile(String styleId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$baseUrl/api/styles/$styleId',
+    );
+    return StyleProfile.fromJson(response.data!);
+  }
+
+  Future<List<StyleProfile>> listStyleProfiles() async {
+    final response = await _dio.get<List<dynamic>>('$baseUrl/api/styles');
+    return (response.data ?? const [])
+        .map((item) => StyleProfile.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   Future<JobStatusResponse> getJob(String jobId) async {

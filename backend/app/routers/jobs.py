@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -38,8 +38,18 @@ def _load_job_or_404(job_id: str) -> dict:
 async def upload_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    style_id: str | None = Form(None),
 ) -> UploadJobResponse:
     settings = get_settings()
+    style_profile = None
+    if style_id:
+        try:
+            style_profile = store.load_style(style_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="style profile not found") from exc
+        if style_profile.get("status") != "ready":
+            raise HTTPException(status_code=409, detail="style profile is not ready")
+
     job_id = uuid.uuid4().hex
     upload_dir = store.upload_dir(job_id)
     filename = safe_filename(file.filename or "video.mp4")
@@ -72,6 +82,7 @@ async def upload_video(
         "render_path": None,
         "render_url": None,
         "error": None,
+        "style_profile": style_profile,
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }

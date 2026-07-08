@@ -18,8 +18,13 @@ from app.services.hybrid_cut import (
     silence_ranges_to_dicts,
 )
 from app.services.llm_service import analyze_highlights
+from app.services.reference_style import (
+    analyze_reference_video,
+    build_style_profile,
+    download_reference_url,
+)
 from app.services.stt_service import transcribe_audio
-from app.storage import store
+from app.storage import now_iso, store
 
 TIMECODE_FRAME_RATE = 30000 / 1001
 TIMECODE_FRAME_DURATION = 1001 / 30000
@@ -55,6 +60,28 @@ def _set_task_state(
     if task is not None:
         try:
             task.update_state(state=status.value.upper(), meta=payload)
+        except Exception:
+            pass
+
+
+def _set_style_state(
+    task: Any | None,
+    style_id: str,
+    status: str,
+    progress: int,
+    message: str,
+    **fields: Any,
+) -> None:
+    payload = {
+        "status": status,
+        "progress": progress,
+        "message": message,
+        **fields,
+    }
+    store.update_style(style_id, **payload)
+    if task is not None:
+        try:
+            task.update_state(state=status.upper(), meta=payload)
         except Exception:
             pass
 
@@ -185,6 +212,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         video_path = Path(job["video_path"])
         work_dir = store.work_dir(job_id)
         audio_path = work_dir / "audio.wav"
+        style_profile = job.get("style_profile")
 
         _set_task_state(
             task,
@@ -232,7 +260,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             waveform=waveform,
         )
         raw_highlights = _normalize_highlights(
-            analyze_highlights(transcript, duration),
+            analyze_highlights(transcript, duration, style_profile),
             duration,
         )
 
@@ -244,10 +272,22 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             78,
             "침묵 구간 탐지 중",
         )
+        silence_aggressiveness = 0.6
+        if isinstance(style_profile, dict):
+            try:
+                silence_aggressiveness = float(
+                    style_profile.get("silence_aggressiveness", silence_aggressiveness)
+                )
+            except (TypeError, ValueError):
+                silence_aggressiveness = 0.6
+        min_silence = max(
+            0.25,
+            settings.silence_min_duration * (1.25 - min(silence_aggressiveness, 0.95)),
+        )
         silence_ranges = detect_silence(
             audio_path,
             noise_db=settings.silence_noise_db,
-            min_duration=settings.silence_min_duration,
+            min_duration=min_silence,
         )
         candidate_silences = _silences_overlapping_highlights(
             silence_ranges,
@@ -288,6 +328,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             waveform=waveform,
             segments=refined,
             protected_silences=silence_ranges_to_dicts(protected_silences),
+            style_profile=style_profile,
         )
         return store.load(job_id)
     except Exception as exc:
@@ -305,6 +346,87 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
 @celery_app.task(bind=True, name="app.tasks.analyze_video")
 def analyze_video_task(self: Any, job_id: str) -> dict[str, Any]:
     return analyze_video_job(job_id, self)
+
+
+def train_style_profile_job(style_id: str, task: Any | None = None) -> dict[str, Any]:
+    try:
+        style = store.load_style(style_id)
+        inputs = style.get("reference_inputs") or []
+        if not inputs:
+            raise ValueError("레퍼런스 파일 또는 URL이 필요합니다.")
+
+        _set_style_state(
+            task,
+            style_id,
+            "processing",
+            5,
+            "레퍼런스 입력 확인 중",
+        )
+        reference_dir = store.style_upload_dir(style_id)
+        work_dir = store.style_work_dir(style_id)
+        sources: list[dict[str, Any]] = []
+        total = max(len(inputs), 1)
+        for index, item in enumerate(inputs, start=1):
+            label = str(item.get("label") or f"Reference {index}")
+            kind = str(item.get("kind") or "file")
+            progress_base = 10 + int((index - 1) / total * 80)
+            try:
+                _set_style_state(
+                    task,
+                    style_id,
+                    "processing",
+                    progress_base,
+                    f"레퍼런스 분석 중: {label}",
+                    sources=sources,
+                )
+                if kind == "url":
+                    url = str(item.get("url") or "")
+                    video_path = download_reference_url(url, reference_dir, index)
+                else:
+                    video_path = Path(str(item.get("path") or ""))
+                    url = item.get("url")
+                metrics = analyze_reference_video(
+                    video_path,
+                    work_dir,
+                    label=label,
+                    kind=kind,
+                    url=str(url) if url else None,
+                )
+                sources.append(metrics)
+            except Exception as exc:
+                sources.append(
+                    {
+                        "label": label,
+                        "kind": kind,
+                        "path": str(item.get("path") or ""),
+                        "url": item.get("url"),
+                        "error": str(exc),
+                    }
+                )
+
+        profile = build_style_profile(
+            style_id=style_id,
+            name=str(style.get("name") or "Reference Style"),
+            sources=sources,
+            created_at=style.get("created_at") or now_iso(),
+        )
+        profile["reference_inputs"] = inputs
+        store.save_style(style_id, profile)
+        return store.load_style(style_id)
+    except Exception as exc:
+        store.update_style(
+            style_id,
+            status="failed",
+            progress=100,
+            message="레퍼런스 스타일 학습 실패",
+            error=str(exc),
+        )
+        raise
+
+
+@celery_app.task(bind=True, name="app.tasks.train_style_profile")
+def train_style_profile_task(self: Any, style_id: str) -> dict[str, Any]:
+    return train_style_profile_job(style_id, self)
 
 
 def render_video_job(

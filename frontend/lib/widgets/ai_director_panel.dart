@@ -98,6 +98,8 @@ class AiDirectorPanel extends StatelessWidget {
           onPressed: context.read<EditorController>().applyFinishingPreset,
         ),
         const SizedBox(height: 14),
+        const _ReferenceStylePanel(),
+        const SizedBox(height: 14),
         Text(
           'Signal Mix',
           style: Theme.of(
@@ -115,6 +117,144 @@ class AiDirectorPanel extends StatelessWidget {
               maxCount: signals.values.first,
             ),
       ],
+    );
+  }
+}
+
+class _ReferenceStylePanel extends StatefulWidget {
+  const _ReferenceStylePanel();
+
+  @override
+  State<_ReferenceStylePanel> createState() => _ReferenceStylePanelState();
+}
+
+class _ReferenceStylePanelState extends State<_ReferenceStylePanel> {
+  final TextEditingController _urlController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final colorScheme = Theme.of(context).colorScheme;
+    final profile =
+        controller.trainingStyleProfile ?? controller.activeStyleProfile;
+    final progress = profile == null
+        ? controller.styleUploadProgress
+        : (profile.progress / 100).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.58),
+        border: Border.all(color: colorScheme.outline),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.model_training, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Reference Style',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                controller.hasReadyStyle ? 'ON' : 'OFF',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: controller.hasReadyStyle
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _urlController,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Reference URLs',
+              border: OutlineInputBorder(),
+            ),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.isTrainingStyle
+                      ? null
+                      : context.read<EditorController>().pickReferenceVideos,
+                  icon: const Icon(Icons.video_library_outlined, size: 17),
+                  label: Text('Files ${controller.referenceFiles.length}'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: controller.isTrainingStyle
+                      ? null
+                      : () => context
+                            .read<EditorController>()
+                            .trainReferenceStyle(_urlController.text),
+                  icon: const Icon(Icons.auto_awesome, size: 17),
+                  label: const Text('Train'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              minHeight: 5,
+              value: controller.isTrainingStyle && progress == 0
+                  ? null
+                  : progress,
+              backgroundColor: colorScheme.surface,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  controller.styleStatusText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Clear reference style',
+                visualDensity: VisualDensity.compact,
+                onPressed:
+                    controller.activeStyleProfile == null &&
+                        controller.trainingStyleProfile == null &&
+                        controller.referenceFiles.isEmpty
+                    ? null
+                    : context.read<EditorController>().clearReferenceStyle,
+                icon: const Icon(Icons.close, size: 17),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

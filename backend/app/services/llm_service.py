@@ -13,6 +13,7 @@ def build_highlight_prompt(
     transcript: list[dict[str, Any]],
     target_min_seconds: int,
     target_max_seconds: int,
+    style_profile: dict[str, Any] | None = None,
 ) -> str:
     compact_transcript = [
         {
@@ -22,6 +23,29 @@ def build_highlight_prompt(
         }
         for item in transcript
     ]
+    style_block = ""
+    if style_profile:
+        style_block = f"""
+
+Reference editing style profile:
+{json.dumps({
+    "pace": style_profile.get("pace"),
+    "average_cut_seconds": style_profile.get("average_cut_seconds"),
+    "hook_window_seconds": style_profile.get("hook_window_seconds"),
+    "silence_aggressiveness": style_profile.get("silence_aggressiveness"),
+    "target_segment_seconds_min": style_profile.get("target_segment_seconds_min"),
+    "target_segment_seconds_ideal": style_profile.get("target_segment_seconds_ideal"),
+    "target_segment_seconds_max": style_profile.get("target_segment_seconds_max"),
+    "prefer_news_structure": style_profile.get("prefer_news_structure"),
+    "prefer_shorts_structure": style_profile.get("prefer_shorts_structure"),
+    "transition_style": style_profile.get("transition_style"),
+}, ensure_ascii=False)}
+
+Apply this profile as editing taste, not as content to copy. Match rhythm,
+segment length, opening hook density, and newsroom balance while preserving
+the source video's actual facts and context.
+""".rstrip()
+
     return f"""
 You are a senior video editor for YouTube long-form and newsroom-style reports.
 
@@ -64,6 +88,7 @@ News/editorial rules:
 - Avoid unverified rumors, speculation, sensational wording, or claims without
   context. Do not make a clip imply certainty when the transcript does not.
 - Use Korean tags such as "뉴스핵심", "근거", "영향", "대응", "출처확인", "시간축".
+{style_block}
 
 Transcript JSON:
 {json.dumps(compact_transcript, ensure_ascii=False)}
@@ -89,7 +114,10 @@ def _parse_json_array(text: str) -> list[dict[str, Any]]:
     return parsed
 
 
-def analyze_with_openai(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def analyze_with_openai(
+    transcript: list[dict[str, Any]],
+    style_profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     settings = get_settings()
     if not settings.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
@@ -111,17 +139,23 @@ def analyze_with_openai(transcript: list[dict[str, Any]]) -> list[dict[str, Any]
                     transcript,
                     settings.target_highlight_seconds_min,
                     settings.target_highlight_seconds_max,
+                    style_profile,
                 ),
             },
         ],
     )
     content = response.choices[0].message.content or "[]"
-    return enrich_highlights_with_skill_scores(_parse_json_array(content), transcript)
+    return enrich_highlights_with_skill_scores(
+        _parse_json_array(content),
+        transcript,
+        style_profile,
+    )
 
 
 def fallback_highlights(
     transcript: list[dict[str, Any]],
     duration: float,
+    style_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
     return select_highlights_with_skills(
@@ -129,17 +163,19 @@ def fallback_highlights(
         duration,
         settings.target_highlight_seconds_min,
         settings.target_highlight_seconds_max,
+        style_profile,
     )
 
 
 def analyze_highlights(
     transcript: list[dict[str, Any]],
     duration: float,
+    style_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
     if settings.use_openai_llm and settings.openai_api_key:
         try:
-            return analyze_with_openai(transcript)
+            return analyze_with_openai(transcript, style_profile)
         except Exception:
-            return fallback_highlights(transcript, duration)
-    return fallback_highlights(transcript, duration)
+            return fallback_highlights(transcript, duration, style_profile)
+    return fallback_highlights(transcript, duration, style_profile)
