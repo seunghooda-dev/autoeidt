@@ -7,11 +7,17 @@ class HighlightSegment {
     this.script = '',
     this.source = 'ai',
     this.videoEnabled = true,
+    this.videoFadeIn = 0.0,
+    this.videoFadeOut = 0.0,
+    this.colorBrightness = 0.0,
+    this.colorContrast = 1.0,
+    this.colorSaturation = 1.0,
     this.audioStart,
     this.audioEnd,
     this.audioMuted = false,
     this.audioVolume = 1.0,
     this.audioPan = 0.0,
+    this.audioNormalize = false,
     this.audioLinked = true,
     this.playbackSpeed = 1.0,
     this.audioFadeIn = 0.0,
@@ -27,11 +33,17 @@ class HighlightSegment {
   final String script;
   final String source;
   final bool videoEnabled;
+  final double videoFadeIn;
+  final double videoFadeOut;
+  final double colorBrightness;
+  final double colorContrast;
+  final double colorSaturation;
   final double? audioStart;
   final double? audioEnd;
   final bool audioMuted;
   final double audioVolume;
   final double audioPan;
+  final bool audioNormalize;
   final bool audioLinked;
   final double playbackSpeed;
   final double audioFadeIn;
@@ -53,11 +65,17 @@ class HighlightSegment {
     String? script,
     String? source,
     bool? videoEnabled,
+    double? videoFadeIn,
+    double? videoFadeOut,
+    double? colorBrightness,
+    double? colorContrast,
+    double? colorSaturation,
     double? audioStart,
     double? audioEnd,
     bool? audioMuted,
     double? audioVolume,
     double? audioPan,
+    bool? audioNormalize,
     bool? audioLinked,
     double? playbackSpeed,
     double? audioFadeIn,
@@ -73,11 +91,17 @@ class HighlightSegment {
       script: script ?? this.script,
       source: source ?? this.source,
       videoEnabled: videoEnabled ?? this.videoEnabled,
+      videoFadeIn: videoFadeIn ?? this.videoFadeIn,
+      videoFadeOut: videoFadeOut ?? this.videoFadeOut,
+      colorBrightness: colorBrightness ?? this.colorBrightness,
+      colorContrast: colorContrast ?? this.colorContrast,
+      colorSaturation: colorSaturation ?? this.colorSaturation,
       audioStart: audioStart ?? this.audioStart,
       audioEnd: audioEnd ?? this.audioEnd,
       audioMuted: audioMuted ?? this.audioMuted,
       audioVolume: audioVolume ?? this.audioVolume,
       audioPan: audioPan ?? this.audioPan,
+      audioNormalize: audioNormalize ?? this.audioNormalize,
       audioLinked: audioLinked ?? this.audioLinked,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
@@ -99,6 +123,26 @@ class HighlightSegment {
           (json['video_enabled'] as bool?) ??
           (json['videoEnabled'] as bool?) ??
           true,
+      videoFadeIn:
+          (json['video_fade_in'] as num?)?.toDouble() ??
+          (json['videoFadeIn'] as num?)?.toDouble() ??
+          0.0,
+      videoFadeOut:
+          (json['video_fade_out'] as num?)?.toDouble() ??
+          (json['videoFadeOut'] as num?)?.toDouble() ??
+          0.0,
+      colorBrightness:
+          (json['color_brightness'] as num?)?.toDouble() ??
+          (json['colorBrightness'] as num?)?.toDouble() ??
+          0.0,
+      colorContrast:
+          (json['color_contrast'] as num?)?.toDouble() ??
+          (json['colorContrast'] as num?)?.toDouble() ??
+          1.0,
+      colorSaturation:
+          (json['color_saturation'] as num?)?.toDouble() ??
+          (json['colorSaturation'] as num?)?.toDouble() ??
+          1.0,
       audioStart:
           (json['audio_start'] as num?)?.toDouble() ??
           (json['audioStart'] as num?)?.toDouble(),
@@ -117,6 +161,10 @@ class HighlightSegment {
           (json['audio_pan'] as num?)?.toDouble() ??
           (json['audioPan'] as num?)?.toDouble() ??
           0.0,
+      audioNormalize:
+          (json['audio_normalize'] as bool?) ??
+          (json['audioNormalize'] as bool?) ??
+          false,
       audioLinked:
           (json['audio_linked'] as bool?) ??
           (json['audioLinked'] as bool?) ??
@@ -153,11 +201,17 @@ class HighlightSegment {
       'script': script,
       'source': source,
       'video_enabled': videoEnabled,
+      'video_fade_in': videoFadeIn,
+      'video_fade_out': videoFadeOut,
+      'color_brightness': colorBrightness,
+      'color_contrast': colorContrast,
+      'color_saturation': colorSaturation,
       'audio_start': effectiveAudioStart,
       'audio_end': effectiveAudioEnd,
       'audio_muted': audioMuted,
       'audio_volume': audioVolume,
       'audio_pan': audioPan,
+      'audio_normalize': audioNormalize,
       'audio_linked': audioLinked,
       'playback_speed': playbackSpeed,
       'audio_fade_in': audioFadeIn,

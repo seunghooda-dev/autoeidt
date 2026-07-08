@@ -704,6 +704,7 @@ class _TimelinePainter extends CustomPainter {
         handlesActive: isActive && activeTrack != _DragTrack.audio,
         disabledPattern: !segment.videoEnabled,
       );
+      _drawFadeOverlay(canvas, size, segment);
 
       final audioFill = segment.audioLinked
           ? colorScheme.secondary
@@ -804,6 +805,46 @@ class _TimelinePainter extends CustomPainter {
             ? colorScheme.primary
             : colorScheme.tertiary,
     );
+  }
+
+  void _drawFadeOverlay(Canvas canvas, Size size, HighlightSegment segment) {
+    final left = _secondsToX(segment.start, size.width);
+    final right = _secondsToX(segment.end, size.width);
+    final clipWidth = math.max(2.0, right - left);
+    final fadePaint = Paint()
+      ..color = colorScheme.surface.withValues(alpha: 0.38);
+
+    if (segment.videoFadeIn > 0) {
+      final fadeEnd = _secondsToX(
+        segment.start + segment.videoFadeIn,
+        size.width,
+      ).clamp(left, right).toDouble();
+      final fadeWidth = math.min(clipWidth, fadeEnd - left);
+      if (fadeWidth > 1) {
+        final path = Path()
+          ..moveTo(left, _videoTop)
+          ..lineTo(left + fadeWidth, _videoTop)
+          ..lineTo(left, _videoTop + _laneHeight)
+          ..close();
+        canvas.drawPath(path, fadePaint);
+      }
+    }
+
+    if (segment.videoFadeOut > 0) {
+      final fadeStart = _secondsToX(
+        segment.end - segment.videoFadeOut,
+        size.width,
+      ).clamp(left, right).toDouble();
+      final fadeWidth = math.min(clipWidth, right - fadeStart);
+      if (fadeWidth > 1) {
+        final path = Path()
+          ..moveTo(right, _videoTop)
+          ..lineTo(right, _videoTop + _laneHeight)
+          ..lineTo(right - fadeWidth, _videoTop + _laneHeight)
+          ..close();
+        canvas.drawPath(path, fadePaint);
+      }
+    }
   }
 
   void _drawMarkers(Canvas canvas, Size size) {

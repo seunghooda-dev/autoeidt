@@ -535,6 +535,86 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void setSelectedVideoFadeIn(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoFadeIn: value.clamp(0.0, 10.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedVideoFadeOut(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoFadeOut: value.clamp(0.0, 10.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedColorBrightness(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        colorBrightness: value.clamp(-0.3, 0.3).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedColorContrast(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        colorContrast: value.clamp(0.5, 1.8).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedColorSaturation(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        colorSaturation: value.clamp(0.0, 2.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void resetSelectedColor() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        colorBrightness: 0,
+        colorContrast: 1,
+        colorSaturation: 1,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void setSelectedAudioPan(double value) {
     final selected = selectedSegment;
     if (selected == null || audioTrackLocked) {
@@ -550,6 +630,19 @@ class EditorController extends ChangeNotifier {
 
   void resetSelectedAudioPan() {
     setSelectedAudioPan(0);
+  }
+
+  void toggleSelectedAudioNormalize() {
+    final selected = selectedSegment;
+    if (selected == null || audioTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioNormalize: !selected.audioNormalize,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
   }
 
   void toggleAllAudioMute() {
@@ -906,6 +999,35 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyFinishingPreset() {
+    if (segments.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    includeCaptions = true;
+    segments = _reorderSegments([
+      for (final segment in segments)
+        segment.copyWith(
+          videoFadeIn: segment.videoFadeIn == 0 ? 0.10 : segment.videoFadeIn,
+          videoFadeOut: segment.videoFadeOut == 0 ? 0.14 : segment.videoFadeOut,
+          audioFadeIn: segment.audioFadeIn == 0 ? 0.12 : segment.audioFadeIn,
+          audioFadeOut: segment.audioFadeOut == 0 ? 0.18 : segment.audioFadeOut,
+          audioNormalize: !segment.audioMuted,
+          colorContrast: segment.colorContrast == 1
+              ? 1.06
+              : segment.colorContrast,
+          colorSaturation: segment.colorSaturation == 1
+              ? 1.04
+              : segment.colorSaturation,
+          source: segment.source.contains('finish')
+              ? segment.source
+              : '${segment.source}+finish',
+        ),
+    ]);
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void updateCaption(CaptionSegment updated) {
     _commitHistory();
     captions = [
@@ -1078,10 +1200,16 @@ class EditorController extends ChangeNotifier {
     }
     final playbackSpeed = segment.playbackSpeed.clamp(0.25, 4.0).toDouble();
     final audioPan = segment.audioPan.clamp(-1.0, 1.0).toDouble();
+    final colorBrightness = segment.colorBrightness.clamp(-0.3, 0.3).toDouble();
+    final colorContrast = segment.colorContrast.clamp(0.5, 1.8).toDouble();
+    final colorSaturation = segment.colorSaturation.clamp(0.0, 2.0).toDouble();
     final normalizedSegment = segment.copyWith(
       start: start,
       end: end,
       playbackSpeed: playbackSpeed,
+      colorBrightness: colorBrightness,
+      colorContrast: colorContrast,
+      colorSaturation: colorSaturation,
     );
     final volume = segment.audioVolume.clamp(0.0, 2.0).toDouble();
     final maxFade = (normalizedSegment.outputDuration / 2)
@@ -1089,12 +1217,16 @@ class EditorController extends ChangeNotifier {
         .toDouble();
     final audioFadeIn = segment.audioFadeIn.clamp(0.0, maxFade).toDouble();
     final audioFadeOut = segment.audioFadeOut.clamp(0.0, maxFade).toDouble();
+    final videoFadeIn = segment.videoFadeIn.clamp(0.0, maxFade).toDouble();
+    final videoFadeOut = segment.videoFadeOut.clamp(0.0, maxFade).toDouble();
     if (normalizedSegment.audioLinked) {
       return normalizedSegment.copyWith(
         audioStart: normalizedSegment.start,
         audioEnd: normalizedSegment.end,
         audioVolume: volume,
         audioPan: audioPan,
+        videoFadeIn: videoFadeIn,
+        videoFadeOut: videoFadeOut,
         audioFadeIn: audioFadeIn,
         audioFadeOut: audioFadeOut,
       );
@@ -1115,6 +1247,8 @@ class EditorController extends ChangeNotifier {
       audioEnd: audioEnd,
       audioVolume: volume,
       audioPan: audioPan,
+      videoFadeIn: videoFadeIn,
+      videoFadeOut: videoFadeOut,
       audioFadeIn: audioFadeIn,
       audioFadeOut: audioFadeOut,
     );
@@ -1273,7 +1407,12 @@ class EditorController extends ChangeNotifier {
         reason: '초반 후킹과 문제 제시가 명확함',
         script: '결과부터 보여드리면 이 문제는 세 가지 실수에서 시작됩니다',
         source: 'skill-engine',
+        videoFadeIn: 0.1,
+        videoFadeOut: 0.2,
+        colorContrast: 1.06,
+        colorSaturation: 1.04,
         audioPan: -0.15,
+        audioNormalize: true,
         score: 9.2,
         tags: ['유지율', '문제해결', '구체성'],
       ),
@@ -1284,7 +1423,11 @@ class EditorController extends ChangeNotifier {
         reason: '핵심 원인과 해결 순서가 이어짐',
         script: '핵심은 먼저 원인을 확인하고 그 다음 해결 순서를 적용하는 것입니다',
         source: 'skill-engine',
+        videoFadeIn: 0.1,
+        videoFadeOut: 0.2,
+        colorContrast: 1.06,
         audioPan: 0.2,
+        audioNormalize: true,
         score: 8.7,
         tags: ['핵심', '전환'],
       ),

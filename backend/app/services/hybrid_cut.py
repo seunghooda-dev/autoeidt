@@ -154,7 +154,13 @@ def refine_highlights_with_hybrid_cut(
                     "script": "",
                     "source": str(highlight.get("source", "ai")),
                     "video_enabled": bool(highlight.get("video_enabled", True)),
+                    "video_fade_in": float(highlight.get("video_fade_in", 0.0)),
+                    "video_fade_out": float(highlight.get("video_fade_out", 0.0)),
+                    "color_brightness": float(highlight.get("color_brightness", 0.0)),
+                    "color_contrast": float(highlight.get("color_contrast", 1.0)),
+                    "color_saturation": float(highlight.get("color_saturation", 1.0)),
                     "audio_pan": float(highlight.get("audio_pan", 0.0)),
+                    "audio_normalize": bool(highlight.get("audio_normalize", False)),
                     "score": float(highlight.get("score", 0.0)),
                     "tags": list(highlight.get("tags", [])),
                 }

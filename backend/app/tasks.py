@@ -98,6 +98,11 @@ def _normalize_highlights(
         audio_volume = max(0.0, min(float(item.get("audio_volume", 1.0)), 2.0))
         audio_pan = max(-1.0, min(float(item.get("audio_pan", 0.0)), 1.0))
         playback_speed = max(0.25, min(float(item.get("playback_speed", 1.0)), 4.0))
+        video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
+        video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
+        color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
+        color_contrast = max(0.5, min(float(item.get("color_contrast", 1.0)), 1.8))
+        color_saturation = max(0.0, min(float(item.get("color_saturation", 1.0)), 2.0))
         audio_fade_in = max(0.0, min(float(item.get("audio_fade_in", 0.0)), 10.0))
         audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
         score = max(0.0, min(float(item.get("score", 0.0)), 20.0))
@@ -111,11 +116,17 @@ def _normalize_highlights(
                 "script": str(item.get("script", "")),
                 "source": str(item.get("source", "ai")),
                 "video_enabled": bool(item.get("video_enabled", True)),
+                "video_fade_in": round(video_fade_in, 3),
+                "video_fade_out": round(video_fade_out, 3),
+                "color_brightness": round(color_brightness, 3),
+                "color_contrast": round(color_contrast, 3),
+                "color_saturation": round(color_saturation, 3),
                 "audio_start": normalized_audio_start,
                 "audio_end": normalized_audio_end,
                 "audio_muted": bool(item.get("audio_muted", False)),
                 "audio_volume": round(audio_volume, 2),
                 "audio_pan": round(audio_pan, 2),
+                "audio_normalize": bool(item.get("audio_normalize", False)),
                 "audio_linked": audio_linked,
                 "playback_speed": round(playback_speed, 3),
                 "audio_fade_in": round(audio_fade_in, 3),

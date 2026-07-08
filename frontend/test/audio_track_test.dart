@@ -11,11 +11,17 @@ void main() {
       end: 20,
       reason: 'test',
       videoEnabled: false,
+      videoFadeIn: 0.2,
+      videoFadeOut: 0.4,
+      colorBrightness: 0.1,
+      colorContrast: 1.2,
+      colorSaturation: 1.3,
       audioStart: 12,
       audioEnd: 22,
       audioMuted: true,
       audioVolume: 0.7,
       audioPan: -0.4,
+      audioNormalize: true,
       audioLinked: false,
       playbackSpeed: 1.5,
       audioFadeIn: 0.5,
@@ -26,11 +32,17 @@ void main() {
 
     final json = segment.toJson();
     expect(json['video_enabled'], isFalse);
+    expect(json['video_fade_in'], 0.2);
+    expect(json['video_fade_out'], 0.4);
+    expect(json['color_brightness'], 0.1);
+    expect(json['color_contrast'], 1.2);
+    expect(json['color_saturation'], 1.3);
     expect(json['audio_start'], 12);
     expect(json['audio_end'], 22);
     expect(json['audio_muted'], isTrue);
     expect(json['audio_volume'], 0.7);
     expect(json['audio_pan'], -0.4);
+    expect(json['audio_normalize'], isTrue);
     expect(json['audio_linked'], isFalse);
     expect(json['playback_speed'], 1.5);
     expect(json['audio_fade_in'], 0.5);
@@ -40,11 +52,17 @@ void main() {
 
     final restored = HighlightSegment.fromJson(json);
     expect(restored.videoEnabled, isFalse);
+    expect(restored.videoFadeIn, 0.2);
+    expect(restored.videoFadeOut, 0.4);
+    expect(restored.colorBrightness, 0.1);
+    expect(restored.colorContrast, 1.2);
+    expect(restored.colorSaturation, 1.3);
     expect(restored.effectiveAudioStart, 12);
     expect(restored.effectiveAudioEnd, 22);
     expect(restored.audioMuted, isTrue);
     expect(restored.audioVolume, 0.7);
     expect(restored.audioPan, -0.4);
+    expect(restored.audioNormalize, isTrue);
     expect(restored.audioLinked, isFalse);
     expect(restored.playbackSpeed, 1.5);
     expect(restored.audioFadeIn, 0.5);
@@ -166,6 +184,26 @@ void main() {
     controller.resetSelectedAudioPan();
     expect(controller.selectedSegment!.audioPan, 0);
 
+    controller.setSelectedVideoFadeIn(20);
+    controller.setSelectedVideoFadeOut(20);
+    controller.setSelectedColorBrightness(1);
+    controller.setSelectedColorContrast(5);
+    controller.setSelectedColorSaturation(5);
+    controller.toggleSelectedAudioNormalize();
+    var selected = controller.selectedSegment!;
+    expect(selected.videoFadeIn, closeTo(4, 0.01));
+    expect(selected.videoFadeOut, closeTo(4, 0.01));
+    expect(selected.colorBrightness, 0.3);
+    expect(selected.colorContrast, 1.8);
+    expect(selected.colorSaturation, 2.0);
+    expect(selected.audioNormalize, isTrue);
+
+    controller.resetSelectedColor();
+    selected = controller.selectedSegment!;
+    expect(selected.colorBrightness, 0);
+    expect(selected.colorContrast, 1);
+    expect(selected.colorSaturation, 1);
+
     controller.toggleAllAudioMute();
     expect(controller.segments.every((segment) => segment.audioMuted), isTrue);
 
@@ -231,6 +269,21 @@ void main() {
       controller.segments.every(
         (segment) => segment.source.contains('director'),
       ),
+      isTrue,
+    );
+
+    controller.applyFinishingPreset();
+    expect(controller.includeCaptions, isTrue);
+    expect(
+      controller.segments.every((segment) => segment.audioNormalize),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => segment.videoFadeIn > 0),
+      isTrue,
+    );
+    expect(
+      controller.segments.every((segment) => segment.colorContrast >= 1),
       isTrue,
     );
   });

@@ -266,6 +266,10 @@ def _segment_video_enabled(segment: dict) -> bool:
     return bool(segment.get("video_enabled", True))
 
 
+def _segment_audio_normalize(segment: dict) -> bool:
+    return bool(segment.get("audio_normalize", False))
+
+
 def _segment_playback_speed(segment: dict) -> float:
     return max(0.25, min(float(segment.get("playback_speed", 1.0)), 4.0))
 
@@ -281,6 +285,26 @@ def _segment_audio_fade_in(segment: dict, output_duration: float) -> float:
 
 def _segment_audio_fade_out(segment: dict, output_duration: float) -> float:
     return max(0.0, min(float(segment.get("audio_fade_out", 0.0)), output_duration / 2))
+
+
+def _segment_video_fade_in(segment: dict, output_duration: float) -> float:
+    return max(0.0, min(float(segment.get("video_fade_in", 0.0)), output_duration / 2))
+
+
+def _segment_video_fade_out(segment: dict, output_duration: float) -> float:
+    return max(0.0, min(float(segment.get("video_fade_out", 0.0)), output_duration / 2))
+
+
+def _segment_color_brightness(segment: dict) -> float:
+    return max(-0.3, min(float(segment.get("color_brightness", 0.0)), 0.3))
+
+
+def _segment_color_contrast(segment: dict) -> float:
+    return max(0.5, min(float(segment.get("color_contrast", 1.0)), 1.8))
+
+
+def _segment_color_saturation(segment: dict) -> float:
+    return max(0.0, min(float(segment.get("color_saturation", 1.0)), 2.0))
 
 
 def _atempo_filters(speed: float) -> list[str]:
@@ -302,6 +326,8 @@ def _segment_uses_default_audio(segment: dict) -> bool:
     if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
         return False
     if abs(_segment_audio_pan(segment)) > 0.001:
+        return False
+    if _segment_audio_normalize(segment):
         return False
     if abs(_segment_playback_speed(segment) - 1.0) > 0.001:
         return False
@@ -409,8 +435,27 @@ def _render_reencode_with_video_args(
             f"setpts=(PTS-STARTPTS)/{speed:.6f}",
             "format=yuv420p",
         ]
+        brightness = _segment_color_brightness(segment)
+        contrast = _segment_color_contrast(segment)
+        saturation = _segment_color_saturation(segment)
+        if (
+            abs(brightness) > 0.001
+            or abs(contrast - 1.0) > 0.001
+            or abs(saturation - 1.0) > 0.001
+        ):
+            video_steps.append(
+                f"eq=brightness={brightness:.6f}:"
+                f"contrast={contrast:.6f}:saturation={saturation:.6f}"
+            )
         if not _segment_video_enabled(segment):
             video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+        video_fade_in = _segment_video_fade_in(segment, output_duration)
+        video_fade_out = _segment_video_fade_out(segment, output_duration)
+        if video_fade_in > 0:
+            video_steps.append(f"fade=t=in:st=0:d={video_fade_in:.6f}")
+        if video_fade_out > 0:
+            fade_start = max(0.0, output_duration - video_fade_out)
+            video_steps.append(f"fade=t=out:st={fade_start:.6f}:d={video_fade_out:.6f}")
         video_steps[-1] = f"{video_steps[-1]}[v{index}]"
         filters.append(",".join(video_steps))
         pan = _segment_audio_pan(segment)
@@ -434,6 +479,8 @@ def _render_reencode_with_video_args(
             f"atrim=duration={output_duration:.6f}",
             "asetpts=PTS-STARTPTS",
         ]
+        if _segment_audio_normalize(segment) and volume > 0:
+            audio_steps.append("loudnorm=I=-16:TP=-1.5:LRA=11")
         fade_in = _segment_audio_fade_in(segment, output_duration)
         fade_out = _segment_audio_fade_out(segment, output_duration)
         if fade_in > 0:

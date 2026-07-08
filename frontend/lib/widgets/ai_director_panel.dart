@@ -90,6 +90,13 @@ class AiDirectorPanel extends StatelessWidget {
           enabled: controller.duration > 0 && controller.segments.isNotEmpty,
           onPressed: context.read<EditorController>().applyShortsDirectorPreset,
         ),
+        _DirectorAction(
+          icon: Icons.tune,
+          title: 'Finish Pass',
+          value: 'Mix',
+          enabled: controller.segments.isNotEmpty,
+          onPressed: context.read<EditorController>().applyFinishingPreset,
+        ),
         const SizedBox(height: 14),
         Text(
           'Signal Mix',

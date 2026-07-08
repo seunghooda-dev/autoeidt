@@ -42,11 +42,17 @@ class HighlightSegment(BaseModel):
     script: str = ""
     source: str = "ai"
     video_enabled: bool = True
+    video_fade_in: float = 0.0
+    video_fade_out: float = 0.0
+    color_brightness: float = 0.0
+    color_contrast: float = 1.0
+    color_saturation: float = 1.0
     audio_start: float | None = None
     audio_end: float | None = None
     audio_muted: bool = False
     audio_volume: float = 1.0
     audio_pan: float = 0.0
+    audio_normalize: bool = False
     audio_linked: bool = True
     playback_speed: float = 1.0
     audio_fade_in: float = 0.0
@@ -77,10 +83,30 @@ class HighlightSegment(BaseModel):
     def playback_speed_must_be_safe(cls, value: float) -> float:
         return max(0.25, min(float(value), 4.0))
 
-    @field_validator("audio_fade_in", "audio_fade_out")
+    @field_validator(
+        "audio_fade_in",
+        "audio_fade_out",
+        "video_fade_in",
+        "video_fade_out",
+    )
     @classmethod
     def audio_fade_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("color_brightness")
+    @classmethod
+    def color_brightness_must_be_safe(cls, value: float) -> float:
+        return max(-0.3, min(float(value), 0.3))
+
+    @field_validator("color_contrast")
+    @classmethod
+    def color_contrast_must_be_safe(cls, value: float) -> float:
+        return max(0.5, min(float(value), 1.8))
+
+    @field_validator("color_saturation")
+    @classmethod
+    def color_saturation_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 2.0))
 
     @field_validator("score")
     @classmethod
