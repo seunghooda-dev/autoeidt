@@ -11,6 +11,20 @@ enum _DragEdge { start, end }
 
 enum _DragTrack { video, audio1, audio2 }
 
+bool _isTimelineGapSegment(HighlightSegment segment) {
+  final source = segment.source.toLowerCase();
+  final reason = segment.reason.toLowerCase();
+  final hasGapIdentity =
+      segment.tags.contains('gap') ||
+      source.contains('lift-gap') ||
+      reason.contains('lift gap');
+  final hasNoAudibleMedia =
+      segment.audioMuted ||
+      segment.audioVolume <= 0.01 ||
+      !segment.hasActiveAudioChannel;
+  return hasGapIdentity && !segment.videoEnabled && hasNoAudibleMedia;
+}
+
 enum _TimelineMenuAction {
   selectionTool,
   razorTool,
@@ -61,6 +75,8 @@ enum _TimelineMenuAction {
   cutSelected,
   pasteClipboard,
   delete,
+  closeSelectedGap,
+  closeTimelineGaps,
   liftSelected,
   extractSelected,
   moveEarlier,
@@ -147,6 +163,9 @@ class TimelineEditor extends StatefulWidget {
     this.onPasteSegment,
     this.hasClipClipboard = false,
     this.onDeleteSegment,
+    this.hasTimelineGaps = false,
+    this.onCloseSelectedGap,
+    this.onCloseTimelineGaps,
     this.onLiftSelectedSegment,
     this.onExtractSelectedSegment,
     this.onMoveSegment,
@@ -230,6 +249,9 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onPasteSegment;
   final bool hasClipClipboard;
   final VoidCallback? onDeleteSegment;
+  final bool hasTimelineGaps;
+  final VoidCallback? onCloseSelectedGap;
+  final VoidCallback? onCloseTimelineGaps;
   final VoidCallback? onLiftSelectedSegment;
   final VoidCallback? onExtractSelectedSegment;
   final ValueChanged<int>? onMoveSegment;
@@ -569,6 +591,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onPasteSegment?.call();
       case _TimelineMenuAction.delete:
         widget.onDeleteSegment?.call();
+      case _TimelineMenuAction.closeSelectedGap:
+        widget.onCloseSelectedGap?.call();
+      case _TimelineMenuAction.closeTimelineGaps:
+        widget.onCloseTimelineGaps?.call();
       case _TimelineMenuAction.liftSelected:
         widget.onLiftSelectedSegment?.call();
       case _TimelineMenuAction.extractSelected:
@@ -664,6 +690,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final segmentIndex = segment == null
         ? -1
         : widget.segments.indexWhere((item) => item.order == segment.order);
+    final selectedGap = segment != null && _isTimelineGapSegment(segment);
     final canRollIncoming =
         clipEditable &&
         segmentIndex > 0 &&
@@ -1114,10 +1141,23 @@ class _TimelineEditorState extends State<TimelineEditor> {
       ),
       _menuItem(
         Icons.delete_outline,
-        'Delete clip',
+        selectedGap ? 'Delete gap' : 'Delete clip',
         _TimelineMenuAction.delete,
         shortcut: 'Delete',
         enabled: clipEditable,
+      ),
+      if (selectedGap)
+        _menuItem(
+          Icons.join_inner,
+          'Ripple delete selected gap',
+          _TimelineMenuAction.closeSelectedGap,
+          enabled: widget.onCloseSelectedGap != null,
+        ),
+      _menuItem(
+        Icons.compress,
+        'Close all black/silent gaps',
+        _TimelineMenuAction.closeTimelineGaps,
+        enabled: widget.hasTimelineGaps && widget.onCloseTimelineGaps != null,
       ),
       _menuItem(
         Icons.vertical_align_center,

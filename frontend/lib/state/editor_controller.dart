@@ -423,6 +423,13 @@ class EditorController extends ChangeNotifier {
   bool get allAudioChannel2Enabled =>
       segments.isNotEmpty &&
       segments.every((segment) => segment.audioChannel2Enabled);
+  int get timelineGapCount => segments.where(_segmentIsTimelineGap).length;
+  bool get hasTimelineGaps => timelineGapCount > 0;
+  bool get selectedSegmentIsTimelineGap {
+    final selected = selectedSegment;
+    return selected != null && _segmentIsTimelineGap(selected);
+  }
+
   bool get hasValidMarks =>
       markIn != null &&
       markOut != null &&
@@ -474,6 +481,10 @@ class EditorController extends ChangeNotifier {
   bool segmentHasAudioLengthDrift(HighlightSegment segment) {
     return _segmentAudioReady(segment) &&
         audioVideoLengthDriftFrames(segment) >= _avSyncLengthToleranceFrames;
+  }
+
+  bool segmentIsTimelineGap(HighlightSegment segment) {
+    return _segmentIsTimelineGap(segment);
   }
 
   double get outputDurationSeconds {
@@ -2777,6 +2788,33 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void closeSelectedTimelineGap() {
+    final selected = selectedSegment;
+    if (selected == null || !_segmentIsTimelineGap(selected)) {
+      return;
+    }
+    deleteSelectedSegment();
+  }
+
+  void closeTimelineGaps() {
+    if (!hasTimelineGaps) {
+      return;
+    }
+    final previousOrder = selectedSegmentOrder;
+    _commitHistory();
+    segments = _reorderSegments([
+      for (final segment in segments)
+        if (!_segmentIsTimelineGap(segment)) segment,
+    ]);
+    selectedSegmentOrder = segments.isEmpty
+        ? null
+        : (previousOrder ?? segments.first.order)
+              .clamp(1, segments.length)
+              .toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
   void splitSelectedAtPlayhead() {
     splitSelectedAt(currentPositionSeconds);
   }
@@ -3091,7 +3129,9 @@ class EditorController extends ChangeNotifier {
     if (result == segments[index] && action != AutoFixAction.hideFiller) {
       return;
     }
-    if (result == null && segments.length <= 1) {
+    if (result == null &&
+        segments.length <= 1 &&
+        !_autoFixCanRemoveLastSegment(action)) {
       return;
     }
     _commitHistory();
@@ -3099,7 +3139,7 @@ class EditorController extends ChangeNotifier {
       captions = _hideFillerCaptionsForSegment(segments[index]);
     }
     if (result == null) {
-      if (segments.length <= 1) {
+      if (segments.length <= 1 && !_autoFixCanRemoveLastSegment(action)) {
         return;
       }
       final updated = [...segments]..removeAt(index);
@@ -3156,7 +3196,8 @@ class EditorController extends ChangeNotifier {
           segmentCount: workingSegments.length,
         );
         if (result == null) {
-          if (workingSegments.length <= 1) {
+          if (workingSegments.length <= 1 &&
+              !_autoFixCanRemoveLastSegment(item.action)) {
             continue;
           }
           workingSegments.removeAt(index);
@@ -4473,6 +4514,17 @@ class EditorController extends ChangeNotifier {
             segmentOrder: segment.order,
           ),
         );
+      }
+      if (_segmentIsTimelineGap(segment)) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel gap',
+            detail: '검은 무음 갭입니다. 필요 없으면 Close Gaps로 리플 삭제하세요',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+        continue;
       }
       if (!segment.videoEnabled) {
         checks.add(
@@ -5872,6 +5924,18 @@ class EditorController extends ChangeNotifier {
     final targetIdeal = _targetIdealClipSeconds();
     final output = <AutoFixReviewItem>[];
     for (final segment in sourceSegments) {
+      if (_segmentIsTimelineGap(segment)) {
+        output.add(
+          AutoFixReviewItem(
+            segmentOrder: segment.order,
+            title: 'Close timeline gap',
+            detail: 'Lift로 생긴 검은 무음 구간을 리플 삭제해 타임라인을 붙입니다.',
+            severity: AutoFixSeverity.polish,
+            action: AutoFixAction.closeGap,
+          ),
+        );
+        continue;
+      }
       final hasFillerCaption = sourceCaptions.any(
         (caption) =>
             caption.enabled &&
@@ -6089,6 +6153,38 @@ class EditorController extends ChangeNotifier {
       changed = true;
     }
 
+    if (_segmentIsTimelineGap(next)) {
+      final gapNeedsStandardization =
+          next.videoEnabled ||
+          next.effectiveAudioStart != next.start ||
+          next.effectiveAudioEnd != next.end ||
+          !next.audioLinked ||
+          !next.audioMuted ||
+          next.audioVolume != 0 ||
+          next.audioPan != 0 ||
+          next.audioNormalize ||
+          next.videoFadeIn != 0 ||
+          next.videoFadeOut != 0 ||
+          next.audioFadeIn != 0 ||
+          next.audioFadeOut != 0;
+      next = next.copyWith(
+        videoEnabled: false,
+        audioStart: next.start,
+        audioEnd: next.end,
+        audioLinked: true,
+        audioMuted: true,
+        audioVolume: 0,
+        audioPan: 0,
+        audioNormalize: false,
+        videoFadeIn: 0,
+        videoFadeOut: 0,
+        audioFadeIn: 0,
+        audioFadeOut: 0,
+      );
+      final gapChanged = changed || gapNeedsStandardization;
+      return (_normalizeSegmentAudio(next), gapChanged);
+    }
+
     if (!next.videoEnabled) {
       next = next.copyWith(videoEnabled: true);
       changed = true;
@@ -6186,6 +6282,8 @@ class EditorController extends ChangeNotifier {
         return _trimLongSegmentForAutoFix(segment);
       case AutoFixAction.removeWeak:
         return segmentCount > 1 ? null : _trimLongSegmentForAutoFix(segment);
+      case AutoFixAction.closeGap:
+        return _segmentIsTimelineGap(segment) ? null : segment;
       case AutoFixAction.mixAudio:
         return _directorSegment(
           segment.copyWith(
@@ -6287,6 +6385,25 @@ class EditorController extends ChangeNotifier {
 
   bool _segmentAudioReady(HighlightSegment segment) =>
       !segment.audioMuted && segment.hasActiveAudioChannel;
+
+  bool _segmentIsTimelineGap(HighlightSegment segment) {
+    final source = segment.source.toLowerCase();
+    final reason = segment.reason.toLowerCase();
+    final hasGapIdentity =
+        segment.tags.contains('gap') ||
+        source.contains('lift-gap') ||
+        reason.contains('lift gap');
+    final hasNoVisibleMedia = !segment.videoEnabled;
+    final hasNoAudibleMedia =
+        segment.audioMuted ||
+        segment.audioVolume <= 0.01 ||
+        !segment.hasActiveAudioChannel;
+    return hasGapIdentity && hasNoVisibleMedia && hasNoAudibleMedia;
+  }
+
+  bool _autoFixCanRemoveLastSegment(AutoFixAction action) {
+    return action == AutoFixAction.closeGap;
+  }
 
   bool _segmentNeedsAudioMix(HighlightSegment segment) {
     if (!_segmentAudioReady(segment)) {
@@ -7401,6 +7518,7 @@ enum AutoFixAction {
   padContext,
   trimLongClip,
   removeWeak,
+  closeGap,
   mixAudio,
   syncAudioLength,
   addFades,

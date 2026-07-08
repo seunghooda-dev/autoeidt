@@ -1480,6 +1480,11 @@ class _TimelineEditorBody extends StatelessWidget {
       onPasteSegment: context.read<EditorController>().pasteClipboardSegment,
       hasClipClipboard: controller.hasClipClipboard,
       onDeleteSegment: context.read<EditorController>().deleteSelectedSegment,
+      hasTimelineGaps: controller.hasTimelineGaps,
+      onCloseSelectedGap: context
+          .read<EditorController>()
+          .closeSelectedTimelineGap,
+      onCloseTimelineGaps: context.read<EditorController>().closeTimelineGaps,
       onLiftSelectedSegment: context
           .read<EditorController>()
           .liftSelectedSegment,

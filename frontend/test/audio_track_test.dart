@@ -930,6 +930,54 @@ void main() {
     expect(controller.outputDurationSeconds, closeTo(60, 0.001));
   });
 
+  test('timeline gaps can be detected and ripple deleted', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 70, reason: 'wide'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(50);
+    controller.liftMarkedRange();
+
+    expect(controller.hasTimelineGaps, isTrue);
+    expect(controller.timelineGapCount, 1);
+    expect(controller.segmentIsTimelineGap(controller.segments[1]), isTrue);
+    expect(
+      controller.autoFixQueue.any(
+        (item) => item.action == AutoFixAction.closeGap,
+      ),
+      isTrue,
+    );
+    expect(controller.renderSafetyBlockCount, 0);
+    expect(
+      controller.renderSafetyChecklist.any(
+        (item) =>
+            item.label == 'Clip 2 gap' &&
+            item.status == EditorialCheckStatus.warn,
+      ),
+      isTrue,
+    );
+
+    controller.selectSegment(2);
+    controller.closeSelectedTimelineGap();
+
+    expect(controller.hasTimelineGaps, isFalse);
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegmentOrder, 2);
+    expect(controller.outputDurationSeconds, closeTo(40, 0.001));
+
+    controller.undo();
+    expect(controller.hasTimelineGaps, isTrue);
+
+    controller.closeTimelineGaps();
+    expect(controller.hasTimelineGaps, isFalse);
+    expect(controller.segments.length, 2);
+    expect(controller.outputDurationSeconds, closeTo(40, 0.001));
+  });
+
   test('selected clip lift and extract mirror premiere edit behavior', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 90
