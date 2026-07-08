@@ -477,35 +477,7 @@ def _ffconcat_path(path: Path) -> str:
 
 
 def render_stream_copy(video_path: Path, segments: list[dict], output_path: Path) -> Path:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    concat_path = output_path.with_suffix(".ffconcat")
-    lines = ["ffconcat version 1.0"]
-    input_path = _ffconcat_path(video_path)
-    for segment in segments:
-        lines.append(f"file '{input_path}'")
-        lines.append(f"inpoint {float(segment['start']):.6f}")
-        lines.append(f"outpoint {float(segment['end']):.6f}")
-    concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-    _run(
-        [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_path),
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
-            str(output_path),
-        ],
-        timeout=None,
-    )
-    return output_path
+    return render_highlights_reencoded(video_path, segments, output_path)
 
 
 def _segment_audio_start(segment: dict) -> float:

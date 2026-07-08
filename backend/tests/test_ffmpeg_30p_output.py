@@ -48,6 +48,39 @@ def test_render_reencode_forces_30p_non_drop_output(
     assert _command_value(command, "-write_tmcd") == "0"
 
 
+def test_legacy_stream_copy_path_is_normalized_to_30p_non_drop(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 2)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_stream_copy(
+        Path("C:/media/source_2997_dropframe.mxf"),
+        [{"order": 1, "start": 10.0, "end": 12.0, "reason": "test"}],
+        tmp_path / "out.mp4",
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+
+    assert "-c copy" not in " ".join(command)
+    assert "fps=30" in filter_complex
+    assert _command_value(command, "-r") == "30"
+    assert _command_value(command, "-map_metadata") == "-1"
+    assert _command_value(command, "-write_tmcd") == "0"
+
+
 def test_preview_proxy_forces_30p_non_drop_output(
     tmp_path: Path,
     monkeypatch,
