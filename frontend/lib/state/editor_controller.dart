@@ -131,6 +131,7 @@ class EditorController extends ChangeNotifier {
       comparisonReferenceSegments.isNotEmpty;
   bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
   bool get hasTimelineMarkers => timelineMarkers.isNotEmpty;
+  bool get canBuildTimelineFromMarkers => _timelineMarkerRanges().isNotEmpty;
   bool get canJumpToNextTimelineMarker =>
       _nextTimelineMarkerFrom(currentPositionSeconds) != null;
   bool get canJumpToPreviousTimelineMarker =>
@@ -1124,6 +1125,36 @@ class EditorController extends ChangeNotifier {
     markOut = range.end;
     renderUrl = null;
     unawaited(seekTo(range.start, autoplay: false));
+    notifyListeners();
+  }
+
+  void replaceTimelineWithMarkerSegments() {
+    final ranges = _timelineMarkerRanges();
+    if (ranges.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments([
+      for (final range in ranges)
+        HighlightSegment(
+          order: 0,
+          start: range.start,
+          end: range.end,
+          reason: '마커 ${range.marker.label} 구간',
+          script: range.marker.note.isNotEmpty
+              ? range.marker.note
+              : _scriptPreviewFor(range.start, range.end),
+          source: 'marker',
+          tags: ['marker'],
+        ),
+    ]);
+    selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    if (segments.isNotEmpty) {
+      markIn = segments.first.start;
+      markOut = segments.last.end;
+      unawaited(seekTo(segments.first.start, autoplay: false));
+    }
+    renderUrl = null;
     notifyListeners();
   }
 
@@ -3903,6 +3934,18 @@ class EditorController extends ChangeNotifier {
       return null;
     }
     return (marker: marker, start: start, end: end);
+  }
+
+  List<({TimelineMarker marker, double start, double end})>
+  _timelineMarkerRanges() {
+    final ranges = <({TimelineMarker marker, double start, double end})>[];
+    for (final marker in timelineMarkers) {
+      final range = _timelineMarkerRange(marker.id);
+      if (range != null) {
+        ranges.add(range);
+      }
+    }
+    return ranges;
   }
 
   String _markerColorFor(int id) {

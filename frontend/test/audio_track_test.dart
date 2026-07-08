@@ -293,6 +293,18 @@ void main() {
     expect(controller.segments.single.end, secondMarkerSeconds);
     expect(controller.segments.single.tags, ['marker']);
 
+    controller.replaceTimelineWithMarkerSegments();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.segments.length, 2);
+    expect(controller.segments.first.reason, '마커 Hook 구간');
+    expect(controller.segments.last.reason, '마커 Fact 구간');
+    expect(controller.segments.first.start, firstMarkerSeconds);
+    expect(controller.segments.first.end, secondMarkerSeconds);
+    expect(controller.selectedSegmentOrder, 1);
+
+    controller.undo();
+    expect(controller.segments.length, 1);
+
     controller.deleteTimelineMarker(firstMarkerId);
     expect(controller.timelineMarkers.single.label, 'Fact');
 

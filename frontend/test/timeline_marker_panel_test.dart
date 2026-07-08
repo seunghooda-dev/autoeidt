@@ -49,6 +49,12 @@ void main() {
     expect(controller.segments.single.end, closeTo(12.012, 0.001));
     expect(controller.segments.single.reason, '마커 Hook 구간');
 
+    await tester.tap(find.text('Rough cut'));
+    await tester.pump();
+    expect(controller.segments.length, 2);
+    expect(controller.segments.first.reason, '마커 Hook 구간');
+    expect(controller.segments.last.reason, '마커 Fact 구간');
+
     await tester.tap(find.byTooltip('Hook 마커 편집'));
     await tester.pumpAndSettle();
     expect(find.text('마커 편집'), findsOneWidget);

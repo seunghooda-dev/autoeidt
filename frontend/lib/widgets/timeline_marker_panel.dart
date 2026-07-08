@@ -98,6 +98,13 @@ class TimelineMarkerPanel extends StatelessWidget {
                   : null,
               icon: const Icon(Icons.bookmark_add_outlined),
             ),
+            FilledButton.tonalIcon(
+              onPressed: controller.canBuildTimelineFromMarkers
+                  ? editor.replaceTimelineWithMarkerSegments
+                  : null,
+              icon: const Icon(Icons.playlist_add_check),
+              label: const Text('Rough cut'),
+            ),
             IconButton.outlined(
               tooltip: '모든 마커 삭제',
               onPressed: editor.clearTimelineMarkers,
