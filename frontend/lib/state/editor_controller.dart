@@ -163,6 +163,7 @@ class EditorController extends ChangeNotifier {
       jobId != null &&
       hasTimeline &&
       segments.isNotEmpty &&
+      canPassRenderSafety &&
       !isRendering &&
       job?.status != 'processing' &&
       job?.status != 'rendering';
@@ -342,6 +343,23 @@ class EditorController extends ChangeNotifier {
   int get editorialWarnCount => editorialChecklist
       .where((item) => item.status == EditorialCheckStatus.warn)
       .length;
+
+  List<RenderSafetyItem> get renderSafetyChecklist =>
+      _buildRenderSafetyChecklist(
+        segments,
+        aspectRatio: exportAspectRatio,
+        requireCaptions: includeCaptions,
+      );
+
+  int get renderSafetyBlockCount => renderSafetyChecklist
+      .where((item) => item.status == EditorialCheckStatus.block)
+      .length;
+
+  int get renderSafetyWarnCount => renderSafetyChecklist
+      .where((item) => item.status == EditorialCheckStatus.warn)
+      .length;
+
+  bool get canPassRenderSafety => renderSafetyBlockCount == 0;
 
   List<AutoFixReviewItem> get autoFixQueue =>
       _buildAutoFixQueue(segments, captions);
@@ -704,6 +722,17 @@ class EditorController extends ChangeNotifier {
   }) async {
     final id = jobId;
     if (id == null || segments.isEmpty) {
+      return;
+    }
+    final safetyBlocks = _buildRenderSafetyChecklist(
+      segments,
+      aspectRatio: aspectRatio,
+      requireCaptions: includeCaptions,
+    ).where((item) => item.status == EditorialCheckStatus.block).toList();
+    if (safetyBlocks.isNotEmpty) {
+      final firstBlock = safetyBlocks.first;
+      errorMessage = '렌더 안전 검사 실패: ${firstBlock.label} · ${firstBlock.detail}';
+      notifyListeners();
       return;
     }
     isRendering = true;
@@ -2552,6 +2581,229 @@ class EditorController extends ChangeNotifier {
     return count;
   }
 
+  List<RenderSafetyItem> _buildRenderSafetyChecklist(
+    List<HighlightSegment> input, {
+    required String aspectRatio,
+    required bool requireCaptions,
+  }) {
+    final checks = <RenderSafetyItem>[];
+    final totalDuration = input.fold<double>(
+      0,
+      (total, segment) => total + segment.outputDuration,
+    );
+
+    if (input.isEmpty) {
+      return const [
+        RenderSafetyItem(
+          label: 'Timeline',
+          detail: '렌더할 컷이 없습니다',
+          status: EditorialCheckStatus.block,
+        ),
+      ];
+    }
+
+    checks.add(
+      RenderSafetyItem(
+        label: 'Timeline',
+        detail: '${input.length} clips · ${formatSeconds(totalDuration)}',
+        status: totalDuration > 0
+            ? EditorialCheckStatus.pass
+            : EditorialCheckStatus.block,
+      ),
+    );
+
+    if (aspectRatio == '9:16') {
+      final status = totalDuration >= 60 && totalDuration <= 210
+          ? EditorialCheckStatus.pass
+          : EditorialCheckStatus.warn;
+      checks.add(
+        RenderSafetyItem(
+          label: 'Shorts runtime',
+          detail: '${totalDuration.round()}s · 권장 60-210s',
+          status: status,
+        ),
+      );
+    } else {
+      final status = totalDuration >= 45 && totalDuration <= 420
+          ? EditorialCheckStatus.pass
+          : EditorialCheckStatus.warn;
+      checks.add(
+        RenderSafetyItem(
+          label: 'Program runtime',
+          detail: '${totalDuration.round()}s · 권장 45-420s',
+          status: status,
+        ),
+      );
+    }
+
+    for (final segment in input) {
+      final clipLabel = 'Clip ${segment.order}';
+      final timeLabel =
+          '${formatSeconds(segment.start)}-${formatSeconds(segment.end)}';
+      if (segment.start < 0 ||
+          segment.end <= segment.start ||
+          (duration > 0 &&
+              segment.end > duration + timecodeFrameDurationSeconds)) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel range',
+            detail: '$timeLabel 소스 범위를 확인해 주세요',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.duration < 0.8) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel cut',
+            detail: '${segment.duration.toStringAsFixed(1)}s · 컷이 너무 짧습니다',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      } else if (segment.duration < 2.0) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel cut',
+            detail: '${segment.duration.toStringAsFixed(1)}s · 호흡 확인 필요',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (!segment.videoEnabled) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel video',
+            detail: '비디오 트랙이 꺼져 검은 화면 위험이 있습니다',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.playbackSpeed <= 0) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel speed',
+            detail: '재생 속도가 0 이하입니다',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.effectiveAudioEnd <= segment.effectiveAudioStart) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel audio',
+            detail: '오디오 인/아웃 범위가 비정상입니다',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.audioMuted ||
+          !segment.hasActiveAudioChannel ||
+          segment.audioVolume <= 0.01) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel audio',
+            detail: '무음 또는 활성 오디오 채널 없음',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      } else if (!segment.audioNormalize ||
+          segment.audioPan.abs() > 0.001 ||
+          segment.audioVolume > 1.35) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel mix',
+            detail: '정규화/팬/볼륨 믹스 확인 필요',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.videoFadeIn + segment.videoFadeOut >= segment.duration) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel fade',
+            detail: '비디오 페이드가 컷 길이보다 깁니다',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (segment.audioFadeIn + segment.audioFadeOut >= segment.audioDuration) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel audio fade',
+            detail: '오디오 페이드가 오디오 길이보다 깁니다',
+            status: EditorialCheckStatus.warn,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+      if (_riskPattern.hasMatch(segment.reason) ||
+          _riskPattern.hasMatch(segment.script) ||
+          segment.tags.any((tag) => _riskPattern.hasMatch(tag))) {
+        checks.add(
+          RenderSafetyItem(
+            label: '$clipLabel risk',
+            detail: '미확인/추정 표현은 수동 검수 후 렌더하세요',
+            status: EditorialCheckStatus.block,
+            segmentOrder: segment.order,
+          ),
+        );
+      }
+    }
+
+    final enabledCaptions = captions
+        .where((caption) => caption.enabled)
+        .toList();
+    if (requireCaptions && enabledCaptions.isEmpty) {
+      checks.add(
+        const RenderSafetyItem(
+          label: 'Captions',
+          detail: '자막 렌더가 켜졌지만 활성 자막이 없습니다',
+          status: EditorialCheckStatus.warn,
+        ),
+      );
+    } else if (requireCaptions && enabledCaptions.isNotEmpty) {
+      final uncoveredCount = input
+          .where(
+            (segment) => !enabledCaptions.any(
+              (caption) =>
+                  caption.start < segment.end && caption.end > segment.start,
+            ),
+          )
+          .length;
+      checks.add(
+        RenderSafetyItem(
+          label: 'Caption coverage',
+          detail: uncoveredCount == 0
+              ? '모든 컷에 자막 겹침'
+              : '$uncoveredCount clips 자막 확인 필요',
+          status: uncoveredCount == 0
+              ? EditorialCheckStatus.pass
+              : EditorialCheckStatus.warn,
+        ),
+      );
+    }
+
+    if (checks.every((item) => item.status != EditorialCheckStatus.block)) {
+      checks.add(
+        const RenderSafetyItem(
+          label: 'Render gate',
+          detail: '차단 항목 없음',
+          status: EditorialCheckStatus.pass,
+        ),
+      );
+    }
+    return checks;
+  }
+
   String _shortsGrade(double score) {
     if (score >= 86) {
       return 'S';
@@ -2723,6 +2975,20 @@ class EditorController extends ChangeNotifier {
       errorMessage = '렌더링할 쇼츠 후보를 선택해 주세요';
       notifyListeners();
       return;
+    }
+    for (final candidate in selected) {
+      final safetyBlocks = _buildRenderSafetyChecklist(
+        candidate.segments,
+        aspectRatio: '9:16',
+        requireCaptions: true,
+      ).where((item) => item.status == EditorialCheckStatus.block).toList();
+      if (safetyBlocks.isNotEmpty) {
+        final firstBlock = safetyBlocks.first;
+        errorMessage =
+            '쇼츠 렌더 안전 검사 실패: ${candidate.label} · ${firstBlock.label} · ${firstBlock.detail}';
+        notifyListeners();
+        return;
+      }
     }
     isRendering = true;
     errorMessage = null;
@@ -3935,6 +4201,20 @@ class EditorialCheckItem {
   final String label;
   final String detail;
   final EditorialCheckStatus status;
+}
+
+class RenderSafetyItem {
+  const RenderSafetyItem({
+    required this.label,
+    required this.detail,
+    required this.status,
+    this.segmentOrder,
+  });
+
+  final String label;
+  final String detail;
+  final EditorialCheckStatus status;
+  final int? segmentOrder;
 }
 
 enum AutoFixSeverity { block, warn, polish }

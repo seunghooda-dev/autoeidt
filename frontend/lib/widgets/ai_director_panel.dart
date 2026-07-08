@@ -801,11 +801,13 @@ class _QualityReviewPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final checks = controller.editorialChecklist;
+    final safety = controller.renderSafetyChecklist;
+    final visibleSafety = safety.take(7).toList();
     return _DirectorSection(
       title: 'Preflight',
       icon: Icons.fact_check_outlined,
       trailing:
-          '${controller.editorialBlockCount} block · ${controller.editorialWarnCount} warn',
+          '${controller.renderSafetyBlockCount} gate · ${controller.editorialWarnCount + controller.renderSafetyWarnCount} warn',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -837,6 +839,55 @@ class _QualityReviewPanel extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           for (final check in checks) _CheckRow(check: check),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      controller.canPassRenderSafety
+                          ? Icons.lock_open_outlined
+                          : Icons.lock_outline,
+                      size: 16,
+                      color: controller.canPassRenderSafety
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        'Render Gate',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      '${controller.renderSafetyBlockCount} block',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                for (final item in visibleSafety) _SafetyRow(item: item),
+                if (safety.length > visibleSafety.length)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '+${safety.length - visibleSafety.length} more checks',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -968,6 +1019,66 @@ class _CheckRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SafetyRow extends StatelessWidget {
+  const _SafetyRow({required this.item});
+
+  final RenderSafetyItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = switch (item.status) {
+      EditorialCheckStatus.pass => colorScheme.primary,
+      EditorialCheckStatus.warn => const Color(0xFFF59E0B),
+      EditorialCheckStatus.block => colorScheme.error,
+    };
+    final icon = switch (item.status) {
+      EditorialCheckStatus.pass => Icons.check_circle_outline,
+      EditorialCheckStatus.warn => Icons.error_outline,
+      EditorialCheckStatus.block => Icons.cancel_outlined,
+    };
+    final segmentOrder = item.segmentOrder;
+    final row = Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              segmentOrder == null
+                  ? item.label
+                  : '${item.label}  #$segmentOrder',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              item.detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (segmentOrder == null) {
+      return row;
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => context.read<EditorController>().selectSegment(segmentOrder),
+      child: row,
     );
   }
 }

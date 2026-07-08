@@ -489,6 +489,65 @@ void main() {
     );
   });
 
+  test(
+    'render safety gate blocks unsafe exports until timeline is repaired',
+    () {
+      final controller = EditorController(autoStartEngine: false)
+        ..jobId = 'job-1'
+        ..duration = 120
+        ..includeCaptions = true
+        ..segments = const [
+          HighlightSegment(
+            order: 1,
+            start: 10,
+            end: 10.4,
+            reason: '미확인 루머',
+            script: '확인되지 않은 내용입니다',
+            videoEnabled: false,
+            audioStart: 12,
+            audioEnd: 11,
+            audioMuted: true,
+          ),
+        ]
+        ..captions = const [];
+
+      expect(controller.canPassRenderSafety, isFalse);
+      expect(controller.canRender, isFalse);
+      expect(controller.renderSafetyBlockCount, greaterThanOrEqualTo(4));
+      expect(
+        controller.renderSafetyChecklist.any(
+          (item) => item.label == 'Clip 1 video',
+        ),
+        isTrue,
+      );
+      expect(
+        controller.renderSafetyChecklist.any(
+          (item) => item.label == 'Clip 1 risk',
+        ),
+        isTrue,
+      );
+
+      controller.segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 22,
+          reason: '검증된 핵심 설명',
+          script: '출처가 확인된 핵심 설명입니다',
+          audioNormalize: true,
+          tags: ['뉴스핵심', '근거'],
+        ),
+      ];
+      controller.captions = const [
+        CaptionSegment(order: 1, start: 10, end: 22, text: '출처가 확인된 핵심 설명입니다'),
+      ];
+
+      expect(controller.renderSafetyBlockCount, 0);
+      expect(controller.canPassRenderSafety, isTrue);
+      expect(controller.canRender, isTrue);
+    },
+  );
+
   test('multi shorts candidates can be built edited and selected', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 1800
