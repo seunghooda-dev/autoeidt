@@ -549,6 +549,9 @@ void main() {
           controller.shortsCandidates.first.issues.isNotEmpty,
       isTrue,
     );
+    expect(controller.shortsCandidates.first.storyFlow, isNotEmpty);
+    expect(controller.shortsCandidates.first.storyScore, greaterThan(0));
+    expect(controller.shortsCandidates.first.storyFlow.first, 'Hook');
     expect(
       controller.shortsCandidates
           .map((candidate) => candidate.strategyKind)
@@ -565,6 +568,7 @@ void main() {
     );
     expect(updatedCandidate.segments.first.end, closeTo(60, 0.01));
     expect(updatedCandidate.qualityScore, greaterThan(0));
+    expect(updatedCandidate.storyFlow, isNotEmpty);
 
     controller.duplicateShortsCandidate(selectedId);
     expect(controller.shortsCandidates.length, greaterThan(1));

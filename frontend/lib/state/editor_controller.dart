@@ -1917,13 +1917,9 @@ class EditorController extends ChangeNotifier {
         for (final segment in group) {
           strategyUsed.add(segment.order);
         }
-        final normalized = _reorderSegments([
-          for (final segment in group)
-            _referenceStyleSegment(
-              segment,
-              maxSeconds,
-            ).copyWith(source: _appendSource(segment.source, 'shorts')),
-        ]);
+        final normalized = _reorderSegments(
+          _prepareShortsCandidateSegments(group, strategy.kind, maxSeconds),
+        );
         pool.add(
           _scoreShortsCandidate(
             ShortsCandidate(
@@ -2154,6 +2150,211 @@ class EditorController extends ChangeNotifier {
     return needles.any((needle) => normalized.contains(needle.toLowerCase()));
   }
 
+  List<HighlightSegment> _prepareShortsCandidateSegments(
+    List<HighlightSegment> group,
+    String strategyKind,
+    double targetMax,
+  ) {
+    final ordered = _orderShortsStorySegments(group, strategyKind);
+    return [
+      for (var index = 0; index < ordered.length; index++)
+        _prepareShortsStorySegment(
+          ordered[index],
+          strategyKind,
+          targetMax,
+          index: index,
+          total: ordered.length,
+        ),
+    ];
+  }
+
+  List<HighlightSegment> _orderShortsStorySegments(
+    List<HighlightSegment> group,
+    String strategyKind,
+  ) {
+    if (group.length <= 1) {
+      return group;
+    }
+    final ordered = [...group]
+      ..sort((a, b) {
+        final roleCompare = _shortsRoleRank(
+          _shortsStoryRole(a, strategyKind),
+        ).compareTo(_shortsRoleRank(_shortsStoryRole(b, strategyKind)));
+        if (roleCompare != 0) {
+          return roleCompare;
+        }
+        final scoreCompare = b.score.compareTo(a.score);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.start.compareTo(b.start);
+      });
+
+    final hookIndex = ordered.indexWhere(
+      (segment) => _shortsStoryRole(segment, strategyKind) == 'hook',
+    );
+    if (hookIndex > 0) {
+      final hook = ordered.removeAt(hookIndex);
+      ordered.insert(0, hook);
+    }
+    return ordered;
+  }
+
+  HighlightSegment _prepareShortsStorySegment(
+    HighlightSegment segment,
+    String strategyKind,
+    double targetMax, {
+    required int index,
+    required int total,
+  }) {
+    final role = _shortsStoryRole(segment, strategyKind);
+    final padding = _shortsRolePadding(role, index: index, total: total);
+    final paddedStart = _snapToFrame(
+      _clampProjectTime(segment.start - padding.$1),
+    );
+    final paddedEnd = _snapToFrame(_clampProjectTime(segment.end + padding.$2));
+    final padded = segment.copyWith(
+      start: paddedStart,
+      end: paddedEnd,
+      audioStart: segment.audioLinked ? paddedStart : segment.audioStart,
+      audioEnd: segment.audioLinked ? paddedEnd : segment.audioEnd,
+      tags: [
+        ...segment.tags,
+        if (!segment.tags.contains(_storyTagForRole(role)))
+          _storyTagForRole(role),
+      ],
+    );
+    return _referenceStyleSegment(
+      padded,
+      targetMax,
+    ).copyWith(source: _appendSource(padded.source, 'shorts'));
+  }
+
+  String _shortsStoryRole(HighlightSegment segment, String strategyKind) {
+    final text =
+        '${segment.reason} ${segment.script} ${segment.tags.join(' ')}';
+    if (_segmentHasRiskSignal(segment)) {
+      return strategyKind == 'risk' ? 'risk' : 'evidence';
+    }
+    if (_containsAny(text, const ['결과', '핵심', '충격', '문제', '후킹', '유지율'])) {
+      return 'hook';
+    }
+    if (_segmentHasAnyTag(segment, const {'근거', '출처확인', '발언', '뉴스핵심'}) ||
+        _containsAny(text, const ['근거', '공식', '발표', '확인', '발언'])) {
+      return 'evidence';
+    }
+    if (_segmentHasAnyTag(segment, const {'문제해결', '구체성', '비교'}) ||
+        _containsAny(text, const ['방법', '이유', '원인', '차이', '비교', '수치'])) {
+      return 'context';
+    }
+    if (_segmentHasAnyTag(segment, const {'영향', '대응'}) ||
+        _containsAny(text, const ['영향', '대응', '결론', '그래서', '앞으로'])) {
+      return 'impact';
+    }
+    if (_segmentHasAnyTag(segment, const {'CTA'})) {
+      return 'close';
+    }
+    return strategyKind == 'hook' ? 'context' : 'evidence';
+  }
+
+  int _shortsRoleRank(String role) {
+    return switch (role) {
+      'hook' => 0,
+      'risk' => 1,
+      'evidence' => 2,
+      'context' => 3,
+      'impact' => 4,
+      'close' => 5,
+      _ => 3,
+    };
+  }
+
+  (double, double) _shortsRolePadding(
+    String role, {
+    required int index,
+    required int total,
+  }) {
+    final isFirst = index == 0;
+    final isLast = index == total - 1;
+    final base = switch (role) {
+      'hook' => (isFirst ? 0.25 : 0.45, 0.75),
+      'risk' => (0.65, 0.65),
+      'evidence' => (0.50, 0.55),
+      'context' => (0.45, 0.60),
+      'impact' => (0.35, isLast ? 1.10 : 0.70),
+      'close' => (0.30, 1.00),
+      _ => (0.45, 0.55),
+    };
+    return (base.$1, isLast ? math.max(base.$2, 0.90) : base.$2);
+  }
+
+  String _storyTagForRole(String role) {
+    return switch (role) {
+      'hook' => 'Story:Hook',
+      'risk' => 'Story:Risk',
+      'evidence' => 'Story:Evidence',
+      'context' => 'Story:Context',
+      'impact' => 'Story:Impact',
+      'close' => 'Story:Close',
+      _ => 'Story:Context',
+    };
+  }
+
+  List<String> _shortsStoryFlow(
+    List<HighlightSegment> input,
+    String strategyKind,
+  ) {
+    final roles = <String>[];
+    for (final segment in input) {
+      final label = _storyLabelForRole(_shortsStoryRole(segment, strategyKind));
+      if (!roles.contains(label)) {
+        roles.add(label);
+      }
+    }
+    return roles;
+  }
+
+  String _storyLabelForRole(String role) {
+    return switch (role) {
+      'hook' => 'Hook',
+      'risk' => 'Risk',
+      'evidence' => 'Evidence',
+      'context' => 'Context',
+      'impact' => 'Impact',
+      'close' => 'Close',
+      _ => 'Context',
+    };
+  }
+
+  double _shortsStoryScore(List<HighlightSegment> input, String strategyKind) {
+    if (input.isEmpty) {
+      return 0;
+    }
+    final roles = [
+      for (final segment in input) _shortsStoryRole(segment, strategyKind),
+    ];
+    var score = 40.0;
+    if (roles.first == 'hook' ||
+        strategyKind == 'risk' && roles.first == 'risk') {
+      score += 24;
+    }
+    if (roles.contains('evidence')) {
+      score += 14;
+    }
+    if (roles.contains('context')) {
+      score += 10;
+    }
+    if (roles.contains('impact') || roles.contains('close')) {
+      score += 8;
+    }
+    for (var index = 1; index < roles.length; index++) {
+      if (_shortsRoleRank(roles[index]) < _shortsRoleRank(roles[index - 1])) {
+        score -= 8;
+      }
+    }
+    return score.clamp(0.0, 100.0).toDouble();
+  }
+
   ShortsCandidate _scoreShortsCandidate(ShortsCandidate candidate) {
     final candidateSegments = candidate.segments;
     if (candidateSegments.isEmpty) {
@@ -2163,6 +2364,8 @@ class EditorController extends ChangeNotifier {
         riskCount: 0,
         strengths: const [],
         issues: const ['No clips'],
+        storyFlow: const [],
+        storyScore: 0,
       );
     }
 
@@ -2181,6 +2384,10 @@ class EditorController extends ChangeNotifier {
     final signalScore = _shortsSignalScore(candidateSegments);
     final audioScore = _shortsAudioScore(candidateSegments);
     final captionScore = _shortsCaptionScore(candidateSegments);
+    final storyScore = _shortsStoryScore(
+      candidateSegments,
+      candidate.strategyKind,
+    );
     final riskCount = _shortsRiskCount(candidateSegments);
     final fillerCount = _shortsFillerCaptionCount(candidateSegments);
     final riskPenalty = (riskCount * 12 + fillerCount * 3)
@@ -2192,7 +2399,8 @@ class EditorController extends ChangeNotifier {
         (hookScore * 0.18) +
         (signalScore * 0.16) +
         (audioScore * 0.12) +
-        (captionScore * 0.10) -
+        (captionScore * 0.08) +
+        (storyScore * 0.02) -
         riskPenalty;
     final score = quality.clamp(0.0, 100.0).toDouble();
     return candidate.copyWith(
@@ -2205,6 +2413,7 @@ class EditorController extends ChangeNotifier {
         signalScore: signalScore,
         audioScore: audioScore,
         captionScore: captionScore,
+        storyScore: storyScore,
       ),
       issues: _shortsIssues(
         duration: duration,
@@ -2212,7 +2421,10 @@ class EditorController extends ChangeNotifier {
         fillerCount: fillerCount,
         audioScore: audioScore,
         captionScore: captionScore,
+        storyScore: storyScore,
       ),
+      storyFlow: _shortsStoryFlow(candidateSegments, candidate.strategyKind),
+      storyScore: storyScore,
       reason: _shortsReason(
         candidateSegments,
         score: score,
@@ -2362,6 +2574,7 @@ class EditorController extends ChangeNotifier {
     required double signalScore,
     required double audioScore,
     required double captionScore,
+    required double storyScore,
   }) {
     final strengths = <String>[];
     if (hookScore >= 78) {
@@ -2379,6 +2592,9 @@ class EditorController extends ChangeNotifier {
     if (captionScore >= 80) {
       strengths.add('Captions');
     }
+    if (storyScore >= 78) {
+      strengths.add('Story');
+    }
     return strengths.take(4).toList();
   }
 
@@ -2388,6 +2604,7 @@ class EditorController extends ChangeNotifier {
     required int fillerCount,
     required double audioScore,
     required double captionScore,
+    required double storyScore,
   }) {
     final issues = <String>[];
     if (duration < 90) {
@@ -2406,6 +2623,9 @@ class EditorController extends ChangeNotifier {
     }
     if (captionScore < 60) {
       issues.add('Captions');
+    }
+    if (storyScore < 58) {
+      issues.add('Story flow');
     }
     return issues.take(4).toList();
   }
@@ -3772,6 +3992,8 @@ class ShortsCandidate {
     this.riskCount = 0,
     this.strengths = const [],
     this.issues = const [],
+    this.storyFlow = const [],
+    this.storyScore = 0,
     this.selected = true,
   });
 
@@ -3786,6 +4008,8 @@ class ShortsCandidate {
   final int riskCount;
   final List<String> strengths;
   final List<String> issues;
+  final List<String> storyFlow;
+  final double storyScore;
   final bool selected;
 
   double get durationSeconds => segments.fold<double>(
@@ -3805,6 +4029,8 @@ class ShortsCandidate {
     int? riskCount,
     List<String>? strengths,
     List<String>? issues,
+    List<String>? storyFlow,
+    double? storyScore,
     bool? selected,
   }) {
     return ShortsCandidate(
@@ -3819,6 +4045,8 @@ class ShortsCandidate {
       riskCount: riskCount ?? this.riskCount,
       strengths: strengths ?? this.strengths,
       issues: issues ?? this.issues,
+      storyFlow: storyFlow ?? this.storyFlow,
+      storyScore: storyScore ?? this.storyScore,
       selected: selected ?? this.selected,
     );
   }
