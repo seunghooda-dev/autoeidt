@@ -589,6 +589,65 @@ void main() {
     );
   });
 
+  test('selected shorts safety repair only updates selected candidates', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..selectedShortsId = 1
+      ..shortsCandidates = const [
+        ShortsCandidate(
+          id: 1,
+          label: 'Shorts 01',
+          reason: 'selected',
+          selected: true,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 10,
+              end: 10.4,
+              reason: '검증된 짧은 설명',
+              script: '출처가 확인된 짧은 설명입니다',
+              videoEnabled: false,
+              audioStart: 12,
+              audioEnd: 11,
+              audioMuted: true,
+            ),
+          ],
+        ),
+        ShortsCandidate(
+          id: 2,
+          label: 'Shorts 02',
+          reason: 'not selected',
+          selected: false,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 20,
+              end: 20.4,
+              reason: '검증된 짧은 설명',
+              videoEnabled: false,
+              audioMuted: true,
+            ),
+          ],
+        ),
+      ];
+
+    expect(controller.selectedShortsRenderBlockCount, greaterThan(0));
+
+    controller.applySelectedShortsRenderSafetyAutoRepair();
+
+    final repaired = controller.shortsCandidates.first;
+    final untouched = controller.shortsCandidates.last;
+    expect(controller.selectedShortsRenderBlockCount, 0);
+    expect(repaired.segments.first.videoEnabled, isTrue);
+    expect(repaired.segments.first.audioMuted, isFalse);
+    expect(repaired.segments.first.audioNormalize, isTrue);
+    expect(repaired.segments.first.duration, greaterThanOrEqualTo(2.0));
+    expect(repaired.qualityScore, greaterThan(0));
+    expect(untouched.segments.first.videoEnabled, isFalse);
+    expect(untouched.segments.first.audioMuted, isTrue);
+    expect(controller.segments.first.videoEnabled, isTrue);
+  });
+
   test('multi shorts candidates can be built edited and selected', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 1800

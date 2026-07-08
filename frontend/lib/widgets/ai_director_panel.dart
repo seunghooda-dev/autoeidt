@@ -212,6 +212,8 @@ class _MultiShortsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final candidates = controller.shortsCandidates;
+    final safetyBlocks = controller.selectedShortsRenderBlockCount;
+    final safetyWarns = controller.selectedShortsRenderWarnCount;
     return _DirectorSection(
       title: 'Multi Shorts',
       icon: Icons.video_collection_outlined,
@@ -250,13 +252,47 @@ class _MultiShortsPanel extends StatelessWidget {
           ),
           if (candidates.isNotEmpty) ...[
             const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: context
-                  .read<EditorController>()
-                  .updateSelectedShortsFromTimeline,
-              icon: const Icon(Icons.save_outlined, size: 17),
-              label: const Text('Update selected from timeline'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: context
+                        .read<EditorController>()
+                        .updateSelectedShortsFromTimeline,
+                    icon: const Icon(Icons.save_outlined, size: 17),
+                    label: const Text('Update'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        controller.selectedShortsCount == 0 ||
+                            !controller.hasSelectedShortsRenderSafetyIssues
+                        ? null
+                        : context
+                              .read<EditorController>()
+                              .applySelectedShortsRenderSafetyAutoRepair,
+                    icon: const Icon(
+                      Icons.health_and_safety_outlined,
+                      size: 17,
+                    ),
+                    label: const Text('Make Safe'),
+                  ),
+                ),
+              ],
             ),
+            if (safetyBlocks > 0 || safetyWarns > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                '$safetyBlocks render blocks · $safetyWarns warnings on selected',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: safetyBlocks > 0
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             for (final candidate in candidates)
               _ShortsCandidateTile(candidate: candidate),

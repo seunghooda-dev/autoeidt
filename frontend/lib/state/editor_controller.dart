@@ -143,6 +143,12 @@ class EditorController extends ChangeNotifier {
 
   int get selectedShortsCount =>
       shortsCandidates.where((candidate) => candidate.selected).length;
+  int get selectedShortsRenderBlockCount =>
+      _selectedShortsRenderSafetyCount(EditorialCheckStatus.block);
+  int get selectedShortsRenderWarnCount =>
+      _selectedShortsRenderSafetyCount(EditorialCheckStatus.warn);
+  bool get hasSelectedShortsRenderSafetyIssues =>
+      selectedShortsRenderBlockCount > 0 || selectedShortsRenderWarnCount > 0;
   CaptionRenderStyle get captionRenderStyle =>
       CaptionRenderStyle.preset(captionStylePreset);
   String get styleStatusText {
@@ -1906,24 +1912,9 @@ class EditorController extends ChangeNotifier {
     if (segments.isEmpty) {
       return;
     }
-    var applied = false;
-    var workingSegments = List<HighlightSegment>.of(segments);
-    for (var pass = 0; pass < 3; pass++) {
-      var changedThisPass = false;
-      final nextSegments = <HighlightSegment>[];
-      for (final segment in workingSegments) {
-        final repaired = _repairSegmentForRenderSafety(segment);
-        nextSegments.add(repaired.$1);
-        if (repaired.$2) {
-          changedThisPass = true;
-          applied = true;
-        }
-      }
-      workingSegments = _reorderSegments(nextSegments);
-      if (!changedThisPass) {
-        break;
-      }
-    }
+    final repaired = _repairSegmentsForRenderSafety(segments);
+    final workingSegments = repaired.$1;
+    final applied = repaired.$2;
 
     final remainingBlocks = _buildRenderSafetyChecklist(
       workingSegments,
@@ -1956,6 +1947,55 @@ class EditorController extends ChangeNotifier {
     errorMessage = remainingBlocks.isEmpty
         ? null
         : '자동 수리 후에도 수동 검수 필요: ${remainingBlocks.first.label} · ${remainingBlocks.first.detail}';
+    notifyListeners();
+  }
+
+  void applySelectedShortsRenderSafetyAutoRepair() {
+    final selected = shortsCandidates
+        .where(
+          (candidate) => candidate.selected && candidate.segments.isNotEmpty,
+        )
+        .toList();
+    if (selected.isEmpty) {
+      errorMessage = '안전 수리할 쇼츠 후보를 선택해 주세요';
+      notifyListeners();
+      return;
+    }
+
+    var applied = false;
+    shortsCandidates = [
+      for (final candidate in shortsCandidates)
+        if (candidate.selected && candidate.segments.isNotEmpty)
+          _repairShortsCandidateForRenderSafety(
+            candidate,
+            onApplied: () {
+              applied = true;
+            },
+          )
+        else
+          candidate,
+    ];
+
+    final remainingBlock = _firstSelectedShortsRenderBlock();
+    if (applied) {
+      renderUrl = null;
+      final active = selectedShortsId == null
+          ? null
+          : _shortsCandidateById(selectedShortsId!);
+      if (active != null) {
+        _loadShortsCandidateToTimeline(active);
+      }
+    }
+    if (remainingBlock != null) {
+      selectedShortsId = remainingBlock.candidate.id;
+      _loadShortsCandidateToTimeline(remainingBlock.candidate);
+      if (remainingBlock.item.segmentOrder != null) {
+        selectedSegmentOrder = remainingBlock.item.segmentOrder;
+      }
+    }
+    errorMessage = remainingBlock == null
+        ? null
+        : '쇼츠 자동 수리 후에도 수동 검수 필요: ${remainingBlock.candidate.label} · ${remainingBlock.item.label} · ${remainingBlock.item.detail}';
     notifyListeners();
   }
 
@@ -2861,6 +2901,39 @@ class EditorController extends ChangeNotifier {
     return checks;
   }
 
+  int _selectedShortsRenderSafetyCount(EditorialCheckStatus status) {
+    var count = 0;
+    for (final candidate in shortsCandidates) {
+      if (!candidate.selected || candidate.segments.isEmpty) {
+        continue;
+      }
+      count += _buildRenderSafetyChecklist(
+        candidate.segments,
+        aspectRatio: '9:16',
+        requireCaptions: true,
+      ).where((item) => item.status == status).length;
+    }
+    return count;
+  }
+
+  ({ShortsCandidate candidate, RenderSafetyItem item})?
+  _firstSelectedShortsRenderBlock() {
+    for (final candidate in shortsCandidates) {
+      if (!candidate.selected || candidate.segments.isEmpty) {
+        continue;
+      }
+      final blocks = _buildRenderSafetyChecklist(
+        candidate.segments,
+        aspectRatio: '9:16',
+        requireCaptions: true,
+      ).where((item) => item.status == EditorialCheckStatus.block).toList();
+      if (blocks.isNotEmpty) {
+        return (candidate: candidate, item: blocks.first);
+      }
+    }
+    return null;
+  }
+
   String _shortsGrade(double score) {
     if (score >= 86) {
       return 'S';
@@ -3688,6 +3761,42 @@ class EditorController extends ChangeNotifier {
       return a.segmentOrder.compareTo(b.segmentOrder);
     });
     return output;
+  }
+
+  (List<HighlightSegment>, bool) _repairSegmentsForRenderSafety(
+    List<HighlightSegment> sourceSegments,
+  ) {
+    var applied = false;
+    var workingSegments = List<HighlightSegment>.of(sourceSegments);
+    for (var pass = 0; pass < 3; pass++) {
+      var changedThisPass = false;
+      final nextSegments = <HighlightSegment>[];
+      for (final segment in workingSegments) {
+        final repaired = _repairSegmentForRenderSafety(segment);
+        nextSegments.add(repaired.$1);
+        if (repaired.$2) {
+          changedThisPass = true;
+          applied = true;
+        }
+      }
+      workingSegments = _reorderSegments(nextSegments);
+      if (!changedThisPass) {
+        break;
+      }
+    }
+    return (workingSegments, applied);
+  }
+
+  ShortsCandidate _repairShortsCandidateForRenderSafety(
+    ShortsCandidate candidate, {
+    required void Function() onApplied,
+  }) {
+    final repaired = _repairSegmentsForRenderSafety(candidate.segments);
+    if (!repaired.$2) {
+      return candidate;
+    }
+    onApplied();
+    return _scoreShortsCandidate(candidate.copyWith(segments: repaired.$1));
   }
 
   (HighlightSegment, bool) _repairSegmentForRenderSafety(
