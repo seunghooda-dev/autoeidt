@@ -9,6 +9,197 @@ from app.services.editing_skills import (
 )
 
 
+def _overlap_seconds(
+    a_start: float,
+    a_end: float,
+    b_start: float,
+    b_end: float,
+) -> float:
+    return max(0.0, min(a_end, b_end) - max(a_start, b_start))
+
+
+def _silence_seconds(item: Any, key: str) -> float:
+    if isinstance(item, dict):
+        value = item.get(key, 0.0)
+    else:
+        value = getattr(item, key, 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _coerce_silence_ranges(
+    silence_ranges: list[Any] | None,
+    duration: float,
+) -> list[tuple[float, float]]:
+    ranges: list[tuple[float, float]] = []
+    for item in silence_ranges or []:
+        start = max(0.0, min(_silence_seconds(item, "start"), duration))
+        end = max(0.0, min(_silence_seconds(item, "end"), duration))
+        if end > start:
+            ranges.append((start, end))
+    ranges.sort()
+
+    merged: list[tuple[float, float]] = []
+    for start, end in ranges:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+    return merged
+
+
+def _speech_ranges_from_silence(
+    duration: float,
+    silence_ranges: list[Any] | None,
+    min_speech_seconds: float = 2.0,
+) -> list[tuple[float, float]]:
+    silences = _coerce_silence_ranges(silence_ranges, duration)
+    if not silences:
+        return []
+
+    speech: list[tuple[float, float]] = []
+    cursor = 0.0
+    for start, end in silences:
+        if start - cursor >= min_speech_seconds:
+            speech.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration - cursor >= min_speech_seconds:
+        speech.append((cursor, duration))
+    return speech
+
+
+def _fallback_target_total(
+    duration: float,
+    target_min_seconds: float,
+    target_max_seconds: float,
+) -> float:
+    return min(
+        float(target_max_seconds),
+        max(45.0, min(float(target_min_seconds), duration * 0.35)),
+    )
+
+
+def _fallback_clip_shape(
+    duration: float,
+    target_total: float,
+) -> tuple[int, float]:
+    clip_count = max(1, min(6, round(target_total / 45.0)))
+    clip_length = min(
+        60.0,
+        max(20.0, target_total / clip_count, duration / (clip_count * 3)),
+    )
+    return clip_count, min(clip_length, duration)
+
+
+def _audio_activity_review_highlights(
+    duration: float,
+    target_total: float,
+    clip_count: int,
+    clip_length: float,
+    speech_ranges: list[tuple[float, float]],
+) -> list[dict[str, Any]]:
+    if not speech_ranges:
+        return []
+
+    windows: list[dict[str, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for index, (speech_start, speech_end) in enumerate(speech_ranges):
+        cluster_start = speech_start
+        cluster_end = speech_end
+        speech_seconds = speech_end - speech_start
+        cursor = index + 1
+        while cursor < len(speech_ranges):
+            next_start, next_end = speech_ranges[cursor]
+            gap = next_start - cluster_end
+            if gap > 12.0 and cluster_end - cluster_start >= clip_length * 0.55:
+                break
+            if next_end - cluster_start > clip_length * 1.25:
+                break
+            cluster_end = next_end
+            speech_seconds += next_end - next_start
+            cursor += 1
+
+        cluster_duration = cluster_end - cluster_start
+        window_length = min(
+            duration,
+            max(
+                min(clip_length, duration),
+                min(clip_length * 0.75, cluster_duration + 2.0),
+            ),
+        )
+        window_length = max(2.0, min(window_length, duration))
+        center = (cluster_start + cluster_end) / 2
+        start = max(
+            0.0,
+            min(center - window_length / 2, duration - window_length),
+        )
+        end = min(duration, start + window_length)
+        speech_overlap = sum(
+            _overlap_seconds(start, end, item_start, item_end)
+            for item_start, item_end in speech_ranges
+        )
+        density = speech_overlap / max(end - start, 0.001)
+        center_bias = 1.0 - min(
+            abs((center / max(duration, 0.001)) - 0.45),
+            0.45,
+        )
+        score = density * 0.78 + center_bias * 0.22
+        key = (round(start), round(end))
+        if key in seen:
+            continue
+        seen.add(key)
+        windows.append(
+            {
+                "start": start,
+                "end": end,
+                "density": density,
+                "score": score,
+                "speech_seconds": speech_overlap,
+            }
+        )
+
+    windows.sort(
+        key=lambda item: (item["score"], item["speech_seconds"]),
+        reverse=True,
+    )
+    selected: list[dict[str, Any]] = []
+    selected_total = 0.0
+    for window in windows:
+        start = float(window["start"])
+        end = float(window["end"])
+        duration_seconds = end - start
+        if any(
+            _overlap_seconds(start, end, float(item["start"]), float(item["end"]))
+            / max(
+                min(duration_seconds, float(item["end"]) - float(item["start"])),
+                0.001,
+            )
+            > 0.45
+            for item in selected
+        ):
+            continue
+        density = float(window["density"])
+        selected.append(
+            {
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "reason": "STT 없이 오디오 활동과 무음 탐지를 기준으로 잡은 검토용 후보 구간입니다.",
+                "script": "",
+                "source": "fallback-audio-review",
+                "score": round(3.0 + density * 4.0, 2),
+                "tags": ["검토필요", "오디오활성", "STT미설정"],
+            }
+        )
+        selected_total += duration_seconds
+        if len(selected) >= clip_count and selected_total >= target_total * 0.85:
+            break
+
+    selected.sort(key=lambda item: float(item["start"]))
+    return selected
+
+
 def build_highlight_prompt(
     transcript: list[dict[str, Any]],
     target_min_seconds: int,
@@ -183,14 +374,25 @@ def fallback_review_highlights(
     duration: float,
     target_min_seconds: float,
     target_max_seconds: float,
+    silence_ranges: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     duration = max(float(duration or 0), 1.0)
-    target_total = min(
-        float(target_max_seconds),
-        max(45.0, min(float(target_min_seconds), duration * 0.35)),
+    target_total = _fallback_target_total(
+        duration,
+        target_min_seconds,
+        target_max_seconds,
     )
-    clip_count = max(1, min(6, round(target_total / 45.0)))
-    clip_length = min(60.0, max(20.0, target_total / clip_count, duration / (clip_count * 3)))
+    clip_count, clip_length = _fallback_clip_shape(duration, target_total)
+    audio_activity = _audio_activity_review_highlights(
+        duration,
+        target_total,
+        clip_count,
+        clip_length,
+        _speech_ranges_from_silence(duration, silence_ranges),
+    )
+    if audio_activity:
+        return audio_activity
+
     clip_length = min(clip_length, duration)
     available = max(0.0, duration - clip_length)
 

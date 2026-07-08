@@ -17,7 +17,7 @@ from app.services.hybrid_cut import (
     refine_highlights_with_hybrid_cut,
     silence_ranges_to_dicts,
 )
-from app.services.llm_service import analyze_highlights
+from app.services.llm_service import analyze_highlights, fallback_review_highlights
 from app.services.reference_style import (
     analyze_reference_video,
     build_style_profile,
@@ -255,7 +255,9 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         )
         transcript = transcribe_audio(audio_path, duration)
         analysis_warnings: list[str] = []
-        if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
+        if transcript and all(
+            item.get("source") == "fallback_stt" for item in transcript
+        ):
             fallback_reason = str(transcript[0].get("fallback_reason") or "")
             if fallback_reason.startswith("local_whisper_failed:"):
                 message = (
@@ -326,6 +328,16 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             noise_db=settings.silence_noise_db,
             min_duration=min_silence,
         )
+        if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
+            raw_highlights = _normalize_highlights(
+                fallback_review_highlights(
+                    duration,
+                    settings.target_highlight_seconds_min,
+                    settings.target_highlight_seconds_max,
+                    silence_ranges=silence_ranges,
+                ),
+                duration,
+            )
         candidate_silences = _silences_overlapping_highlights(
             silence_ranges,
             raw_highlights,
