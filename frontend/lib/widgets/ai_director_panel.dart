@@ -362,18 +362,23 @@ class _ShortsCandidateTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _CandidateStrategyBadge(candidate: candidate),
-                  const SizedBox(width: 6),
-                  _CandidateReadinessBadge(candidate: candidate),
-                  const SizedBox(width: 6),
-                  _CandidateQualityBadge(candidate: candidate),
-                  const SizedBox(width: 6),
                   Text(
                     formatSeconds(candidate.durationSeconds),
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
               ),
+              const SizedBox(height: 5),
+              Wrap(
+                spacing: 6,
+                runSpacing: 5,
+                children: [
+                  _CandidateStrategyBadge(candidate: candidate),
+                  _CandidateReadinessBadge(candidate: candidate),
+                  _CandidateQualityBadge(candidate: candidate),
+                ],
+              ),
+              const SizedBox(height: 5),
               Text(
                 candidate.reason,
                 maxLines: 2,
@@ -382,34 +387,7 @@ class _ShortsCandidateTile extends StatelessWidget {
               ),
               if (candidate.storyFlow.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.account_tree_outlined,
-                      size: 14,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        candidate.storyFlow.join(' > '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      'S${candidate.storyScore.round()}',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
+                _StoryFlowStrip(candidate: candidate),
               ],
               const SizedBox(height: 5),
               Text(
@@ -475,6 +453,133 @@ class _ShortsCandidateTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StoryFlowStrip extends StatelessWidget {
+  const _StoryFlowStrip({required this.candidate});
+
+  static const _idealFlow = ['Hook', 'Evidence', 'Impact', 'Resolution'];
+
+  final ShortsCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final flow = candidate.storyFlow;
+    final missing = [
+      for (final role in _idealFlow)
+        if (!flow.contains(role)) role,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.account_tree_outlined,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(
+                'Story Arc',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Text(
+              'S${candidate.storyScore.round()}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            for (final role in flow)
+              _StoryRoleChip(
+                label: role,
+                color: _storyRoleColor(colorScheme, role),
+                active: true,
+              ),
+            for (final role in missing.take(2))
+              _StoryRoleChip(
+                label: role,
+                color: colorScheme.outline,
+                active: false,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Color _storyRoleColor(ColorScheme colorScheme, String role) {
+    return switch (role) {
+      'Hook' => colorScheme.primary,
+      'Context' => colorScheme.secondary,
+      'Evidence' => colorScheme.tertiary,
+      'Impact' => colorScheme.error,
+      'Resolution' => colorScheme.primary,
+      'Risk' => colorScheme.error,
+      _ => colorScheme.outline,
+    };
+  }
+}
+
+class _StoryRoleChip extends StatelessWidget {
+  const _StoryRoleChip({
+    required this.label,
+    required this.color,
+    required this.active,
+  });
+
+  final String label;
+  final Color color;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground = active ? color : colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: active ? 0.11 : 0.04),
+        border: Border.all(
+          color: color.withValues(alpha: active ? 0.48 : 0.20),
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            active ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+            size: 11,
+            color: foreground,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: foreground,
+              fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
