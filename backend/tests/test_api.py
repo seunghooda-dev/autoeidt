@@ -28,6 +28,15 @@ def test_local_import_returns_not_found_for_missing_file() -> None:
     assert response.status_code == 404
 
 
+def test_local_probe_returns_not_found_for_missing_file() -> None:
+    response = client.post(
+        "/api/jobs/probe-local",
+        json={"path": "C:/definitely/missing/source.mxf"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_batch_render_returns_not_found_for_unknown_job() -> None:
     response = client.post(
         "/api/jobs/missing/batch-render",

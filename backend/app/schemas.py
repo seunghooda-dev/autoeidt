@@ -172,6 +172,31 @@ class LocalImportRequest(BaseModel):
     style_id: str | None = None
 
 
+class MediaProbeRequest(BaseModel):
+    path: str
+
+
+class MediaProbeResponse(BaseModel):
+    path: str
+    filename: str
+    container: str = ""
+    format_long_name: str = ""
+    duration: float = 0.0
+    bit_rate: int = 0
+    video_codec: str = ""
+    video_codec_long_name: str = ""
+    width: int = 0
+    height: int = 0
+    frame_rate: float = 0.0
+    timecode: str | None = None
+    audio_stream_count: int = 0
+    audio_summary: str = ""
+    is_mxf: bool = False
+    mxf_operational_pattern: str = ""
+    can_analyze: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
 class LocalStyleTrainingRequest(BaseModel):
     name: str = "Company Reference Style"
     file_paths: list[str] = Field(default_factory=list)

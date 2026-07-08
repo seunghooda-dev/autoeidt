@@ -59,6 +59,14 @@ class ApiClient {
     return UploadJobResponse.fromJson(response.data!);
   }
 
+  Future<MediaProbeInfo> probeLocalMedia(String path) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/probe-local',
+      data: {'path': path},
+    );
+    return MediaProbeInfo.fromJson(response.data!);
+  }
+
   Future<StyleTrainingResponse> trainStyleProfile({
     required String name,
     List<String> urls = const [],

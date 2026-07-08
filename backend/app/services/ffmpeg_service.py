@@ -7,6 +7,7 @@ from array import array
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from app.config import get_settings
 
@@ -62,6 +63,164 @@ def probe_duration(video_path: Path) -> float:
     )
     payload = json.loads(result.stdout)
     return float(payload["format"]["duration"])
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _rate_to_float(rate: str | None) -> float:
+    if not rate or rate == "0/0":
+        return 0.0
+    try:
+        if "/" in rate:
+            numerator, denominator = rate.split("/", 1)
+            denominator_value = float(denominator)
+            if denominator_value == 0:
+                return 0.0
+            return float(numerator) / denominator_value
+        return float(rate)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _stream_timecode(
+    streams: list[dict[str, Any]],
+    format_info: dict[str, Any],
+) -> str | None:
+    for source in [*streams, format_info]:
+        tags = source.get("tags") if isinstance(source, dict) else None
+        if not isinstance(tags, dict):
+            continue
+        timecode = tags.get("timecode") or tags.get("TIMECODE")
+        if timecode:
+            return str(timecode)
+    return None
+
+
+def _audio_stream_label(stream: dict[str, Any], index: int) -> str:
+    codec = str(stream.get("codec_name") or "unknown")
+    channels = _safe_int(stream.get("channels"))
+    layout = str(stream.get("channel_layout") or "").strip()
+    channel_label = layout or (f"{channels}ch" if channels else "unknown")
+    return f"A{index} {codec} {channel_label}"
+
+
+def _infer_mxf_operational_pattern(
+    video_streams: list[dict[str, Any]],
+    audio_streams: list[dict[str, Any]],
+) -> str:
+    if video_streams and audio_streams:
+        return "OP1a-like single-file MXF"
+    if len(video_streams) + len(audio_streams) <= 1:
+        return "Possible OP-Atom/separate essence MXF"
+    return "MXF operational pattern unknown"
+
+
+def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    format_info = payload.get("format") or {}
+    streams = payload.get("streams") or []
+    if not isinstance(streams, list):
+        streams = []
+    video_streams = [item for item in streams if item.get("codec_type") == "video"]
+    audio_streams = [item for item in streams if item.get("codec_type") == "audio"]
+    video = video_streams[0] if video_streams else {}
+
+    format_name = str(format_info.get("format_name") or "")
+    format_long_name = str(format_info.get("format_long_name") or "")
+    suffix = video_path.suffix.lower()
+    is_mxf = suffix == ".mxf" or "mxf" in format_name.lower()
+    duration = _safe_float(format_info.get("duration"))
+    if duration <= 0 and video:
+        duration = _safe_float(video.get("duration"))
+    frame_rate = _rate_to_float(
+        str(video.get("avg_frame_rate") or video.get("r_frame_rate") or "")
+    )
+    audio_labels = [
+        _audio_stream_label(stream, index)
+        for index, stream in enumerate(audio_streams[:4], start=1)
+    ]
+    if len(audio_streams) > 4:
+        audio_labels.append(f"+{len(audio_streams) - 4} more")
+
+    warnings: list[str] = []
+    if not video_streams:
+        warnings.append("비디오 스트림을 찾지 못했습니다.")
+    if is_mxf and not audio_streams:
+        warnings.append(
+            "오디오가 분리된 OP-Atom MXF일 수 있습니다. 관련 오디오 파일도 확인해 주세요."
+        )
+    elif not audio_streams:
+        warnings.append("오디오 스트림이 없습니다.")
+    if frame_rate <= 0:
+        warnings.append("프레임레이트를 확인하지 못했습니다.")
+    elif abs(frame_rate - (30000 / 1001)) > 0.03:
+        warnings.append(
+            f"소스 프레임레이트가 {frame_rate:.3f}fps입니다. "
+            "현재 타임라인은 29.97 DF 기준입니다."
+        )
+    if is_mxf and len(audio_streams) >= 8:
+        warnings.append(
+            "방송 MXF 다중 오디오 스트림입니다. 필요한 채널 매핑 확인이 필요합니다."
+        )
+    if is_mxf:
+        warnings.append("방송 원본 MXF입니다. 렌더 전 코덱/프록시 검사를 권장합니다.")
+
+    return {
+        "path": str(video_path),
+        "filename": video_path.name,
+        "container": format_name,
+        "format_long_name": format_long_name,
+        "duration": round(duration, 3),
+        "bit_rate": _safe_int(format_info.get("bit_rate")),
+        "video_codec": str(video.get("codec_name") or ""),
+        "video_codec_long_name": str(video.get("codec_long_name") or ""),
+        "width": _safe_int(video.get("width")),
+        "height": _safe_int(video.get("height")),
+        "frame_rate": round(frame_rate, 3),
+        "timecode": _stream_timecode(streams, format_info),
+        "audio_stream_count": len(audio_streams),
+        "audio_summary": ", ".join(audio_labels),
+        "is_mxf": is_mxf,
+        "mxf_operational_pattern": (
+            _infer_mxf_operational_pattern(video_streams, audio_streams)
+            if is_mxf
+            else ""
+        ),
+        "can_analyze": bool(video_streams and duration > 0),
+        "warnings": warnings,
+    }
+
+
+def probe_media_info(video_path: Path) -> dict[str, Any]:
+    result = _run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-of",
+            "json",
+            str(video_path),
+        ],
+        timeout=60,
+    )
+    return summarize_media_probe(video_path, json.loads(result.stdout))
 
 
 def extract_audio(video_path: Path, audio_path: Path) -> Path:

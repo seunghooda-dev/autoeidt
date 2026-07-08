@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/job_models.dart';
 import '../state/editor_controller.dart';
 
 class StatusPanel extends StatelessWidget {
@@ -16,6 +17,7 @@ class StatusPanel extends StatelessWidget {
     final jobStatus = controller.job?.status;
     final isActive =
         controller.isUploading ||
+        controller.isProbingMedia ||
         jobStatus == 'queued' ||
         jobStatus == 'processing' ||
         jobStatus == 'rendering';
@@ -107,6 +109,10 @@ class StatusPanel extends StatelessWidget {
                 ),
               ],
             ),
+            if (controller.selectedMediaProbe != null) ...[
+              const SizedBox(height: 12),
+              _MediaProbePanel(probe: controller.selectedMediaProbe!),
+            ],
             if (controller.renderUrl != null) ...[
               const SizedBox(height: 12),
               SelectableText(
@@ -119,6 +125,138 @@ class StatusPanel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MediaProbePanel extends StatelessWidget {
+  const _MediaProbePanel({required this.probe});
+
+  final MediaProbeInfo probe;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final statusColor = probe.canAnalyze
+        ? colorScheme.primary
+        : colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                probe.isMxf ? Icons.tv : Icons.fact_check,
+                size: 16,
+                color: statusColor,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  probe.isMxf ? 'MXF Media Check' : 'Media Check',
+                  style: textTheme.labelMedium,
+                ),
+              ),
+              Text(
+                probe.canAnalyze ? 'Ready' : 'Blocked',
+                style: textTheme.labelSmall?.copyWith(color: statusColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _ProbeBadge(
+                label: probe.container.isEmpty ? 'container?' : probe.container,
+              ),
+              _ProbeBadge(label: probe.resolutionLabel),
+              _ProbeBadge(
+                label: probe.videoCodec.isEmpty ? 'codec?' : probe.videoCodec,
+              ),
+              _ProbeBadge(label: '${probe.frameRate.toStringAsFixed(3)} fps'),
+              if (probe.timecode != null)
+                _ProbeBadge(label: 'TC ${probe.timecode}'),
+              _ProbeBadge(label: 'A ${probe.audioStreamCount}'),
+            ],
+          ),
+          if (probe.isMxf && probe.mxfOperationalPattern.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              probe.mxfOperationalPattern,
+              style: textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (probe.audioSummary.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              probe.audioSummary,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (probe.warnings.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final warning in probe.warnings.take(2))
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 14,
+                      color: colorScheme.tertiary,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        warning,
+                        style: textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProbeBadge extends StatelessWidget {
+  const _ProbeBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelSmall),
     );
   }
 }

@@ -26,6 +26,79 @@ class UploadJobResponse {
   }
 }
 
+class MediaProbeInfo {
+  const MediaProbeInfo({
+    required this.path,
+    required this.filename,
+    required this.container,
+    required this.formatLongName,
+    required this.duration,
+    required this.bitRate,
+    required this.videoCodec,
+    required this.videoCodecLongName,
+    required this.width,
+    required this.height,
+    required this.frameRate,
+    required this.audioStreamCount,
+    required this.audioSummary,
+    required this.isMxf,
+    required this.mxfOperationalPattern,
+    required this.canAnalyze,
+    required this.warnings,
+    this.timecode,
+  });
+
+  final String path;
+  final String filename;
+  final String container;
+  final String formatLongName;
+  final double duration;
+  final int bitRate;
+  final String videoCodec;
+  final String videoCodecLongName;
+  final int width;
+  final int height;
+  final double frameRate;
+  final String? timecode;
+  final int audioStreamCount;
+  final String audioSummary;
+  final bool isMxf;
+  final String mxfOperationalPattern;
+  final bool canAnalyze;
+  final List<String> warnings;
+
+  String get resolutionLabel {
+    if (width <= 0 || height <= 0) {
+      return 'Unknown';
+    }
+    return '${width}x$height';
+  }
+
+  factory MediaProbeInfo.fromJson(Map<String, dynamic> json) {
+    final rawWarnings = json['warnings'] as List<dynamic>? ?? const [];
+    return MediaProbeInfo(
+      path: json['path'] as String? ?? '',
+      filename: json['filename'] as String? ?? '',
+      container: json['container'] as String? ?? '',
+      formatLongName: json['format_long_name'] as String? ?? '',
+      duration: (json['duration'] as num?)?.toDouble() ?? 0,
+      bitRate: (json['bit_rate'] as num?)?.toInt() ?? 0,
+      videoCodec: json['video_codec'] as String? ?? '',
+      videoCodecLongName: json['video_codec_long_name'] as String? ?? '',
+      width: (json['width'] as num?)?.toInt() ?? 0,
+      height: (json['height'] as num?)?.toInt() ?? 0,
+      frameRate: (json['frame_rate'] as num?)?.toDouble() ?? 0,
+      timecode: json['timecode'] as String?,
+      audioStreamCount: (json['audio_stream_count'] as num?)?.toInt() ?? 0,
+      audioSummary: json['audio_summary'] as String? ?? '',
+      isMxf: json['is_mxf'] as bool? ?? false,
+      mxfOperationalPattern: json['mxf_operational_pattern'] as String? ?? '',
+      canAnalyze: json['can_analyze'] as bool? ?? false,
+      warnings: rawWarnings.map((item) => item.toString()).toList(),
+    );
+  }
+}
+
 class JobStatusResponse {
   const JobStatusResponse({
     required this.jobId,

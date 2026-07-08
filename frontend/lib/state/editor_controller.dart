@@ -34,6 +34,7 @@ class EditorController extends ChangeNotifier {
 
   LocalEngineState engineState = LocalEngineState.idle();
   PlatformFile? selectedFile;
+  MediaProbeInfo? selectedMediaProbe;
   List<PlatformFile> referenceFiles = [];
   String? jobId;
   JobStatusResponse? job;
@@ -70,7 +71,25 @@ class EditorController extends ChangeNotifier {
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
+  bool isProbingMedia = false;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
+  static const List<String> supportedVideoExtensions = [
+    'mp4',
+    'mov',
+    'm4v',
+    'mkv',
+    'webm',
+    'avi',
+    'wmv',
+    'asf',
+    'mpg',
+    'mpeg',
+    'ts',
+    'm2ts',
+    'mts',
+    'flv',
+    'mxf',
+  ];
   static final RegExp _fillerPattern = RegExp(
     r'(^|\s)(음+|어+|아+|그니까|그러니까|뭐랄까|약간|이제)(\s|$)|you know|um+|uh+',
     caseSensitive: false,
@@ -83,7 +102,11 @@ class EditorController extends ChangeNotifier {
   bool get hasFile => selectedFile != null;
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get canStartUpload =>
-      hasFile && !isUploading && job?.status != 'processing';
+      hasFile &&
+      !isUploading &&
+      !isProbingMedia &&
+      selectedMediaProbe?.canAnalyze != false &&
+      job?.status != 'processing';
   bool get hasReadyStyle => activeStyleProfile?.isReady ?? false;
   bool get hasComparisonVariants =>
       comparisonDefaultSegments.isNotEmpty &&
@@ -319,6 +342,9 @@ class EditorController extends ChangeNotifier {
     if (job != null && job!.message.isNotEmpty) {
       return job!.message;
     }
+    if (isProbingMedia) {
+      return '미디어 사전검사 중...';
+    }
     if (selectedFile != null) {
       return selectedFile!.name;
     }
@@ -349,10 +375,28 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _ensureLocalEngineForApi() async {
+    if (kIsWeb || engineState.isRunning) {
+      return;
+    }
+    if (engineState.isStarting) {
+      final deadline = DateTime.now().add(const Duration(seconds: 20));
+      while (engineState.isStarting && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+      if (engineState.isRunning) {
+        return;
+      }
+    }
+    await ensureLocalEngine();
+  }
+
   Future<void> pickVideo() async {
     errorMessage = null;
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
+      dialogTitle: '원본 영상 가져오기',
+      type: kIsWeb ? FileType.video : FileType.custom,
+      allowedExtensions: kIsWeb ? null : supportedVideoExtensions,
       allowMultiple: false,
       withData: kIsWeb,
       withReadStream: !kIsWeb,
@@ -361,6 +405,8 @@ class EditorController extends ChangeNotifier {
       return;
     }
     selectedFile = result.files.single;
+    selectedMediaProbe = null;
+    isProbingMedia = false;
     jobId = null;
     job = null;
     duration = 0;
@@ -384,6 +430,45 @@ class EditorController extends ChangeNotifier {
     _clearHistory();
     await _disposeVideoController();
     notifyListeners();
+    if (!kIsWeb && selectedFile?.path != null) {
+      unawaited(probeSelectedMedia());
+    }
+  }
+
+  Future<void> probeSelectedMedia() async {
+    final file = selectedFile;
+    final path = file?.path;
+    if (kIsWeb || path == null || path.isEmpty) {
+      return;
+    }
+
+    isProbingMedia = true;
+    selectedMediaProbe = null;
+    if (errorMessage?.startsWith('사전검사 실패') ?? false) {
+      errorMessage = null;
+    }
+    notifyListeners();
+
+    try {
+      await _ensureLocalEngineForApi();
+      final probe = await _apiClient.probeLocalMedia(path);
+      if (selectedFile?.path != path) {
+        return;
+      }
+      selectedMediaProbe = probe;
+      if (!probe.canAnalyze) {
+        errorMessage = '사전검사 실패: 분석 가능한 비디오 스트림이 없습니다.';
+      }
+    } catch (error) {
+      if (selectedFile?.path == path) {
+        errorMessage = '사전검사 실패: $error';
+      }
+    } finally {
+      if (selectedFile?.path == path) {
+        isProbingMedia = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> startUpload() async {
@@ -402,6 +487,7 @@ class EditorController extends ChangeNotifier {
       final localPath = file.path;
       final UploadJobResponse response;
       if (!kIsWeb && localPath != null && localPath.isNotEmpty) {
+        await _ensureLocalEngineForApi();
         response = await _apiClient.importLocalVideo(
           path: localPath,
           displayName: file.name,
@@ -439,7 +525,9 @@ class EditorController extends ChangeNotifier {
   Future<void> pickReferenceVideos() async {
     errorMessage = null;
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
+      dialogTitle: '레퍼런스 영상 가져오기',
+      type: kIsWeb ? FileType.video : FileType.custom,
+      allowedExtensions: kIsWeb ? null : supportedVideoExtensions,
       allowMultiple: true,
       withData: kIsWeb,
       withReadStream: !kIsWeb,

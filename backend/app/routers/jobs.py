@@ -10,6 +10,8 @@ from app.schemas import (
     JobStatus,
     JobStatusResponse,
     LocalImportRequest,
+    MediaProbeRequest,
+    MediaProbeResponse,
     ProjectResponse,
     ProjectState,
     RenderRequest,
@@ -17,6 +19,7 @@ from app.schemas import (
     TimelineResponse,
     UploadJobResponse,
 )
+from app.services.ffmpeg_service import FFmpegError, probe_media_info
 from app.storage import now_iso, safe_filename, store
 from app.tasks import (
     analyze_video_job,
@@ -48,6 +51,34 @@ def _load_ready_style_profile(style_id: str | None) -> dict | None:
     if style_profile.get("status") != "ready":
         raise HTTPException(status_code=409, detail="style profile is not ready")
     return style_profile
+
+
+def _resolve_local_file(path: str) -> Path:
+    source_path = Path(path).expanduser()
+    try:
+        source_path = source_path.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="local source file not found") from exc
+    if not source_path.is_file():
+        raise HTTPException(status_code=400, detail="local source path must be a file")
+    return source_path
+
+
+def _source_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".mxf":
+        return "application/mxf"
+    if suffix in {".mov", ".qt"}:
+        return "video/quicktime"
+    if suffix in {".mkv", ".mk3d"}:
+        return "video/x-matroska"
+    if suffix in {".ts", ".m2ts", ".mts"}:
+        return "video/mp2t"
+    if suffix in {".avi"}:
+        return "video/x-msvideo"
+    if suffix in {".wmv", ".asf"}:
+        return "video/x-ms-wmv"
+    return "video/mp4"
 
 
 def _queue_analysis(
@@ -145,19 +176,21 @@ async def upload_video(
     )
 
 
+@router.post("/probe-local", response_model=MediaProbeResponse)
+def probe_local_media(payload: MediaProbeRequest) -> MediaProbeResponse:
+    source_path = _resolve_local_file(payload.path)
+    try:
+        return MediaProbeResponse(**probe_media_info(source_path))
+    except FFmpegError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/import-local", response_model=UploadJobResponse, status_code=status.HTTP_202_ACCEPTED)
 def import_local_video(
     payload: LocalImportRequest,
     background_tasks: BackgroundTasks,
 ) -> UploadJobResponse:
-    source_path = Path(payload.path).expanduser()
-    try:
-        source_path = source_path.resolve(strict=True)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="local source file not found") from exc
-    if not source_path.is_file():
-        raise HTTPException(status_code=400, detail="local source path must be a file")
-
+    source_path = _resolve_local_file(payload.path)
     style_profile = _load_ready_style_profile(payload.style_id)
     job_id = uuid.uuid4().hex
     _create_analysis_job(
@@ -239,7 +272,7 @@ def stream_source(job_id: str) -> FileResponse:
     path = Path(job["video_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="source video file not found")
-    return FileResponse(path, media_type="video/mp4", filename=path.name)
+    return FileResponse(path, media_type=_source_media_type(path), filename=path.name)
 
 
 @router.post("/{job_id}/render", response_model=RenderResponse, status_code=status.HTTP_202_ACCEPTED)
