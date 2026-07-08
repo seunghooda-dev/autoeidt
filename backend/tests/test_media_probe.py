@@ -43,9 +43,10 @@ def test_media_probe_summarizes_broadcast_mxf_op1a_like_file() -> None:
     assert summary["can_analyze"] is True
     assert summary["mxf_operational_pattern"] == "OP1a-like single-file MXF"
     assert summary["frame_rate"] == 29.97
-    assert summary["timecode"] == "01:00:00;00"
+    assert summary["timecode"] == "01:00:00:00"
     assert summary["audio_stream_count"] == 2
     assert "A1 pcm_s24le mono" in summary["audio_summary"]
+    assert any("drop-frame" in warning for warning in summary["warnings"])
 
 
 def test_media_probe_warns_for_possible_op_atom_without_audio() -> None:
@@ -74,3 +75,27 @@ def test_media_probe_warns_for_possible_op_atom_without_audio() -> None:
     assert summary["mxf_operational_pattern"] == "Possible OP-Atom/separate essence MXF"
     assert any("OP-Atom" in warning for warning in summary["warnings"])
     assert any("30.00fps non-drop" in warning for warning in summary["warnings"])
+
+
+def test_media_probe_clamps_invalid_source_timecode_to_30p_non_drop() -> None:
+    summary = summarize_media_probe(
+        Path("C:/media/news_source.mxf"),
+        {
+            "format": {
+                "format_name": "mxf",
+                "duration": "60.000",
+                "tags": {"timecode": "01:61:99;35"},
+            },
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "mpeg2video",
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "30/1",
+                }
+            ],
+        },
+    )
+
+    assert summary["timecode"] == "01:59:59:29"

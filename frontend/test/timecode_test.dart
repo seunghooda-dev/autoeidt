@@ -14,4 +14,10 @@ void main() {
     expect(secondsToTimecodeFrame(snapped), 30);
     expect(formatSeconds(snapped), '00:00:01:00');
   });
+
+  test('normalizes source drop-frame labels to 30p non-drop timecode', () {
+    expect(normalizeTimecodeText('01:02:03;04'), '01:02:03:04');
+    expect(normalizeTimecodeText('01:61:99;35'), '01:59:59:29');
+    expect(normalizeTimecodeText(''), isNull);
+  });
 }

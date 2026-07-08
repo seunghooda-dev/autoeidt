@@ -1,4 +1,5 @@
 import 'highlight_segment.dart';
+import '../utils/timecode.dart';
 
 class UploadJobResponse {
   const UploadJobResponse({
@@ -88,7 +89,7 @@ class MediaProbeInfo {
       width: (json['width'] as num?)?.toInt() ?? 0,
       height: (json['height'] as num?)?.toInt() ?? 0,
       frameRate: (json['frame_rate'] as num?)?.toDouble() ?? 0,
-      timecode: json['timecode'] as String?,
+      timecode: normalizeTimecodeText(json['timecode'] as String?),
       audioStreamCount: (json['audio_stream_count'] as num?)?.toInt() ?? 0,
       audioSummary: json['audio_summary'] as String? ?? '',
       isMxf: json['is_mxf'] as bool? ?? false,

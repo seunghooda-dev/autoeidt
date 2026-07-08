@@ -116,6 +116,25 @@ def _stream_timecode(
     return None
 
 
+def _normalize_non_drop_timecode(timecode: str | None) -> str | None:
+    if not timecode:
+        return None
+    value = str(timecode).strip()
+    match = re.match(r"^(\d{1,3}):(\d{2}):(\d{2})([:;.])(\d{2})$", value)
+    if not match:
+        return value.replace(";", ":").replace(".", ":")
+
+    hours = int(match.group(1))
+    minutes = min(int(match.group(2)), 59)
+    seconds = min(int(match.group(3)), 59)
+    frames = min(int(match.group(5)), RENDER_FRAME_RATE - 1)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}"
+
+
+def _is_drop_frame_timecode(timecode: str | None) -> bool:
+    return bool(timecode and (";" in timecode or "." in timecode))
+
+
 def _audio_stream_label(stream: dict[str, Any], index: int) -> str:
     codec = str(stream.get("codec_name") or "unknown")
     channels = _safe_int(stream.get("channels"))
@@ -154,6 +173,8 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
     frame_rate = _rate_to_float(
         str(video.get("avg_frame_rate") or video.get("r_frame_rate") or "")
     )
+    source_timecode = _stream_timecode(streams, format_info)
+    timeline_timecode = _normalize_non_drop_timecode(source_timecode)
     audio_labels = [
         _audio_stream_label(stream, index)
         for index, stream in enumerate(audio_streams[:4], start=1)
@@ -177,6 +198,10 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
             f"소스 프레임레이트가 {frame_rate:.3f}fps입니다. "
             "현재 타임라인은 30.00fps non-drop 기준입니다."
         )
+    if _is_drop_frame_timecode(source_timecode):
+        warnings.append(
+            "소스 drop-frame 타임코드는 30p non-drop 표기로 변환해 작업합니다."
+        )
     if is_mxf and len(audio_streams) >= 8:
         warnings.append(
             "방송 MXF 다중 오디오 스트림입니다. 필요한 채널 매핑 확인이 필요합니다."
@@ -196,7 +221,7 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         "width": _safe_int(video.get("width")),
         "height": _safe_int(video.get("height")),
         "frame_rate": round(frame_rate, 3),
-        "timecode": _stream_timecode(streams, format_info),
+        "timecode": timeline_timecode,
         "audio_stream_count": len(audio_streams),
         "audio_summary": ", ".join(audio_labels),
         "is_mxf": is_mxf,

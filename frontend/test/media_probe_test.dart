@@ -28,6 +28,7 @@ void main() {
     expect(probe.canAnalyze, isTrue);
     expect(probe.resolutionLabel, '1920x1080');
     expect(probe.frameRate, 29.97);
+    expect(probe.timecode, '01:00:00:00');
     expect(probe.audioStreamCount, 8);
     expect(probe.warnings.single, contains('다중 오디오'));
   });
