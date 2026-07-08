@@ -57,6 +57,9 @@ enum _TimelineMenuAction {
   applyAudioTransition,
   split,
   duplicate,
+  copySelected,
+  cutSelected,
+  pasteClipboard,
   delete,
   liftSelected,
   extractSelected,
@@ -137,6 +140,10 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleSnapping,
     this.onSplitAt,
     this.onDuplicateSegment,
+    this.onCopySegment,
+    this.onCutSegment,
+    this.onPasteSegment,
+    this.hasClipClipboard = false,
     this.onDeleteSegment,
     this.onLiftSelectedSegment,
     this.onExtractSelectedSegment,
@@ -214,6 +221,10 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleSnapping;
   final ValueChanged<double>? onSplitAt;
   final VoidCallback? onDuplicateSegment;
+  final VoidCallback? onCopySegment;
+  final VoidCallback? onCutSegment;
+  final VoidCallback? onPasteSegment;
+  final bool hasClipClipboard;
   final VoidCallback? onDeleteSegment;
   final VoidCallback? onLiftSelectedSegment;
   final VoidCallback? onExtractSelectedSegment;
@@ -541,6 +552,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onSplitAt?.call(seconds);
       case _TimelineMenuAction.duplicate:
         widget.onDuplicateSegment?.call();
+      case _TimelineMenuAction.copySelected:
+        widget.onCopySegment?.call();
+      case _TimelineMenuAction.cutSelected:
+        widget.onCutSegment?.call();
+      case _TimelineMenuAction.pasteClipboard:
+        widget.onPasteSegment?.call();
       case _TimelineMenuAction.delete:
         widget.onDeleteSegment?.call();
       case _TimelineMenuAction.liftSelected:
@@ -1062,6 +1079,27 @@ class _TimelineEditorState extends State<TimelineEditor> {
         'Duplicate clip',
         _TimelineMenuAction.duplicate,
         enabled: clipEditable,
+      ),
+      _menuItem(
+        Icons.copy_all_outlined,
+        'Copy clip',
+        _TimelineMenuAction.copySelected,
+        shortcut: 'Ctrl+C',
+        enabled: segment != null && widget.onCopySegment != null,
+      ),
+      _menuItem(
+        Icons.cut_outlined,
+        'Cut clip',
+        _TimelineMenuAction.cutSelected,
+        shortcut: 'Ctrl+X',
+        enabled: clipEditable && widget.onCutSegment != null,
+      ),
+      _menuItem(
+        Icons.content_paste_outlined,
+        'Paste clip after selection',
+        _TimelineMenuAction.pasteClipboard,
+        shortcut: 'Ctrl+V',
+        enabled: widget.hasClipClipboard && widget.onPasteSegment != null,
       ),
       _menuItem(
         Icons.delete_outline,

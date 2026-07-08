@@ -305,6 +305,48 @@ void main() {
     expect(controller.selectedSegment!.reason, 'three');
   });
 
+  testWidgets('clip clipboard shortcuts copy paste and cut selected clips', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 5, reason: 'one'),
+        HighlightSegment(order: 2, start: 10, end: 15, reason: 'two'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyC, control: true);
+    expect(controller.hasClipClipboard, isTrue);
+
+    controller.selectedSegmentOrder = 2;
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyV, control: true);
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegmentOrder, 3);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 0);
+    expect(secondsToTimecodeFrame(controller.segments.last.end), 150);
+
+    controller.selectedSegmentOrder = 2;
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyX, control: true);
+    expect(controller.segments.length, 2);
+    expect(controller.hasClipClipboard, isTrue);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyV, control: true);
+    expect(controller.segments.length, 3);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 300);
+    expect(secondsToTimecodeFrame(controller.segments.last.end), 450);
+  });
+
   testWidgets('insert and overwrite shortcuts use marked source range', (
     tester,
   ) async {

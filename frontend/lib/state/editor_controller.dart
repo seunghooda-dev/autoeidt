@@ -90,6 +90,7 @@ class EditorController extends ChangeNotifier {
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
   String projectName = 'AutoEdit Project';
+  HighlightSegment? _clipClipboard;
   List<HighlightSegment> comparisonDefaultSegments = [];
   List<HighlightSegment> comparisonReferenceSegments = [];
   String comparisonSelection = 'current';
@@ -362,6 +363,15 @@ class EditorController extends ChangeNotifier {
 
   bool get hasAnyTrackTarget =>
       videoTrackTargeted || audioTrack1Targeted || audioTrack2Targeted;
+  bool get hasClipClipboard => _clipClipboard != null;
+  String get clipClipboardLabel {
+    final clip = _clipClipboard;
+    if (clip == null) {
+      return 'Clipboard empty';
+    }
+    return 'C${clip.order} ${formatSeconds(clip.start)}-${formatSeconds(clip.end)}';
+  }
+
   bool get allTrackTargetsEnabled =>
       videoTrackTargeted && audioTrack1Targeted && audioTrack2Targeted;
   bool get targetedTracksUnlocked =>
@@ -2517,6 +2527,60 @@ class EditorController extends ChangeNotifier {
         .toInt();
     renderUrl = null;
     notifyListeners();
+  }
+
+  void copySelectedSegment() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    _clipClipboard = selected;
+    notifyListeners();
+  }
+
+  void cutSelectedSegment() {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    _clipClipboard = selected;
+    deleteSelectedSegment();
+  }
+
+  void pasteClipboardSegment() {
+    final clip = _clipClipboard;
+    if (clip == null) {
+      return;
+    }
+    _commitHistory();
+    final insertIndex = _clipboardPasteIndex();
+    final pasted = clip.copyWith(
+      order: insertIndex + 1,
+      reason: '${clip.reason} / paste',
+      source: _appendSource(clip.source, 'paste'),
+    );
+    final output = <HighlightSegment>[
+      ...segments.take(insertIndex),
+      pasted,
+      ...segments.skip(insertIndex),
+    ];
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = (insertIndex + 1).clamp(1, segments.length).toInt();
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  int _clipboardPasteIndex() {
+    final order = selectedSegmentOrder;
+    if (order != null) {
+      final selectedIndex = segments.indexWhere(
+        (segment) => segment.order == order,
+      );
+      if (selectedIndex >= 0) {
+        return selectedIndex + 1;
+      }
+    }
+    return segments.length;
   }
 
   void undo() {

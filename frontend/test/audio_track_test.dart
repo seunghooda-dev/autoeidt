@@ -775,6 +775,42 @@ void main() {
     expect(controller.selectedSegmentOrder, 2);
   });
 
+  test('copy cut and paste selected clips use an editor clipboard', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 5, reason: 'a'),
+        HighlightSegment(order: 2, start: 10, end: 15, reason: 'b'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    expect(controller.hasClipClipboard, isFalse);
+
+    controller.copySelectedSegment();
+    expect(controller.hasClipClipboard, isTrue);
+    expect(controller.clipClipboardLabel, contains('C1'));
+
+    controller.selectedSegmentOrder = 2;
+    controller.pasteClipboardSegment();
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegmentOrder, 3);
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 0);
+    expect(secondsToTimecodeFrame(controller.segments[2].end), 150);
+    expect(controller.segments[2].reason, contains('paste'));
+    expect(controller.segments[2].source, contains('paste'));
+
+    controller.selectedSegmentOrder = 2;
+    controller.cutSelectedSegment();
+    expect(controller.segments.length, 2);
+    expect(controller.hasClipClipboard, isTrue);
+
+    controller.pasteClipboardSegment();
+    expect(controller.segments.length, 3);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 300);
+    expect(secondsToTimecodeFrame(controller.segments.last.end), 450);
+    expect(controller.segments.last.reason, contains('paste'));
+  });
+
   test('timeline context actions split at cursor and toggle audio link', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30

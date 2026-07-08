@@ -152,6 +152,12 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.applyDefaultAudioTransition();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyD) {
       editor.applyDefaultVideoTransition();
+    } else if (isCtrl && !isShift && !isAlt && key == LogicalKeyboardKey.keyC) {
+      editor.copySelectedSegment();
+    } else if (isCtrl && !isShift && !isAlt && key == LogicalKeyboardKey.keyX) {
+      editor.cutSelectedSegment();
+    } else if (isCtrl && !isShift && !isAlt && key == LogicalKeyboardKey.keyV) {
+      editor.pasteClipboardSegment();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyX) {
       editor.clearMarks();
     } else if (isCtrl &&
@@ -1420,6 +1426,10 @@ class _TimelineEditorBody extends StatelessWidget {
       onDuplicateSegment: context
           .read<EditorController>()
           .duplicateSelectedSegment,
+      onCopySegment: context.read<EditorController>().copySelectedSegment,
+      onCutSegment: context.read<EditorController>().cutSelectedSegment,
+      onPasteSegment: context.read<EditorController>().pasteClipboardSegment,
+      hasClipClipboard: controller.hasClipClipboard,
       onDeleteSegment: context.read<EditorController>().deleteSelectedSegment,
       onLiftSelectedSegment: context
           .read<EditorController>()

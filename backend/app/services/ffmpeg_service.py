@@ -16,6 +16,15 @@ RENDER_FRAME_RATE = 30
 RENDER_FRAME_RATE_LABEL = str(RENDER_FRAME_RATE)
 TIMELINE_TIMECODE_MODE = "non_drop"
 TIMELINE_TIMEBASE_LABEL = "30p NDF"
+# All generated media must be independent of source drop-frame/timecode metadata.
+TIMELINE_OUTPUT_METADATA_ARGS = [
+    "-map_metadata",
+    "-1",
+    "-map_chapters",
+    "-1",
+    "-write_tmcd",
+    "0",
+]
 
 
 class FFmpegError(RuntimeError):
@@ -304,10 +313,6 @@ def create_preview_proxy(
             "0:a:0?",
             "-sn",
             "-dn",
-            "-map_metadata",
-            "-1",
-            "-map_chapters",
-            "-1",
             "-t",
             f"{proxy_seconds:.3f}",
             "-vf",
@@ -326,10 +331,9 @@ def create_preview_proxy(
             "96k",
             "-ac",
             "2",
+            *TIMELINE_OUTPUT_METADATA_ARGS,
             "-movflags",
             "+faststart",
-            "-write_tmcd",
-            "0",
             str(temp_path),
         ],
         timeout=None,
@@ -930,12 +934,7 @@ def _render_reencode_with_video_args(
             "aac",
             "-b:a",
             "192k",
-            "-map_metadata",
-            "-1",
-            "-map_chapters",
-            "-1",
-            "-write_tmcd",
-            "0",
+            *TIMELINE_OUTPUT_METADATA_ARGS,
             "-movflags",
             "+faststart",
             str(output_path),
