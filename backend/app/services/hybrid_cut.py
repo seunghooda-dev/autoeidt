@@ -106,6 +106,8 @@ def attach_script_preview(
     transcript: list[dict[str, Any]],
 ) -> str:
     for item in transcript:
+        if item.get("source") == "fallback_stt":
+            continue
         if overlaps(
             float(segment["start"]),
             float(segment["end"]),

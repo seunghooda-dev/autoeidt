@@ -77,9 +77,9 @@ def fallback_transcript(duration: float) -> list[dict[str, Any]]:
                 "start": round(cursor, 1),
                 "end": round(end, 1),
                 "text": (
-                    f"개발용 자동 스크립트 {index}. 실제 OPENAI_API_KEY를 설정하면 "
-                    "Whisper 타임스탬프 기반 문장 데이터로 대체됩니다."
+                    "음성 인식이 설정되지 않아 실제 대화 내용은 분석되지 않았습니다."
                 ),
+                "source": "fallback_stt",
                 "words": [],
             }
         )

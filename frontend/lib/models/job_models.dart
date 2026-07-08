@@ -111,6 +111,7 @@ class JobStatusResponse {
     this.renderUrl,
     this.error,
     this.styleProfile,
+    this.analysisWarnings = const [],
     this.batchRenderItems = const [],
     this.segments = const [],
   });
@@ -125,6 +126,7 @@ class JobStatusResponse {
   final String? renderUrl;
   final String? error;
   final StyleProfile? styleProfile;
+  final List<String> analysisWarnings;
   final List<BatchRenderItemResult> batchRenderItems;
   final List<HighlightSegment> segments;
 
@@ -132,6 +134,7 @@ class JobStatusResponse {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawBatchItems =
         json['batch_render_items'] as List<dynamic>? ?? const [];
+    final rawWarnings = json['analysis_warnings'] as List<dynamic>? ?? const [];
     return JobStatusResponse(
       jobId: json['job_id'] as String,
       status: json['status'] as String,
@@ -147,6 +150,7 @@ class JobStatusResponse {
           : StyleProfile.fromJson(
               json['style_profile'] as Map<String, dynamic>,
             ),
+      analysisWarnings: rawWarnings.map((item) => item.toString()).toList(),
       batchRenderItems: rawBatchItems
           .map(
             (item) =>

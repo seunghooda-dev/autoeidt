@@ -31,4 +31,17 @@ void main() {
     expect(probe.audioStreamCount, 8);
     expect(probe.warnings.single, contains('다중 오디오'));
   });
+
+  test('job status parses analysis warnings', () {
+    final job = JobStatusResponse.fromJson({
+      'job_id': 'job-1',
+      'status': 'completed',
+      'stage': 'completed',
+      'progress': 100,
+      'message': 'done',
+      'analysis_warnings': ['OPENAI_API_KEY가 없어 검토용 후보만 생성했습니다.'],
+    });
+
+    expect(job.analysisWarnings.single, contains('검토용 후보'));
+  });
 }

@@ -169,6 +169,9 @@ def _normalize_highlights(
 
 
 def _captions_from_transcript(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
+        return []
+
     captions: list[dict[str, Any]] = []
     for index, item in enumerate(transcript, start=1):
         text = str(item.get("text") or "").strip()
@@ -245,6 +248,11 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             audio_path=str(audio_path),
         )
         transcript = transcribe_audio(audio_path, duration)
+        analysis_warnings: list[str] = []
+        if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
+            analysis_warnings.append(
+                "OPENAI_API_KEY가 없어 실제 STT/LLM 내용 분석은 건너뛰고 검토용 후보만 생성했습니다."
+            )
         captions = _captions_from_transcript(transcript)
         waveform = generate_waveform(audio_path)
 
@@ -258,6 +266,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             transcript=transcript,
             captions=captions,
             waveform=waveform,
+            analysis_warnings=analysis_warnings,
         )
         raw_highlights = _normalize_highlights(
             analyze_highlights(transcript, duration, style_profile),
@@ -329,6 +338,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             segments=refined,
             protected_silences=silence_ranges_to_dicts(protected_silences),
             style_profile=style_profile,
+            analysis_warnings=analysis_warnings,
         )
         return store.load(job_id)
     except Exception as exc:

@@ -113,6 +113,10 @@ class StatusPanel extends StatelessWidget {
               const SizedBox(height: 12),
               _MediaProbePanel(probe: controller.selectedMediaProbe!),
             ],
+            if (controller.job?.analysisWarnings.isNotEmpty ?? false) ...[
+              const SizedBox(height: 12),
+              _AnalysisWarnings(warnings: controller.job!.analysisWarnings),
+            ],
             if (controller.renderUrl != null) ...[
               const SizedBox(height: 12),
               SelectableText(
@@ -124,6 +128,46 @@ class StatusPanel extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AnalysisWarnings extends StatelessWidget {
+  const _AnalysisWarnings({required this.warnings});
+
+  final List<String> warnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colorScheme.tertiaryContainer.withValues(alpha: 0.22),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.38)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final warning in warnings.take(2))
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 15, color: colorScheme.tertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    warning,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }

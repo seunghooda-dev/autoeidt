@@ -158,6 +158,12 @@ def fallback_highlights(
     style_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
+    if _is_fallback_transcript(transcript):
+        return fallback_review_highlights(
+            duration,
+            settings.target_highlight_seconds_min,
+            settings.target_highlight_seconds_max,
+        )
     return select_highlights_with_skills(
         transcript,
         duration,
@@ -165,6 +171,48 @@ def fallback_highlights(
         settings.target_highlight_seconds_max,
         style_profile,
     )
+
+
+def _is_fallback_transcript(transcript: list[dict[str, Any]]) -> bool:
+    return bool(transcript) and all(
+        str(item.get("source") or "") == "fallback_stt" for item in transcript
+    )
+
+
+def fallback_review_highlights(
+    duration: float,
+    target_min_seconds: float,
+    target_max_seconds: float,
+) -> list[dict[str, Any]]:
+    duration = max(float(duration or 0), 1.0)
+    target_total = min(
+        float(target_max_seconds),
+        max(45.0, min(float(target_min_seconds), duration * 0.35)),
+    )
+    clip_count = max(1, min(6, round(target_total / 45.0)))
+    clip_length = min(60.0, max(20.0, target_total / clip_count, duration / (clip_count * 3)))
+    clip_length = min(clip_length, duration)
+    available = max(0.0, duration - clip_length)
+
+    highlights: list[dict[str, Any]] = []
+    for index in range(clip_count):
+        if clip_count == 1:
+            start = min(available, max(0.0, duration * 0.4 - clip_length / 2))
+        else:
+            start = available * (index + 1) / (clip_count + 1)
+        end = min(duration, start + clip_length)
+        highlights.append(
+            {
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "reason": "음성 인식 미설정 상태의 검토용 후보 구간입니다. 실제 하이라이트 판단은 STT 설정 후 가능합니다.",
+                "script": "",
+                "source": "fallback-review",
+                "score": 0.0,
+                "tags": ["검토필요", "STT미설정"],
+            }
+        )
+    return highlights
 
 
 def analyze_highlights(

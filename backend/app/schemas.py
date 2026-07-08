@@ -265,6 +265,7 @@ class JobStatusResponse(BaseModel):
     render_url: str | None = None
     error: str | None = None
     style_profile: StyleProfile | None = None
+    analysis_warnings: list[str] = Field(default_factory=list)
 
 
 class TimelineResponse(BaseModel):
