@@ -89,6 +89,7 @@ class TimelineEditor extends StatefulWidget {
     required this.timelineMarkers,
     required this.waveform,
     required this.zoom,
+    required this.trackHeightScale,
     required this.snappingEnabled,
     required this.videoTrackTargeted,
     required this.audioTrack1Targeted,
@@ -165,6 +166,7 @@ class TimelineEditor extends StatefulWidget {
   final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
   final double zoom;
+  final double trackHeightScale;
   final bool snappingEnabled;
   final bool videoTrackTargeted;
   final bool audioTrack1Targeted;
@@ -235,16 +237,29 @@ class TimelineEditor extends StatefulWidget {
   State<TimelineEditor> createState() => _TimelineEditorState();
 }
 
+class _TimelineLayout {
+  const _TimelineLayout({required double scale})
+    : scale = scale < 0.75
+          ? 0.75
+          : scale > 1.35
+          ? 1.35
+          : scale;
+
+  final double scale;
+  double get videoTop => 42;
+  double get laneHeight => 28 * scale;
+  double get audio1Top => videoTop + laneHeight + 16;
+  double get audio2Top => audio1Top + laneHeight + 8;
+  double get footerTop => audio2Top + laneHeight + 8;
+  double get canvasHeight => footerTop + 36;
+  double get trackBottom => audio2Top + laneHeight;
+}
+
 class _TimelineEditorState extends State<TimelineEditor> {
   static const double _snapHitWidth = 10;
   static const double _handleHitWidth = 16;
   static const double _handleVisualWidth = 4;
   static const double _minSegmentSeconds = 1.0;
-  static const double _videoTop = 42;
-  static const double _audio1Top = 86;
-  static const double _audio2Top = 122;
-  static const double _laneHeight = 28;
-  static const double _footerTop = 158;
 
   int? _activeIndex;
   _DragEdge? _activeEdge;
@@ -254,6 +269,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
   double _lastViewportWidth = 0;
   double? _pendingZoomFocalRatio;
   double? _pendingZoomViewportX;
+  _TimelineLayout get _layout =>
+      _TimelineLayout(scale: widget.trackHeightScale);
 
   @override
   void didUpdateWidget(covariant TimelineEditor oldWidget) {
@@ -291,6 +308,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       builder: (context, constraints) {
         _lastViewportWidth = constraints.maxWidth;
         final width = constraints.maxWidth * widget.zoom;
+        final layout = _layout;
         return Listener(
           onPointerSignal: _handlePointerSignal,
           child: Scrollbar(
@@ -312,9 +330,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
                 onPanCancel: _finishDrag,
                 child: SizedBox(
                   width: width,
-                  height: 194,
+                  height: layout.canvasHeight,
                   child: CustomPaint(
                     painter: _TimelinePainter(
+                      layout: layout,
                       duration: widget.duration,
                       segments: widget.segments,
                       playheadSeconds: widget.playheadSeconds,
@@ -331,7 +350,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                     child: Align(
                       alignment: Alignment.bottomLeft,
                       child: Padding(
-                        padding: const EdgeInsets.only(top: _footerTop),
+                        padding: EdgeInsets.only(top: layout.footerTop),
                         child: SizedBox(
                           width: width,
                           child: Text(
@@ -1325,13 +1344,17 @@ class _TimelineEditorState extends State<TimelineEditor> {
   }
 
   _DragTrack? _trackAt(double y) {
-    if (y >= _videoTop - 10 && y <= _videoTop + _laneHeight + 10) {
+    final layout = _layout;
+    if (y >= layout.videoTop - 10 &&
+        y <= layout.videoTop + layout.laneHeight + 10) {
       return _DragTrack.video;
     }
-    if (y >= _audio1Top - 8 && y <= _audio1Top + _laneHeight + 8) {
+    if (y >= layout.audio1Top - 8 &&
+        y <= layout.audio1Top + layout.laneHeight + 8) {
       return _DragTrack.audio1;
     }
-    if (y >= _audio2Top - 8 && y <= _audio2Top + _laneHeight + 8) {
+    if (y >= layout.audio2Top - 8 &&
+        y <= layout.audio2Top + layout.laneHeight + 8) {
       return _DragTrack.audio2;
     }
     return null;
@@ -1467,6 +1490,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
 class _TimelinePainter extends CustomPainter {
   const _TimelinePainter({
+    required this.layout,
     required this.duration,
     required this.segments,
     required this.playheadSeconds,
@@ -1481,10 +1505,6 @@ class _TimelinePainter extends CustomPainter {
     required this.colorScheme,
   });
 
-  static const double _videoTop = _TimelineEditorState._videoTop;
-  static const double _audio1Top = _TimelineEditorState._audio1Top;
-  static const double _audio2Top = _TimelineEditorState._audio2Top;
-  static const double _laneHeight = _TimelineEditorState._laneHeight;
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
   static const Color _videoClipColor = Color(0xFFA7F3A1);
@@ -1493,6 +1513,7 @@ class _TimelinePainter extends CustomPainter {
   static const Color _audioClipActiveColor = Color(0xFFFFD49C);
   static const Color _clipTextColor = Color(0xFF11140F);
 
+  final _TimelineLayout layout;
   final double duration;
   final List<HighlightSegment> segments;
   final double playheadSeconds;
@@ -1510,12 +1531,12 @@ class _TimelinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final radius = Radius.circular(5);
     final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
-    _drawTrack(canvas, size, _videoTop, radius, trackPaint);
-    _drawTrack(canvas, size, _audio1Top, radius, trackPaint);
-    _drawTrack(canvas, size, _audio2Top, radius, trackPaint);
-    _drawLaneLabel(canvas, 'V1', _videoTop, _videoClipColor);
-    _drawLaneLabel(canvas, 'A1', _audio1Top, _audioClipColor);
-    _drawLaneLabel(canvas, 'A2', _audio2Top, _audioClipColor);
+    _drawTrack(canvas, size, layout.videoTop, radius, trackPaint);
+    _drawTrack(canvas, size, layout.audio1Top, radius, trackPaint);
+    _drawTrack(canvas, size, layout.audio2Top, radius, trackPaint);
+    _drawLaneLabel(canvas, 'V1', layout.videoTop, _videoClipColor);
+    _drawLaneLabel(canvas, 'A1', layout.audio1Top, _audioClipColor);
+    _drawLaneLabel(canvas, 'A2', layout.audio2Top, _audioClipColor);
 
     _drawWaveform(canvas, size);
     _drawInOutRange(canvas, size);
@@ -1532,7 +1553,7 @@ class _TimelinePainter extends CustomPainter {
     Radius radius,
     Paint paint,
   ) {
-    final rect = Rect.fromLTWH(0, top, size.width, _laneHeight);
+    final rect = Rect.fromLTWH(0, top, size.width, layout.laneHeight);
     final track = RRect.fromRectAndRadius(rect, radius);
     canvas.drawRRect(track, paint);
     canvas.drawRRect(
@@ -1555,8 +1576,8 @@ class _TimelinePainter extends CustomPainter {
         ..strokeWidth = 0.7,
     );
     canvas.drawLine(
-      Offset(44, top + _laneHeight / 2),
-      Offset(size.width, top + _laneHeight / 2),
+      Offset(44, top + layout.laneHeight / 2),
+      Offset(size.width, top + layout.laneHeight / 2),
       Paint()
         ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.10)
         ..strokeWidth = 1,
@@ -1565,7 +1586,7 @@ class _TimelinePainter extends CustomPainter {
 
   void _drawLaneLabel(Canvas canvas, String label, double top, Color color) {
     final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(8, top + 6, 30, _laneHeight - 12),
+      Rect.fromLTWH(8, top + 6, 30, layout.laneHeight - 12),
       Radius.circular(5),
     );
     canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.92));
@@ -1582,7 +1603,10 @@ class _TimelinePainter extends CustomPainter {
     )..layout();
     textPainter.paint(
       canvas,
-      Offset(23 - textPainter.width / 2, top + 15 - textPainter.height / 2),
+      Offset(
+        23 - textPainter.width / 2,
+        top + layout.laneHeight / 2 - textPainter.height / 2,
+      ),
     );
   }
 
@@ -1595,13 +1619,13 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = 1;
     final step = size.width / waveform.length;
     final centers = <double>[
-      _audio1Top + _laneHeight / 2,
-      _audio2Top + _laneHeight / 2,
+      layout.audio1Top + layout.laneHeight / 2,
+      layout.audio2Top + layout.laneHeight / 2,
     ];
     for (var index = 0; index < waveform.length; index++) {
       final x = index * step;
       final peak = waveform[index].clamp(0.0, 1.0).toDouble();
-      final halfHeight = math.max(1.0, peak * _laneHeight / 2);
+      final halfHeight = math.max(1.0, peak * layout.laneHeight / 2);
       for (final centerY in centers) {
         canvas.drawLine(
           Offset(x, centerY - halfHeight),
@@ -1623,9 +1647,9 @@ class _TimelinePainter extends CustomPainter {
     final rangeRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(
         left,
-        _videoTop - 7,
+        layout.videoTop - 7,
         math.max(2, right - left),
-        _audio2Top - _videoTop + _laneHeight + 14,
+        layout.audio2Top - layout.videoTop + layout.laneHeight + 14,
       ),
       Radius.circular(6),
     );
@@ -1671,7 +1695,7 @@ class _TimelinePainter extends CustomPainter {
       final top = isMajor ? 24.0 : 29.0;
       canvas.drawLine(
         Offset(x, top),
-        Offset(x, isMajor ? _audio2Top + _laneHeight + 6 : 38),
+        Offset(x, isMajor ? layout.trackBottom + 6 : 38),
         isMajor ? tickPaint : minorTickPaint,
       );
       if (isMajor) {
@@ -1736,7 +1760,7 @@ class _TimelinePainter extends CustomPainter {
       _drawClipBlock(
         canvas,
         size,
-        top: _videoTop,
+        top: layout.videoTop,
         start: 0,
         end: duration,
         fill: _videoClipColor,
@@ -1749,7 +1773,7 @@ class _TimelinePainter extends CustomPainter {
       _drawClipBlock(
         canvas,
         size,
-        top: _audio1Top,
+        top: layout.audio1Top,
         start: 0,
         end: duration,
         fill: _audioClipColor,
@@ -1762,7 +1786,7 @@ class _TimelinePainter extends CustomPainter {
       _drawClipBlock(
         canvas,
         size,
-        top: _audio2Top,
+        top: layout.audio2Top,
         start: 0,
         end: duration,
         fill: _audioClipColor,
@@ -1783,7 +1807,7 @@ class _TimelinePainter extends CustomPainter {
       _drawClipBlock(
         canvas,
         size,
-        top: _videoTop,
+        top: layout.videoTop,
         start: segment.start,
         end: segment.end,
         fill: segment.videoEnabled
@@ -1812,7 +1836,7 @@ class _TimelinePainter extends CustomPainter {
         canvas,
         size,
         segment: segment,
-        top: _audio1Top,
+        top: layout.audio1Top,
         channelEnabled: segment.audioChannel1Enabled,
         channelLabel: 'A1',
         fill: audioFill,
@@ -1825,7 +1849,7 @@ class _TimelinePainter extends CustomPainter {
         canvas,
         size,
         segment: segment,
-        top: _audio2Top,
+        top: layout.audio2Top,
         channelEnabled: segment.audioChannel2Enabled,
         channelLabel: 'A2',
         fill: audioFill,
@@ -1897,7 +1921,7 @@ class _TimelinePainter extends CustomPainter {
       left,
       top + 2,
       math.max(2, right - left),
-      _laneHeight - 4,
+      layout.laneHeight - 4,
     );
     final rrect = RRect.fromRectAndRadius(rect, radius);
     final clipShader = LinearGradient(
@@ -1968,9 +1992,9 @@ class _TimelinePainter extends CustomPainter {
     for (final handleX in [left, right]) {
       final handleRect = RRect.fromRectAndRadius(
         Rect.fromCenter(
-          center: Offset(handleX, top + _laneHeight / 2),
+          center: Offset(handleX, top + layout.laneHeight / 2),
           width: _handleVisualWidth,
-          height: _laneHeight + 4,
+          height: layout.laneHeight + 4,
         ),
         Radius.circular(2),
       );
@@ -1978,7 +2002,7 @@ class _TimelinePainter extends CustomPainter {
       canvas.drawRRect(handleRect, handleBorder);
       canvas.drawLine(
         Offset(handleX, top + 5),
-        Offset(handleX, top + _laneHeight - 5),
+        Offset(handleX, top + layout.laneHeight - 5),
         handleInnerPaint,
       );
     }
@@ -2068,8 +2092,8 @@ class _TimelinePainter extends CustomPainter {
     final width = math.max(2.0, right - left);
     final panX =
         left + ((segment.audioPan + 1.0) / 2.0).clamp(0.0, 1.0) * width;
-    for (final top in [_audio1Top, _audio2Top]) {
-      final center = Offset(panX, top + _laneHeight / 2);
+    for (final top in [layout.audio1Top, layout.audio2Top]) {
+      final center = Offset(panX, top + layout.laneHeight / 2);
       canvas.drawCircle(center, 4.5, Paint()..color = colorScheme.surface);
       canvas.drawCircle(
         center,
@@ -2088,8 +2112,8 @@ class _TimelinePainter extends CustomPainter {
     final clipWidth = math.max(2.0, right - left);
     final fadePaint = Paint()
       ..color = colorScheme.surface.withValues(alpha: 0.38);
-    final clipTop = _videoTop + 2;
-    final clipBottom = _videoTop + _laneHeight - 2;
+    final clipTop = layout.videoTop + 2;
+    final clipBottom = layout.videoTop + layout.laneHeight - 2;
 
     if (segment.videoFadeIn > 0) {
       final fadeEnd = _secondsToX(
@@ -2149,7 +2173,7 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = markerEnabled ? 1.1 : 0.8;
     canvas.drawLine(
       Offset(x, 25),
-      Offset(x, _audio2Top + _laneHeight + 10),
+      Offset(x, layout.trackBottom + 10),
       linePaint,
     );
 
@@ -2214,7 +2238,7 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = 2;
     canvas.drawLine(
       Offset(playheadX, 4),
-      Offset(playheadX, _audio2Top + _laneHeight + 12),
+      Offset(playheadX, layout.trackBottom + 12),
       playheadPaint,
     );
     final triangle = Path()
@@ -2238,7 +2262,7 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawLine(
       Offset(x, 22),
-      Offset(x, _audio2Top + _laneHeight + 10),
+      Offset(x, layout.trackBottom + 10),
       linePaint,
     );
 
@@ -2269,6 +2293,7 @@ class _TimelinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _TimelinePainter oldDelegate) {
     return duration != oldDelegate.duration ||
+        layout.scale != oldDelegate.layout.scale ||
         segments != oldDelegate.segments ||
         playheadSeconds != oldDelegate.playheadSeconds ||
         selectedSegmentOrder != oldDelegate.selectedSegmentOrder ||

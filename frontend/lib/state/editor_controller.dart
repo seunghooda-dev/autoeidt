@@ -81,6 +81,7 @@ class EditorController extends ChangeNotifier {
   String captionStylePreset = 'news';
   String exportAspectRatio = '16:9';
   double timelineZoom = 1.0;
+  double timelineTrackHeightScale = 1.0;
   bool timelineSnappingEnabled = true;
   String timelineTool = 'selection';
   bool videoTrackTargeted = true;
@@ -337,6 +338,18 @@ class EditorController extends ChangeNotifier {
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   String get timelineSnappingLabel =>
       timelineSnappingEnabled ? 'Snap S' : 'Snap Off';
+  String get timelineTrackHeightLabel {
+    if (timelineTrackHeightScale < 0.9) {
+      return 'Tracks Compact';
+    }
+    if (timelineTrackHeightScale > 1.1) {
+      return 'Tracks Tall';
+    }
+    return 'Tracks Normal';
+  }
+
+  bool get canDecreaseTimelineTrackHeight => timelineTrackHeightScale > 0.8;
+  bool get canIncreaseTimelineTrackHeight => timelineTrackHeightScale < 1.25;
   String get playbackShuttleLabel {
     if (playbackShuttleDirection < 0) {
       return 'J ${playbackShuttleRate.toStringAsFixed(0)}x';
@@ -1527,6 +1540,39 @@ class EditorController extends ChangeNotifier {
 
   void toggleTimelineSnapping() {
     timelineSnappingEnabled = !timelineSnappingEnabled;
+    notifyListeners();
+  }
+
+  void adjustTimelineTrackHeight(int direction) {
+    if (direction == 0) {
+      return;
+    }
+    const presets = [0.78, 1.0, 1.28];
+    final currentIndex = presets.indexWhere(
+      (value) => (value - timelineTrackHeightScale).abs() < 0.01,
+    );
+    final fallbackIndex = timelineTrackHeightScale < 0.9
+        ? 0
+        : timelineTrackHeightScale > 1.1
+        ? 2
+        : 1;
+    final index = currentIndex < 0 ? fallbackIndex : currentIndex;
+    final nextIndex = (index + direction).clamp(0, presets.length - 1);
+    final next = presets[nextIndex];
+    if ((next - timelineTrackHeightScale).abs() < 0.001) {
+      return;
+    }
+    timelineTrackHeightScale = next;
+    notifyListeners();
+  }
+
+  void cycleTimelineTrackHeight() {
+    const presets = [0.78, 1.0, 1.28];
+    final currentIndex = presets.indexWhere(
+      (value) => (value - timelineTrackHeightScale).abs() < 0.01,
+    );
+    final index = currentIndex < 0 ? 1 : (currentIndex + 1) % presets.length;
+    timelineTrackHeightScale = presets[index];
     notifyListeners();
   }
 

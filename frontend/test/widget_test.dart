@@ -100,6 +100,14 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyS);
     expect(controller.timelineSnappingEnabled, isTrue);
 
+    expect(controller.timelineTrackHeightLabel, 'Tracks Normal');
+    await _pressShortcut(tester, LogicalKeyboardKey.equal, alt: true);
+    expect(controller.timelineTrackHeightLabel, 'Tracks Tall');
+    await _pressShortcut(tester, LogicalKeyboardKey.minus, alt: true);
+    expect(controller.timelineTrackHeightLabel, 'Tracks Normal');
+    await _pressShortcut(tester, LogicalKeyboardKey.minus, alt: true);
+    expect(controller.timelineTrackHeightLabel, 'Tracks Compact');
+
     await _pressShortcut(tester, LogicalKeyboardKey.digit1, control: true);
     expect(controller.videoTrackTargeted, isFalse);
     await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);

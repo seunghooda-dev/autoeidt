@@ -117,6 +117,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
     bool handled = true;
     if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
       editor.redo();
+    } else if (isAlt &&
+        !isCtrl &&
+        !isShift &&
+        key == LogicalKeyboardKey.minus) {
+      editor.adjustTimelineTrackHeight(-1);
+    } else if (isAlt &&
+        !isCtrl &&
+        !isShift &&
+        key == LogicalKeyboardKey.equal) {
+      editor.adjustTimelineTrackHeight(1);
     } else if (isCtrl &&
         !isShift &&
         !isAlt &&
@@ -698,6 +708,16 @@ class _CommandBar extends StatelessWidget {
                   ? () => editor.zoomTimeline(0.5)
                   : null,
               icon: const Icon(Icons.zoom_in),
+            ),
+            const SizedBox(width: 6),
+            FilterChip(
+              selected: controller.timelineTrackHeightScale > 1.05,
+              onSelected: controller.hasTimelineSource
+                  ? (_) => editor.cycleTimelineTrackHeight()
+                  : null,
+              avatar: const Icon(Icons.height, size: 18),
+              label: Text(controller.timelineTrackHeightLabel),
+              tooltip: '트랙 높이 전환 (Alt+- / Alt+=)',
             ),
             const SizedBox(width: 10),
             SegmentedButton<String>(
@@ -1316,6 +1336,7 @@ class _TimelineEditorBody extends StatelessWidget {
       timelineMarkers: controller.timelineMarkers,
       waveform: controller.waveform,
       zoom: controller.timelineZoom,
+      trackHeightScale: controller.timelineTrackHeightScale,
       snappingEnabled: controller.timelineSnappingEnabled,
       videoTrackTargeted: controller.videoTrackTargeted,
       audioTrack1Targeted: controller.audioTrack1Targeted,
