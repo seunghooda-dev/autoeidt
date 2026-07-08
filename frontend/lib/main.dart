@@ -13,6 +13,7 @@ import 'widgets/render_outputs_panel.dart';
 import 'widgets/status_panel.dart';
 import 'widgets/time_format.dart';
 import 'widgets/timeline_editor.dart';
+import 'widgets/timeline_marker_panel.dart';
 import 'widgets/video_preview.dart';
 
 void main() {
@@ -466,7 +467,7 @@ class _CommandBar extends StatelessWidget {
             _ToolbarButton(
               icon: Icons.bookmark_add_outlined,
               label: 'Marker',
-              onPressed: controller.hasTimelineSource
+              onPressed: controller.timelineSourceDuration > 0
                   ? editor.addTimelineMarkerAtPlayhead
                   : null,
             ),
@@ -950,7 +951,7 @@ class _InspectorPanel extends StatelessWidget {
       child: _SurfacePanel(
         padding: const EdgeInsets.all(12),
         child: DefaultTabController(
-          length: 4,
+          length: 5,
           initialIndex: const bool.fromEnvironment('AUTOEDIT_DEMO') ? 1 : 0,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -959,6 +960,7 @@ class _InspectorPanel extends StatelessWidget {
                 tabs: [
                   Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
                   Tab(icon: Icon(Icons.auto_fix_high), text: 'AI'),
+                  Tab(icon: Icon(Icons.bookmarks_outlined), text: 'Markers'),
                   Tab(
                     icon: Icon(Icons.closed_caption_outlined),
                     text: 'Captions',
@@ -986,6 +988,7 @@ class _InspectorPanel extends StatelessWidget {
                                 .selectSegment,
                           ),
                     const AiDirectorPanel(),
+                    const TimelineMarkerPanel(),
                     CaptionEditor(
                       captions: controller.captions,
                       onChanged: context.read<EditorController>().updateCaption,
