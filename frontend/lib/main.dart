@@ -142,6 +142,21 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isAlt &&
         key == LogicalKeyboardKey.digit3) {
       editor.toggleAudioTrack2Target();
+    } else if (isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.digit1) {
+      editor.toggleVideoTrackLock();
+    } else if (isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.digit2) {
+      editor.toggleAudioTrack1Lock();
+    } else if (isCtrl &&
+        isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.digit3) {
+      editor.toggleAudioTrack2Lock();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyZ) {
       editor.undo();
     } else if (isCtrl && key == LogicalKeyboardKey.keyK) {
@@ -1082,17 +1097,43 @@ class _TimelinePanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       _TrackControlButton(
-                        label: controller.audioTrackLocked
-                            ? 'A1/A2 Locked'
-                            : 'A1/A2',
-                        icon: controller.audioTrackLocked
+                        label: controller.audioTrackLockLabel,
+                        icon: controller.allAudioTracksEditLocked
                             ? Icons.lock
                             : Icons.lock_open,
-                        tooltip: controller.audioTrackLocked
+                        tooltip: controller.allAudioTracksEditLocked
                             ? 'A1/A2 오디오 트랙 잠금 해제'
                             : 'A1/A2 오디오 트랙 잠금',
-                        selected: controller.audioTrackLocked,
+                        selected: controller.allAudioTracksEditLocked,
                         onPressed: editor.toggleAudioTrackLock,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.audioTrack1Locked
+                            ? 'A1 Locked'
+                            : 'A1 Lock',
+                        icon: controller.audioTrack1Locked
+                            ? Icons.lock
+                            : Icons.lock_open,
+                        tooltip: controller.audioTrack1Locked
+                            ? 'A1 오디오 트랙 잠금 해제 (Ctrl+Alt+2)'
+                            : 'A1 오디오 트랙 잠금 (Ctrl+Alt+2)',
+                        selected: controller.audioTrack1Locked,
+                        onPressed: editor.toggleAudioTrack1Lock,
+                      ),
+                      const SizedBox(width: 6),
+                      _TrackControlButton(
+                        label: controller.audioTrack2Locked
+                            ? 'A2 Locked'
+                            : 'A2 Lock',
+                        icon: controller.audioTrack2Locked
+                            ? Icons.lock
+                            : Icons.lock_open,
+                        tooltip: controller.audioTrack2Locked
+                            ? 'A2 오디오 트랙 잠금 해제 (Ctrl+Alt+3)'
+                            : 'A2 오디오 트랙 잠금 (Ctrl+Alt+3)',
+                        selected: controller.audioTrack2Locked,
+                        onPressed: editor.toggleAudioTrack2Lock,
                       ),
                       const SizedBox(width: 6),
                       _TrackControlButton(
@@ -1355,6 +1396,8 @@ class _TimelineEditorBody extends StatelessWidget {
       audioTrack2Targeted: controller.audioTrack2Targeted,
       videoTrackLocked: controller.videoTrackLocked,
       audioTrackLocked: controller.audioTrackLocked,
+      audioTrack1Locked: controller.audioTrack1Locked,
+      audioTrack2Locked: controller.audioTrack2Locked,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onScrub: (seconds) {
@@ -1741,7 +1784,8 @@ class _AudioTrackBusMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final enabled = controller.hasTimeline && !controller.audioTrackLocked;
+    final enabled =
+        controller.hasTimeline && !controller.anyAudioTrackEditLocked;
     return Tooltip(
       message: enabled ? 'A1/A2 전체 트랙 제어' : 'A1/A2 트랙 잠김',
       child: PopupMenuButton<String>(

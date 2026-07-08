@@ -1264,6 +1264,46 @@ void main() {
     expect(controller.segments.every((segment) => segment.audioMuted), isTrue);
   });
 
+  test('individual audio track locks protect A1 and A2 edits', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 13, reason: 'test'),
+        HighlightSegment(order: 2, start: 15, end: 20, reason: 'test 2'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.toggleAudioTrack1Lock();
+    expect(controller.audioTrack1Locked, isTrue);
+    expect(controller.audioTrack1EditLocked, isTrue);
+    expect(controller.audioTrack2EditLocked, isFalse);
+    expect(controller.audioTrackLockLabel, 'A1 Locked');
+
+    controller.toggleSelectedAudioChannel1();
+    expect(controller.selectedSegment!.audioChannel1Enabled, isTrue);
+
+    controller.toggleSelectedAudioChannel2();
+    expect(controller.selectedSegment!.audioChannel2Enabled, isFalse);
+
+    controller.setSelectedAudioPan(1);
+    expect(controller.selectedSegment!.audioPan, 0);
+
+    controller.toggleAudioTrack1Lock();
+    controller.toggleAudioTrack2Lock();
+    expect(controller.audioTrack1EditLocked, isFalse);
+    expect(controller.audioTrack2EditLocked, isTrue);
+    expect(controller.audioTrackLockLabel, 'A2 Locked');
+
+    controller.toggleSelectedAudioChannel2();
+    expect(controller.selectedSegment!.audioChannel2Enabled, isFalse);
+
+    controller.toggleSelectedAudioChannel1();
+    expect(controller.selectedSegment!.audioChannel1Enabled, isTrue);
+
+    controller.toggleAllAudioMute();
+    expect(controller.segments.every((segment) => !segment.audioMuted), isTrue);
+  });
+
   test('ai director condenses weak clips and applies shorts preset', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 120

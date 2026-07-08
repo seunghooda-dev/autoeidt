@@ -119,6 +119,48 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);
     expect(controller.audioTrack1Targeted, isTrue);
 
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit1,
+      control: true,
+      alt: true,
+    );
+    expect(controller.videoTrackLocked, isTrue);
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit1,
+      control: true,
+      alt: true,
+    );
+    expect(controller.videoTrackLocked, isFalse);
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit2,
+      control: true,
+      alt: true,
+    );
+    expect(controller.audioTrack1Locked, isTrue);
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit3,
+      control: true,
+      alt: true,
+    );
+    expect(controller.audioTrack2Locked, isTrue);
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit2,
+      control: true,
+      alt: true,
+    );
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.digit3,
+      control: true,
+      alt: true,
+    );
+    expect(controller.anyAudioTrackEditLocked, isFalse);
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyL);
     expect(controller.playbackShuttleLabel, 'L 1x');
     await _pressShortcut(tester, LogicalKeyboardKey.keyL);

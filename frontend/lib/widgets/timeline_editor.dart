@@ -99,6 +99,8 @@ class TimelineEditor extends StatefulWidget {
     required this.audioTrack2Targeted,
     required this.videoTrackLocked,
     required this.audioTrackLocked,
+    required this.audioTrack1Locked,
+    required this.audioTrack2Locked,
     required this.razorTool,
     required this.onSegmentChanged,
     required this.onScrub,
@@ -180,6 +182,8 @@ class TimelineEditor extends StatefulWidget {
   final bool audioTrack2Targeted;
   final bool videoTrackLocked;
   final bool audioTrackLocked;
+  final bool audioTrack1Locked;
+  final bool audioTrack2Locked;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<double> onScrub;
@@ -356,6 +360,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
                       activeIndex: _activeIndex,
                       activeEdge: _activeEdge,
                       activeTrack: _activeTrack,
+                      videoTrackLocked: widget.videoTrackLocked,
+                      audioTrack1Locked:
+                          widget.audioTrackLocked || widget.audioTrack1Locked,
+                      audioTrack2Locked:
+                          widget.audioTrackLocked || widget.audioTrack2Locked,
                       colorScheme: Theme.of(context).colorScheme,
                     ),
                     child: Align(
@@ -603,11 +612,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
     TimelineMarker? marker,
   ) {
     final videoLocked = widget.videoTrackLocked;
-    final audioLocked = widget.audioTrackLocked;
-    final clipEditable = segment != null && !videoLocked && !audioLocked;
+    final audio1Locked = widget.audioTrackLocked || widget.audioTrack1Locked;
+    final audio2Locked = widget.audioTrackLocked || widget.audioTrack2Locked;
+    final anyAudioLocked = audio1Locked || audio2Locked;
+    final clipEditable = segment != null && !videoLocked && !anyAudioLocked;
     final detachedAudioEditable =
         segment != null &&
-        !audioLocked &&
+        !anyAudioLocked &&
         !segment.audioLinked &&
         widget.onNudgeSelectedAudioFrames != null;
     final showAudioNudge = detachedAudioEditable && _isAudioTrack(track);
@@ -618,14 +629,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final canEditMarkedRange =
         hasMarkedRange &&
         !videoLocked &&
-        !audioLocked &&
+        !anyAudioLocked &&
         widget.segments.any(
           (item) => item.start < widget.markOut! && item.end > widget.markIn!,
         );
     final markedTargetsUnlocked =
         (!widget.videoTrackTargeted || !videoLocked) &&
-        (!(widget.audioTrack1Targeted || widget.audioTrack2Targeted) ||
-            !audioLocked);
+        (!widget.audioTrack1Targeted || !audio1Locked) &&
+        (!widget.audioTrack2Targeted || !audio2Locked);
     final canInsertMarked =
         hasMarkedRange &&
         markedTargetsUnlocked &&
@@ -668,8 +679,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
             widget.audioTrack1Targeted ||
             widget.audioTrack2Targeted) &&
         (!widget.videoTrackTargeted || !videoLocked) &&
-        (!(widget.audioTrack1Targeted || widget.audioTrack2Targeted) ||
-            !audioLocked);
+        (!widget.audioTrack1Targeted || !audio1Locked) &&
+        (!widget.audioTrack2Targeted || !audio2Locked);
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -720,7 +731,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
               : Icons.check_box_outline_blank,
           allA1Enabled ? 'Disable all A1' : 'Enable all A1',
           _TimelineMenuAction.toggleAllAudioChannel1,
-          enabled: !audioLocked && widget.onToggleAllAudioChannel1 != null,
+          enabled: !audio1Locked && widget.onToggleAllAudioChannel1 != null,
         ),
         _menuItem(
           allA2Enabled
@@ -728,19 +739,19 @@ class _TimelineEditorState extends State<TimelineEditor> {
               : Icons.check_box_outline_blank,
           allA2Enabled ? 'Disable all A2' : 'Enable all A2',
           _TimelineMenuAction.toggleAllAudioChannel2,
-          enabled: !audioLocked && widget.onToggleAllAudioChannel2 != null,
+          enabled: !audio2Locked && widget.onToggleAllAudioChannel2 != null,
         ),
         _menuItem(
           Icons.filter_1_outlined,
           'Solo A1 track',
           _TimelineMenuAction.soloAudioChannel1,
-          enabled: !audioLocked && widget.onSoloAudioChannel1 != null,
+          enabled: !anyAudioLocked && widget.onSoloAudioChannel1 != null,
         ),
         _menuItem(
           Icons.filter_2_outlined,
           'Solo A2 track',
           _TimelineMenuAction.soloAudioChannel2,
-          enabled: !audioLocked && widget.onSoloAudioChannel2 != null,
+          enabled: !anyAudioLocked && widget.onSoloAudioChannel2 != null,
         ),
         const PopupMenuDivider(),
       ],
@@ -1071,7 +1082,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         'Apply audio transition',
         _TimelineMenuAction.applyAudioTransition,
         shortcut: 'Ctrl+Shift+D',
-        enabled: segment != null && !audioLocked,
+        enabled: segment != null && !anyAudioLocked,
       ),
       const PopupMenuDivider(),
       _menuItem(
@@ -1150,7 +1161,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         segment?.audioLinked ?? true ? 'Detach audio' : 'Relink audio',
         _TimelineMenuAction.toggleAudioLink,
         shortcut: 'Ctrl+L',
-        enabled: segment != null && !audioLocked,
+        enabled: segment != null && !anyAudioLocked,
       ),
       _menuItem(
         segment?.audioMuted ?? false
@@ -1158,7 +1169,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
             : Icons.volume_off_outlined,
         segment?.audioMuted ?? false ? 'Unmute A1/A2' : 'Mute A1/A2',
         _TimelineMenuAction.toggleAudioMute,
-        enabled: segment != null && !audioLocked,
+        enabled: segment != null && !anyAudioLocked,
       ),
       _menuItem(
         segment?.audioChannel1Enabled ?? true
@@ -1168,7 +1179,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.toggleAudioChannel1,
         enabled:
             segment != null &&
-            !audioLocked &&
+            !audio1Locked &&
             ((segment.audioChannel2Enabled) || !segment.audioChannel1Enabled),
       ),
       _menuItem(
@@ -1179,14 +1190,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.toggleAudioChannel2,
         enabled:
             segment != null &&
-            !audioLocked &&
+            !audio2Locked &&
             ((segment.audioChannel1Enabled) || !segment.audioChannel2Enabled),
       ),
       _menuItem(
         Icons.balance_outlined,
         'Reset A1/A2 pan',
         _TimelineMenuAction.resetAudioPan,
-        enabled: segment != null && !audioLocked,
+        enabled: segment != null && !anyAudioLocked,
       ),
     ];
   }
@@ -1399,9 +1410,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
   }
 
   bool _trackLocked(_DragTrack track) {
-    return track == _DragTrack.video
-        ? widget.videoTrackLocked
-        : widget.audioTrackLocked;
+    return switch (track) {
+      _DragTrack.video => widget.videoTrackLocked,
+      _DragTrack.audio1 => widget.audioTrackLocked || widget.audioTrack1Locked,
+      _DragTrack.audio2 => widget.audioTrackLocked || widget.audioTrack2Locked,
+    };
   }
 
   bool _isAudioTrack(_DragTrack? track) =>
@@ -1540,6 +1553,9 @@ class _TimelinePainter extends CustomPainter {
     required this.activeIndex,
     required this.activeEdge,
     required this.activeTrack,
+    required this.videoTrackLocked,
+    required this.audioTrack1Locked,
+    required this.audioTrack2Locked,
     required this.colorScheme,
   });
 
@@ -1563,6 +1579,9 @@ class _TimelinePainter extends CustomPainter {
   final int? activeIndex;
   final _DragEdge? activeEdge;
   final _DragTrack? activeTrack;
+  final bool videoTrackLocked;
+  final bool audioTrack1Locked;
+  final bool audioTrack2Locked;
   final ColorScheme colorScheme;
 
   @override
@@ -1572,9 +1591,24 @@ class _TimelinePainter extends CustomPainter {
     _drawTrack(canvas, size, layout.videoTop, radius, trackPaint);
     _drawTrack(canvas, size, layout.audio1Top, radius, trackPaint);
     _drawTrack(canvas, size, layout.audio2Top, radius, trackPaint);
-    _drawLaneLabel(canvas, 'V1', layout.videoTop, _videoClipColor);
-    _drawLaneLabel(canvas, 'A1', layout.audio1Top, _audioClipColor);
-    _drawLaneLabel(canvas, 'A2', layout.audio2Top, _audioClipColor);
+    _drawLaneLabel(
+      canvas,
+      videoTrackLocked ? 'V1 LOCK' : 'V1',
+      layout.videoTop,
+      _videoClipColor,
+    );
+    _drawLaneLabel(
+      canvas,
+      audioTrack1Locked ? 'A1 LOCK' : 'A1',
+      layout.audio1Top,
+      _audioClipColor,
+    );
+    _drawLaneLabel(
+      canvas,
+      audioTrack2Locked ? 'A2 LOCK' : 'A2',
+      layout.audio2Top,
+      _audioClipColor,
+    );
 
     _drawWaveform(canvas, size);
     _drawInOutRange(canvas, size);
@@ -1623,8 +1657,9 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawLaneLabel(Canvas canvas, String label, double top, Color color) {
+    final width = label.length > 2 ? 54.0 : 30.0;
     final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(8, top + 6, 30, layout.laneHeight - 12),
+      Rect.fromLTWH(8, top + 6, width, layout.laneHeight - 12),
       Radius.circular(5),
     );
     canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.92));
@@ -1642,7 +1677,7 @@ class _TimelinePainter extends CustomPainter {
     textPainter.paint(
       canvas,
       Offset(
-        23 - textPainter.width / 2,
+        8 + width / 2 - textPainter.width / 2,
         top + layout.laneHeight / 2 - textPainter.height / 2,
       ),
     );
@@ -2342,6 +2377,9 @@ class _TimelinePainter extends CustomPainter {
         activeIndex != oldDelegate.activeIndex ||
         activeEdge != oldDelegate.activeEdge ||
         activeTrack != oldDelegate.activeTrack ||
+        videoTrackLocked != oldDelegate.videoTrackLocked ||
+        audioTrack1Locked != oldDelegate.audioTrack1Locked ||
+        audioTrack2Locked != oldDelegate.audioTrack2Locked ||
         colorScheme != oldDelegate.colorScheme;
   }
 }

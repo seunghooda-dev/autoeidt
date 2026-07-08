@@ -90,6 +90,8 @@ class EditorController extends ChangeNotifier {
   bool audioTrack2Targeted = true;
   bool videoTrackLocked = false;
   bool audioTrackLocked = false;
+  bool audioTrack1Locked = false;
+  bool audioTrack2Locked = false;
   String projectName = 'AutoEdit Project';
   HighlightSegment? _clipClipboard;
   List<HighlightSegment> comparisonDefaultSegments = [];
@@ -386,9 +388,29 @@ class EditorController extends ChangeNotifier {
 
   bool get allTrackTargetsEnabled =>
       videoTrackTargeted && audioTrack1Targeted && audioTrack2Targeted;
+  bool get audioTrack1EditLocked => audioTrackLocked || audioTrack1Locked;
+  bool get audioTrack2EditLocked => audioTrackLocked || audioTrack2Locked;
+  bool get anyAudioTrackEditLocked =>
+      audioTrackLocked || audioTrack1Locked || audioTrack2Locked;
+  bool get allAudioTracksEditLocked =>
+      audioTrackLocked || audioTrack1Locked && audioTrack2Locked;
+  String get audioTrackLockLabel {
+    if (allAudioTracksEditLocked) {
+      return 'A1/A2 Locked';
+    }
+    if (audioTrack1Locked) {
+      return 'A1 Locked';
+    }
+    if (audioTrack2Locked) {
+      return 'A2 Locked';
+    }
+    return 'A1/A2';
+  }
+
   bool get targetedTracksUnlocked =>
       (!videoTrackTargeted || !videoTrackLocked) &&
-      (!(audioTrack1Targeted || audioTrack2Targeted) || !audioTrackLocked);
+      (!audioTrack1Targeted || !audioTrack1EditLocked) &&
+      (!audioTrack2Targeted || !audioTrack2EditLocked);
   bool get allAudioMuted =>
       segments.isNotEmpty &&
       segments.every(
@@ -756,6 +778,8 @@ class EditorController extends ChangeNotifier {
     audioTrack2Targeted = true;
     videoTrackLocked = false;
     audioTrackLocked = false;
+    audioTrack1Locked = false;
+    audioTrack2Locked = false;
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
@@ -2014,7 +2038,7 @@ class EditorController extends ChangeNotifier {
 
   void applyDefaultAudioTransition() {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2028,7 +2052,7 @@ class EditorController extends ChangeNotifier {
 
   void detachAudioForSelectedSegment() {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2043,7 +2067,7 @@ class EditorController extends ChangeNotifier {
 
   void relinkAudioForSelectedSegment() {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2070,7 +2094,7 @@ class EditorController extends ChangeNotifier {
 
   void toggleSelectedAudioMute() {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2091,7 +2115,7 @@ class EditorController extends ChangeNotifier {
 
   void _toggleSelectedAudioChannel(int channel) {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || _audioTrackEditLocked(channel)) {
       return;
     }
     final nextChannel1 = channel == 1
@@ -2208,7 +2232,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedAudioPan(double value) {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2225,7 +2249,7 @@ class EditorController extends ChangeNotifier {
 
   void toggleSelectedAudioNormalize() {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2257,9 +2281,12 @@ class EditorController extends ChangeNotifier {
   }
 
   void setAllAudioChannelEnabled(int channel, bool enabled) {
-    if (audioTrackLocked || segments.isEmpty) {
+    if (_audioTrackEditLocked(channel) || segments.isEmpty) {
       return;
     }
+    final otherChannelLocked = channel == 1
+        ? audioTrack2EditLocked
+        : audioTrack1EditLocked;
     var changed = false;
     final nextSegments = [
       for (final segment in segments)
@@ -2269,11 +2296,17 @@ class EditorController extends ChangeNotifier {
           if (channel == 1) {
             channel1 = enabled;
             if (!channel1 && !channel2) {
+              if (otherChannelLocked) {
+                return segment;
+              }
               channel2 = true;
             }
           } else if (channel == 2) {
             channel2 = enabled;
             if (!channel1 && !channel2) {
+              if (otherChannelLocked) {
+                return segment;
+              }
               channel1 = true;
             }
           }
@@ -2299,7 +2332,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setAudioChannelSolo(int channel) {
-    if (audioTrackLocked || segments.isEmpty) {
+    if (anyAudioTrackEditLocked || segments.isEmpty) {
       return;
     }
     final soloChannel1 = channel == 1;
@@ -2333,7 +2366,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void setAllAudioMute(bool muted) {
-    if (audioTrackLocked ||
+    if (anyAudioTrackEditLocked ||
         segments.isEmpty ||
         segments.every((segment) => segment.audioMuted == muted)) {
       return;
@@ -2356,13 +2389,33 @@ class EditorController extends ChangeNotifier {
   }
 
   void toggleAudioTrackLock() {
-    audioTrackLocked = !audioTrackLocked;
+    if (allAudioTracksEditLocked) {
+      audioTrackLocked = false;
+      audioTrack1Locked = false;
+      audioTrack2Locked = false;
+    } else {
+      audioTrackLocked = true;
+    }
     notifyListeners();
+  }
+
+  void toggleAudioTrack1Lock() {
+    audioTrack1Locked = !audioTrack1Locked;
+    notifyListeners();
+  }
+
+  void toggleAudioTrack2Lock() {
+    audioTrack2Locked = !audioTrack2Locked;
+    notifyListeners();
+  }
+
+  bool _audioTrackEditLocked(int channel) {
+    return channel == 1 ? audioTrack1EditLocked : audioTrack2EditLocked;
   }
 
   void setSelectedAudioVolume(double value) {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2375,7 +2428,7 @@ class EditorController extends ChangeNotifier {
 
   void nudgeSelectedAudio(double delta) {
     final selected = selectedSegment;
-    if (selected == null || selected.audioLinked || audioTrackLocked) {
+    if (selected == null || selected.audioLinked || anyAudioTrackEditLocked) {
       return;
     }
     final audioDuration = selected.audioDuration;
@@ -2412,7 +2465,7 @@ class EditorController extends ChangeNotifier {
     if (selected == null ||
         frameDelta == 0 ||
         videoTrackLocked ||
-        audioTrackLocked) {
+        anyAudioTrackEditLocked) {
       return;
     }
 
@@ -2474,7 +2527,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void _rollSelectedEditFrames(int frameDelta, {required bool incoming}) {
-    if (frameDelta == 0 || videoTrackLocked || audioTrackLocked) {
+    if (frameDelta == 0 || videoTrackLocked || anyAudioTrackEditLocked) {
       return;
     }
     final order = selectedSegmentOrder;
@@ -2539,7 +2592,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedPlaybackSpeed(double value) {
     final selected = selectedSegment;
-    if (selected == null || videoTrackLocked || audioTrackLocked) {
+    if (selected == null || videoTrackLocked || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2552,7 +2605,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedAudioFadeIn(double value) {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2565,7 +2618,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedAudioFadeOut(double value) {
     final selected = selectedSegment;
-    if (selected == null || audioTrackLocked) {
+    if (selected == null || anyAudioTrackEditLocked) {
       return;
     }
     updateSegment(
@@ -2942,7 +2995,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void applyAudioAutoMix() {
-    if (segments.isEmpty || audioTrackLocked) {
+    if (segments.isEmpty || anyAudioTrackEditLocked) {
       return;
     }
     _commitHistory();

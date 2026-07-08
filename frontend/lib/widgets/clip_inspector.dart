@@ -115,7 +115,8 @@ class ClipInspector extends StatelessWidget {
           max: 4,
           divisions: 15,
           valueLabel: '${selected.playbackSpeed.toStringAsFixed(2)}x',
-          onChanged: controller.videoTrackLocked || controller.audioTrackLocked
+          onChanged:
+              controller.videoTrackLocked || controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedPlaybackSpeed,
         ),
@@ -191,7 +192,7 @@ class ClipInspector extends StatelessWidget {
           children: [
             FilterChip(
               selected: !selected.audioLinked,
-              onSelected: controller.audioTrackLocked
+              onSelected: controller.anyAudioTrackEditLocked
                   ? null
                   : (_) {
                       if (selected.audioLinked) {
@@ -208,7 +209,7 @@ class ClipInspector extends StatelessWidget {
             ),
             FilterChip(
               selected: selected.audioMuted,
-              onSelected: controller.audioTrackLocked
+              onSelected: controller.anyAudioTrackEditLocked
                   ? null
                   : (_) => editor.toggleSelectedAudioMute(),
               avatar: Icon(
@@ -221,7 +222,7 @@ class ClipInspector extends StatelessWidget {
             ),
             FilterChip(
               selected: selected.audioChannel1Enabled,
-              onSelected: controller.audioTrackLocked
+              onSelected: controller.audioTrack1EditLocked
                   ? null
                   : (_) => editor.toggleSelectedAudioChannel1(),
               avatar: Icon(
@@ -234,7 +235,7 @@ class ClipInspector extends StatelessWidget {
             ),
             FilterChip(
               selected: selected.audioChannel2Enabled,
-              onSelected: controller.audioTrackLocked
+              onSelected: controller.audioTrack2EditLocked
                   ? null
                   : (_) => editor.toggleSelectedAudioChannel2(),
               avatar: Icon(
@@ -247,7 +248,7 @@ class ClipInspector extends StatelessWidget {
             ),
             FilterChip(
               selected: selected.audioNormalize,
-              onSelected: controller.audioTrackLocked
+              onSelected: controller.anyAudioTrackEditLocked
                   ? null
                   : (_) => editor.toggleSelectedAudioNormalize(),
               avatar: const Icon(Icons.auto_graph, size: 18),
@@ -255,14 +256,16 @@ class ClipInspector extends StatelessWidget {
             ),
             IconButton.outlined(
               tooltip: 'A1/A2 1프레임 앞으로',
-              onPressed: selected.audioLinked || controller.audioTrackLocked
+              onPressed:
+                  selected.audioLinked || controller.anyAudioTrackEditLocked
                   ? null
                   : () => editor.nudgeSelectedAudioFrames(-1),
               icon: const Icon(Icons.keyboard_double_arrow_left),
             ),
             IconButton.outlined(
               tooltip: 'A1/A2 1프레임 뒤로',
-              onPressed: selected.audioLinked || controller.audioTrackLocked
+              onPressed:
+                  selected.audioLinked || controller.anyAudioTrackEditLocked
                   ? null
                   : () => editor.nudgeSelectedAudioFrames(1),
               icon: const Icon(Icons.keyboard_double_arrow_right),
@@ -278,7 +281,7 @@ class ClipInspector extends StatelessWidget {
           max: 2,
           divisions: 20,
           valueLabel: '${(selected.audioVolume * 100).round()}%',
-          onChanged: controller.audioTrackLocked
+          onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioVolume,
         ),
@@ -291,7 +294,7 @@ class ClipInspector extends StatelessWidget {
           max: 1,
           divisions: 20,
           valueLabel: _panLabel(selected.audioPan),
-          onChanged: controller.audioTrackLocked
+          onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioPan,
         ),
@@ -304,7 +307,7 @@ class ClipInspector extends StatelessWidget {
           max: 10,
           divisions: 20,
           valueLabel: '${selected.audioFadeIn.toStringAsFixed(1)}s',
-          onChanged: controller.audioTrackLocked
+          onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioFadeIn,
         ),
@@ -317,7 +320,7 @@ class ClipInspector extends StatelessWidget {
           max: 10,
           divisions: 20,
           valueLabel: '${selected.audioFadeOut.toStringAsFixed(1)}s',
-          onChanged: controller.audioTrackLocked
+          onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioFadeOut,
         ),
