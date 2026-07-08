@@ -38,6 +38,10 @@ enum _TimelineMenuAction {
   rippleTrimEnd,
   extendStart,
   extendEnd,
+  slipEarlierFrame,
+  slipLaterFrame,
+  slipEarlierTenFrames,
+  slipLaterTenFrames,
   applyVideoTransition,
   applyAudioTransition,
   split,
@@ -84,6 +88,7 @@ class TimelineEditor extends StatefulWidget {
     this.onJumpToNextEdit,
     this.onJumpToMarkIn,
     this.onJumpToMarkOut,
+    this.onSlipSelectedSegmentFrames,
     this.onAddMarkerAt,
     this.onJumpToPreviousMarker,
     this.onJumpToNextMarker,
@@ -140,6 +145,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onJumpToNextEdit;
   final VoidCallback? onJumpToMarkIn;
   final VoidCallback? onJumpToMarkOut;
+  final ValueChanged<int>? onSlipSelectedSegmentFrames;
   final ValueChanged<double>? onAddMarkerAt;
   final VoidCallback? onJumpToPreviousMarker;
   final VoidCallback? onJumpToNextMarker;
@@ -413,6 +419,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onExtendStartTo?.call(seconds);
       case _TimelineMenuAction.extendEnd:
         widget.onExtendEndTo?.call(seconds);
+      case _TimelineMenuAction.slipEarlierFrame:
+        widget.onSlipSelectedSegmentFrames?.call(-1);
+      case _TimelineMenuAction.slipLaterFrame:
+        widget.onSlipSelectedSegmentFrames?.call(1);
+      case _TimelineMenuAction.slipEarlierTenFrames:
+        widget.onSlipSelectedSegmentFrames?.call(-10);
+      case _TimelineMenuAction.slipLaterTenFrames:
+        widget.onSlipSelectedSegmentFrames?.call(10);
       case _TimelineMenuAction.applyVideoTransition:
         widget.onApplyVideoTransition?.call();
       case _TimelineMenuAction.applyAudioTransition:
@@ -664,6 +678,46 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.extendEnd,
         shortcut: 'Shift+W',
         enabled: segment != null && !videoLocked,
+      ),
+      _menuItem(
+        Icons.swap_horiz,
+        'Slip source earlier 1f',
+        _TimelineMenuAction.slipEarlierFrame,
+        shortcut: 'Alt+Left',
+        enabled:
+            clipEditable &&
+            widget.duration > 0 &&
+            widget.onSlipSelectedSegmentFrames != null,
+      ),
+      _menuItem(
+        Icons.swap_horiz,
+        'Slip source later 1f',
+        _TimelineMenuAction.slipLaterFrame,
+        shortcut: 'Alt+Right',
+        enabled:
+            clipEditable &&
+            widget.duration > 0 &&
+            widget.onSlipSelectedSegmentFrames != null,
+      ),
+      _menuItem(
+        Icons.keyboard_double_arrow_left,
+        'Slip source earlier 10f',
+        _TimelineMenuAction.slipEarlierTenFrames,
+        shortcut: 'Alt+Shift+Left',
+        enabled:
+            clipEditable &&
+            widget.duration > 0 &&
+            widget.onSlipSelectedSegmentFrames != null,
+      ),
+      _menuItem(
+        Icons.keyboard_double_arrow_right,
+        'Slip source later 10f',
+        _TimelineMenuAction.slipLaterTenFrames,
+        shortcut: 'Alt+Shift+Right',
+        enabled:
+            clipEditable &&
+            widget.duration > 0 &&
+            widget.onSlipSelectedSegmentFrames != null,
       ),
       const PopupMenuDivider(),
       _menuItem(

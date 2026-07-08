@@ -75,6 +75,19 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyI, shift: true);
     expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 180);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight, alt: true);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 151);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.end), 391);
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.arrowLeft,
+      alt: true,
+      shift: true,
+    );
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.start), 141);
+    expect(secondsToTimecodeFrame(controller.selectedSegment!.end), 381);
+
     await _pressShortcut(tester, LogicalKeyboardKey.keyC);
     expect(controller.isRazorTool, isTrue);
 

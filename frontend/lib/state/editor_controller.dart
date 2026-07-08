@@ -1769,6 +1769,64 @@ class EditorController extends ChangeNotifier {
     nudgeSelectedAudio(frameDelta * timecodeFrameDurationSeconds);
   }
 
+  void slipSelectedSegmentFrames(int frameDelta) {
+    final selected = selectedSegment;
+    if (selected == null ||
+        frameDelta == 0 ||
+        videoTrackLocked ||
+        audioTrackLocked) {
+      return;
+    }
+
+    final sourceFrames = secondsToTimecodeFrame(timelineSourceDuration);
+    final startFrame = secondsToTimecodeFrame(selected.start);
+    final endFrame = secondsToTimecodeFrame(selected.end);
+    final clipFrames = math.max(1, endFrame - startFrame);
+    if (sourceFrames <= clipFrames) {
+      return;
+    }
+
+    final maxStartFrame = sourceFrames - clipFrames;
+    final nextStartFrame = (startFrame + frameDelta)
+        .clamp(0, maxStartFrame)
+        .toInt();
+    if (nextStartFrame == startFrame) {
+      return;
+    }
+    final actualFrameDelta = nextStartFrame - startFrame;
+    final nextEndFrame = nextStartFrame + clipFrames;
+    final source = _appendSource(selected.source, 'slip');
+
+    var next = selected.copyWith(
+      start: timecodeFrameToSeconds(nextStartFrame),
+      end: timecodeFrameToSeconds(nextEndFrame),
+      source: source,
+    );
+    if (selected.audioLinked) {
+      next = next.copyWith(
+        audioStart: next.start,
+        audioEnd: next.end,
+        audioLinked: true,
+      );
+    } else {
+      final audioStartFrame = secondsToTimecodeFrame(
+        selected.effectiveAudioStart,
+      );
+      final audioEndFrame = secondsToTimecodeFrame(selected.effectiveAudioEnd);
+      final audioFrames = math.max(1, audioEndFrame - audioStartFrame);
+      final maxAudioStartFrame = math.max(0, sourceFrames - audioFrames);
+      final nextAudioStartFrame = (audioStartFrame + actualFrameDelta)
+          .clamp(0, maxAudioStartFrame)
+          .toInt();
+      next = next.copyWith(
+        audioStart: timecodeFrameToSeconds(nextAudioStartFrame),
+        audioEnd: timecodeFrameToSeconds(nextAudioStartFrame + audioFrames),
+        audioLinked: false,
+      );
+    }
+    updateSegment(next);
+  }
+
   void setSelectedPlaybackSpeed(double value) {
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked || audioTrackLocked) {

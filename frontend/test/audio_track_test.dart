@@ -456,6 +456,55 @@ void main() {
     expect(selected.audioLinked, isFalse);
   });
 
+  test('slip edit moves source frames while preserving clip duration', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 20, reason: 'test'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.slipSelectedSegmentFrames(1);
+    var selected = controller.selectedSegment!;
+    expect(secondsToTimecodeFrame(selected.start), 301);
+    expect(secondsToTimecodeFrame(selected.end), 601);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioStart), 301);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioEnd), 601);
+    expect(secondsToTimecodeFrame(selected.end - selected.start), 300);
+    expect(selected.source, contains('slip'));
+
+    controller.slipSelectedSegmentFrames(-1000);
+    selected = controller.selectedSegment!;
+    expect(secondsToTimecodeFrame(selected.start), 0);
+    expect(secondsToTimecodeFrame(selected.end), 300);
+  });
+
+  test('slip edit preserves detached audio offset by frame count', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 20,
+          reason: 'test',
+          audioStart: 40,
+          audioEnd: 50,
+          audioLinked: false,
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.slipSelectedSegmentFrames(10);
+
+    final selected = controller.selectedSegment!;
+    expect(secondsToTimecodeFrame(selected.start), 310);
+    expect(secondsToTimecodeFrame(selected.end), 610);
+    expect(selected.audioLinked, isFalse);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioStart), 1210);
+    expect(secondsToTimecodeFrame(selected.effectiveAudioEnd), 1510);
+  });
+
   test('speed fade duplicate and undo redo update editor state', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30
