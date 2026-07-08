@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 class LocalEngineState {
@@ -50,6 +51,12 @@ class LocalEngineService {
 
   Future<LocalEngineState> ensureRunning({int port = 8000}) async {
     if (await _isHealthy(port)) {
+      if (!await _hasRequiredApi(port)) {
+        return LocalEngineState.unavailable(
+          '8000번 포트에 구버전 또는 다른 편집 엔진이 실행 중입니다. '
+          'Docker compose를 종료하거나 해당 서버를 내린 뒤 AutoEdit를 다시 실행해 주세요.',
+        );
+      }
       return LocalEngineState.running();
     }
 
@@ -83,6 +90,12 @@ class LocalEngineService {
     final deadline = DateTime.now().add(const Duration(seconds: 75));
     while (DateTime.now().isBefore(deadline)) {
       if (await _isHealthy(port)) {
+        if (!await _hasRequiredApi(port)) {
+          return LocalEngineState.unavailable(
+            '8000번 포트에 구버전 또는 다른 편집 엔진이 실행 중입니다. '
+            'Docker compose를 종료하거나 해당 서버를 내린 뒤 AutoEdit를 다시 실행해 주세요.',
+          );
+        }
         return LocalEngineState.running(startedHere: true);
       }
       await Future<void>.delayed(const Duration(milliseconds: 750));
@@ -108,6 +121,23 @@ class LocalEngineService {
       final response = await request.close();
       await response.drain<void>();
       return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<bool> _hasRequiredApi(int port) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$port/openapi.json'),
+      );
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      return response.statusCode == 200 &&
+          body.contains('/api/jobs/probe-local');
     } catch (_) {
       return false;
     } finally {

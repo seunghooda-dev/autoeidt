@@ -389,6 +389,9 @@ class EditorController extends ChangeNotifier {
       }
     }
     await ensureLocalEngine();
+    if (!engineState.isRunning) {
+      throw StateError(engineState.message);
+    }
   }
 
   Future<void> pickVideo() async {
