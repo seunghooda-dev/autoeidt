@@ -258,6 +258,14 @@ def _segment_audio_volume(segment: dict) -> float:
     return max(0.0, min(float(segment.get("audio_volume", 1.0)), 2.0))
 
 
+def _segment_audio_pan(segment: dict) -> float:
+    return max(-1.0, min(float(segment.get("audio_pan", 0.0)), 1.0))
+
+
+def _segment_video_enabled(segment: dict) -> bool:
+    return bool(segment.get("video_enabled", True))
+
+
 def _segment_playback_speed(segment: dict) -> float:
     return max(0.25, min(float(segment.get("playback_speed", 1.0)), 4.0))
 
@@ -292,6 +300,8 @@ def _segment_uses_default_audio(segment: dict) -> bool:
     if bool(segment.get("audio_muted", False)):
         return False
     if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
+        return False
+    if abs(_segment_audio_pan(segment)) > 0.001:
         return False
     if abs(_segment_playback_speed(segment) - 1.0) > 0.001:
         return False
@@ -394,14 +404,28 @@ def _render_reencode_with_video_args(
             if segment.get("audio_muted", False)
             else _segment_audio_volume(segment)
         )
-        filters.append(
-            f"[0:v]trim=start={start:.6f}:end={end:.6f},"
-            f"setpts=(PTS-STARTPTS)/{speed:.6f}[v{index}]"
-        )
+        video_steps = [
+            f"[0:v]trim=start={start:.6f}:end={end:.6f}",
+            f"setpts=(PTS-STARTPTS)/{speed:.6f}",
+            "format=yuv420p",
+        ]
+        if not _segment_video_enabled(segment):
+            video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+        video_steps[-1] = f"{video_steps[-1]}[v{index}]"
+        filters.append(",".join(video_steps))
+        pan = _segment_audio_pan(segment)
+        left_gain = 1.0 if pan <= 0 else 1.0 - pan
+        right_gain = 1.0 if pan >= 0 else 1.0 + pan
         audio_steps = [
             f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f}",
             "asetpts=PTS-STARTPTS",
             f"volume={volume:.3f}",
+            "aformat=channel_layouts=stereo",
+            (
+                f"pan=stereo|c0={left_gain:.6f}*c0|c1={right_gain:.6f}*c1"
+                if abs(pan) > 0.001
+                else "anull"
+            ),
             "apad",
             f"atrim=duration={video_duration:.6f}",
             "asetpts=PTS-STARTPTS",

@@ -51,6 +51,8 @@ class EditorController extends ChangeNotifier {
   bool includeCaptions = true;
   String exportAspectRatio = '16:9';
   double timelineZoom = 1.0;
+  bool videoTrackLocked = false;
+  bool audioTrackLocked = false;
   String projectName = 'AutoEdit Project';
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
@@ -74,6 +76,8 @@ class EditorController extends ChangeNotifier {
       job?.status != 'rendering';
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  bool get allAudioMuted =>
+      segments.isNotEmpty && segments.every((segment) => segment.audioMuted);
   bool get hasValidMarks =>
       markIn != null &&
       markOut != null &&
@@ -207,6 +211,8 @@ class EditorController extends ChangeNotifier {
     markIn = null;
     markOut = null;
     uploadProgress = 0;
+    videoTrackLocked = false;
+    audioTrackLocked = false;
     _clearHistory();
     await _disposeVideoController();
     notifyListeners();
@@ -463,7 +469,7 @@ class EditorController extends ChangeNotifier {
 
   void detachAudioForSelectedSegment() {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -478,7 +484,7 @@ class EditorController extends ChangeNotifier {
 
   void relinkAudioForSelectedSegment() {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -505,7 +511,7 @@ class EditorController extends ChangeNotifier {
 
   void toggleSelectedAudioMute() {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -516,9 +522,71 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void toggleSelectedVideoEnabled() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoEnabled: !selected.videoEnabled,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioPan(double value) {
+    final selected = selectedSegment;
+    if (selected == null || audioTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioPan: value.clamp(-1.0, 1.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void resetSelectedAudioPan() {
+    setSelectedAudioPan(0);
+  }
+
+  void toggleAllAudioMute() {
+    setAllAudioMute(!allAudioMuted);
+  }
+
+  void setAllAudioMute(bool muted) {
+    if (audioTrackLocked ||
+        segments.isEmpty ||
+        segments.every((segment) => segment.audioMuted == muted)) {
+      return;
+    }
+    _commitHistory();
+    segments = [
+      for (final segment in segments)
+        segment.copyWith(
+          audioMuted: muted,
+          source: segment.source == 'ai' ? 'ai+manual' : segment.source,
+        ),
+    ];
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void toggleVideoTrackLock() {
+    videoTrackLocked = !videoTrackLocked;
+    notifyListeners();
+  }
+
+  void toggleAudioTrackLock() {
+    audioTrackLocked = !audioTrackLocked;
+    notifyListeners();
+  }
+
   void setSelectedAudioVolume(double value) {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -531,7 +599,7 @@ class EditorController extends ChangeNotifier {
 
   void nudgeSelectedAudio(double delta) {
     final selected = selectedSegment;
-    if (selected == null || selected.audioLinked) {
+    if (selected == null || selected.audioLinked || audioTrackLocked) {
       return;
     }
     final audioDuration = selected.audioDuration;
@@ -565,7 +633,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedPlaybackSpeed(double value) {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || videoTrackLocked || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -578,7 +646,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedAudioFadeIn(double value) {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -591,7 +659,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedAudioFadeOut(double value) {
     final selected = selectedSegment;
-    if (selected == null) {
+    if (selected == null || audioTrackLocked) {
       return;
     }
     updateSegment(
@@ -1009,6 +1077,7 @@ class EditorController extends ChangeNotifier {
       );
     }
     final playbackSpeed = segment.playbackSpeed.clamp(0.25, 4.0).toDouble();
+    final audioPan = segment.audioPan.clamp(-1.0, 1.0).toDouble();
     final normalizedSegment = segment.copyWith(
       start: start,
       end: end,
@@ -1025,6 +1094,7 @@ class EditorController extends ChangeNotifier {
         audioStart: normalizedSegment.start,
         audioEnd: normalizedSegment.end,
         audioVolume: volume,
+        audioPan: audioPan,
         audioFadeIn: audioFadeIn,
         audioFadeOut: audioFadeOut,
       );
@@ -1044,6 +1114,7 @@ class EditorController extends ChangeNotifier {
       audioStart: audioStart,
       audioEnd: audioEnd,
       audioVolume: volume,
+      audioPan: audioPan,
       audioFadeIn: audioFadeIn,
       audioFadeOut: audioFadeOut,
     );
@@ -1202,6 +1273,7 @@ class EditorController extends ChangeNotifier {
         reason: '초반 후킹과 문제 제시가 명확함',
         script: '결과부터 보여드리면 이 문제는 세 가지 실수에서 시작됩니다',
         source: 'skill-engine',
+        audioPan: -0.15,
         score: 9.2,
         tags: ['유지율', '문제해결', '구체성'],
       ),
@@ -1212,6 +1284,7 @@ class EditorController extends ChangeNotifier {
         reason: '핵심 원인과 해결 순서가 이어짐',
         script: '핵심은 먼저 원인을 확인하고 그 다음 해결 순서를 적용하는 것입니다',
         source: 'skill-engine',
+        audioPan: 0.2,
         score: 8.7,
         tags: ['핵심', '전환'],
       ),
@@ -1222,6 +1295,7 @@ class EditorController extends ChangeNotifier {
         reason: '구체적인 숫자와 비교가 포함됨',
         script: '첫 번째 방법과 두 번째 방법의 차이는 실제로 30퍼센트 정도입니다',
         source: 'skill-engine',
+        videoEnabled: false,
         score: 7.9,
         tags: ['구체성', '비교'],
       ),

@@ -6,10 +6,12 @@ class HighlightSegment {
     required this.reason,
     this.script = '',
     this.source = 'ai',
+    this.videoEnabled = true,
     this.audioStart,
     this.audioEnd,
     this.audioMuted = false,
     this.audioVolume = 1.0,
+    this.audioPan = 0.0,
     this.audioLinked = true,
     this.playbackSpeed = 1.0,
     this.audioFadeIn = 0.0,
@@ -24,10 +26,12 @@ class HighlightSegment {
   final String reason;
   final String script;
   final String source;
+  final bool videoEnabled;
   final double? audioStart;
   final double? audioEnd;
   final bool audioMuted;
   final double audioVolume;
+  final double audioPan;
   final bool audioLinked;
   final double playbackSpeed;
   final double audioFadeIn;
@@ -48,10 +52,12 @@ class HighlightSegment {
     String? reason,
     String? script,
     String? source,
+    bool? videoEnabled,
     double? audioStart,
     double? audioEnd,
     bool? audioMuted,
     double? audioVolume,
+    double? audioPan,
     bool? audioLinked,
     double? playbackSpeed,
     double? audioFadeIn,
@@ -66,10 +72,12 @@ class HighlightSegment {
       reason: reason ?? this.reason,
       script: script ?? this.script,
       source: source ?? this.source,
+      videoEnabled: videoEnabled ?? this.videoEnabled,
       audioStart: audioStart ?? this.audioStart,
       audioEnd: audioEnd ?? this.audioEnd,
       audioMuted: audioMuted ?? this.audioMuted,
       audioVolume: audioVolume ?? this.audioVolume,
+      audioPan: audioPan ?? this.audioPan,
       audioLinked: audioLinked ?? this.audioLinked,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
@@ -87,6 +95,10 @@ class HighlightSegment {
       reason: json['reason'] as String? ?? '',
       script: json['script'] as String? ?? '',
       source: json['source'] as String? ?? 'ai',
+      videoEnabled:
+          (json['video_enabled'] as bool?) ??
+          (json['videoEnabled'] as bool?) ??
+          true,
       audioStart:
           (json['audio_start'] as num?)?.toDouble() ??
           (json['audioStart'] as num?)?.toDouble(),
@@ -101,6 +113,10 @@ class HighlightSegment {
           (json['audio_volume'] as num?)?.toDouble() ??
           (json['audioVolume'] as num?)?.toDouble() ??
           1.0,
+      audioPan:
+          (json['audio_pan'] as num?)?.toDouble() ??
+          (json['audioPan'] as num?)?.toDouble() ??
+          0.0,
       audioLinked:
           (json['audio_linked'] as bool?) ??
           (json['audioLinked'] as bool?) ??
@@ -136,10 +152,12 @@ class HighlightSegment {
       'reason': reason,
       'script': script,
       'source': source,
+      'video_enabled': videoEnabled,
       'audio_start': effectiveAudioStart,
       'audio_end': effectiveAudioEnd,
       'audio_muted': audioMuted,
       'audio_volume': audioVolume,
+      'audio_pan': audioPan,
       'audio_linked': audioLinked,
       'playback_speed': playbackSpeed,
       'audio_fade_in': audioFadeIn,

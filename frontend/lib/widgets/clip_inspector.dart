@@ -18,6 +18,7 @@ class ClipInspector extends StatelessWidget {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
+    final editor = context.read<EditorController>();
     return ListView(
       children: [
         Row(
@@ -56,6 +57,26 @@ class ClipInspector extends StatelessWidget {
           start: formatSeconds(selected.effectiveAudioStart),
           end: formatSeconds(selected.effectiveAudioEnd),
         ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              selected: selected.videoEnabled,
+              onSelected: controller.videoTrackLocked
+                  ? null
+                  : (_) => editor.toggleSelectedVideoEnabled(),
+              avatar: Icon(
+                selected.videoEnabled
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 18,
+              ),
+              label: Text(selected.videoEnabled ? 'V1 표시' : 'V1 숨김'),
+            ),
+          ],
+        ),
         if (selected.tags.isNotEmpty) ...[
           const SizedBox(height: 10),
           Wrap(
@@ -81,7 +102,9 @@ class ClipInspector extends StatelessWidget {
           max: 4,
           divisions: 15,
           valueLabel: '${selected.playbackSpeed.toStringAsFixed(2)}x',
-          onChanged: context.read<EditorController>().setSelectedPlaybackSpeed,
+          onChanged: controller.videoTrackLocked || controller.audioTrackLocked
+              ? null
+              : editor.setSelectedPlaybackSpeed,
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -90,14 +113,15 @@ class ClipInspector extends StatelessWidget {
           children: [
             FilterChip(
               selected: !selected.audioLinked,
-              onSelected: (_) {
-                final editor = context.read<EditorController>();
-                if (selected.audioLinked) {
-                  editor.detachAudioForSelectedSegment();
-                } else {
-                  editor.relinkAudioForSelectedSegment();
-                }
-              },
+              onSelected: controller.audioTrackLocked
+                  ? null
+                  : (_) {
+                      if (selected.audioLinked) {
+                        editor.detachAudioForSelectedSegment();
+                      } else {
+                        editor.relinkAudioForSelectedSegment();
+                      }
+                    },
               avatar: Icon(
                 selected.audioLinked ? Icons.link : Icons.link_off,
                 size: 18,
@@ -106,8 +130,9 @@ class ClipInspector extends StatelessWidget {
             ),
             FilterChip(
               selected: selected.audioMuted,
-              onSelected: (_) =>
-                  context.read<EditorController>().toggleSelectedAudioMute(),
+              onSelected: controller.audioTrackLocked
+                  ? null
+                  : (_) => editor.toggleSelectedAudioMute(),
               avatar: Icon(
                 selected.audioMuted
                     ? Icons.volume_off_outlined
@@ -118,20 +143,16 @@ class ClipInspector extends StatelessWidget {
             ),
             IconButton.outlined(
               tooltip: 'A1 1프레임 앞으로',
-              onPressed: selected.audioLinked
+              onPressed: selected.audioLinked || controller.audioTrackLocked
                   ? null
-                  : () => context
-                        .read<EditorController>()
-                        .nudgeSelectedAudioFrames(-1),
+                  : () => editor.nudgeSelectedAudioFrames(-1),
               icon: const Icon(Icons.keyboard_double_arrow_left),
             ),
             IconButton.outlined(
               tooltip: 'A1 1프레임 뒤로',
-              onPressed: selected.audioLinked
+              onPressed: selected.audioLinked || controller.audioTrackLocked
                   ? null
-                  : () => context
-                        .read<EditorController>()
-                        .nudgeSelectedAudioFrames(1),
+                  : () => editor.nudgeSelectedAudioFrames(1),
               icon: const Icon(Icons.keyboard_double_arrow_right),
             ),
           ],
@@ -145,7 +166,22 @@ class ClipInspector extends StatelessWidget {
           max: 2,
           divisions: 20,
           valueLabel: '${(selected.audioVolume * 100).round()}%',
-          onChanged: context.read<EditorController>().setSelectedAudioVolume,
+          onChanged: controller.audioTrackLocked
+              ? null
+              : editor.setSelectedAudioVolume,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          icon: Icons.balance,
+          label: 'Pan',
+          value: selected.audioPan.clamp(-1.0, 1.0).toDouble(),
+          min: -1,
+          max: 1,
+          divisions: 20,
+          valueLabel: _panLabel(selected.audioPan),
+          onChanged: controller.audioTrackLocked
+              ? null
+              : editor.setSelectedAudioPan,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -156,7 +192,9 @@ class ClipInspector extends StatelessWidget {
           max: 10,
           divisions: 20,
           valueLabel: '${selected.audioFadeIn.toStringAsFixed(1)}s',
-          onChanged: context.read<EditorController>().setSelectedAudioFadeIn,
+          onChanged: controller.audioTrackLocked
+              ? null
+              : editor.setSelectedAudioFadeIn,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -167,11 +205,22 @@ class ClipInspector extends StatelessWidget {
           max: 10,
           divisions: 20,
           valueLabel: '${selected.audioFadeOut.toStringAsFixed(1)}s',
-          onChanged: context.read<EditorController>().setSelectedAudioFadeOut,
+          onChanged: controller.audioTrackLocked
+              ? null
+              : editor.setSelectedAudioFadeOut,
         ),
       ],
     );
   }
+}
+
+String _panLabel(double value) {
+  final clamped = value.clamp(-1.0, 1.0).toDouble();
+  if (clamped.abs() < 0.01) {
+    return 'C';
+  }
+  final side = clamped < 0 ? 'L' : 'R';
+  return '$side ${(clamped.abs() * 100).round()}';
 }
 
 class _TimecodeRow extends StatelessWidget {
@@ -235,7 +284,7 @@ class _PropertySlider extends StatelessWidget {
   final double max;
   final int divisions;
   final String valueLabel;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChanged;
 
   @override
   Widget build(BuildContext context) {

@@ -10,10 +10,12 @@ void main() {
       start: 10,
       end: 20,
       reason: 'test',
+      videoEnabled: false,
       audioStart: 12,
       audioEnd: 22,
       audioMuted: true,
       audioVolume: 0.7,
+      audioPan: -0.4,
       audioLinked: false,
       playbackSpeed: 1.5,
       audioFadeIn: 0.5,
@@ -23,10 +25,12 @@ void main() {
     );
 
     final json = segment.toJson();
+    expect(json['video_enabled'], isFalse);
     expect(json['audio_start'], 12);
     expect(json['audio_end'], 22);
     expect(json['audio_muted'], isTrue);
     expect(json['audio_volume'], 0.7);
+    expect(json['audio_pan'], -0.4);
     expect(json['audio_linked'], isFalse);
     expect(json['playback_speed'], 1.5);
     expect(json['audio_fade_in'], 0.5);
@@ -35,10 +39,12 @@ void main() {
     expect(json['tags'], ['핵심', '문제해결']);
 
     final restored = HighlightSegment.fromJson(json);
+    expect(restored.videoEnabled, isFalse);
     expect(restored.effectiveAudioStart, 12);
     expect(restored.effectiveAudioEnd, 22);
     expect(restored.audioMuted, isTrue);
     expect(restored.audioVolume, 0.7);
+    expect(restored.audioPan, -0.4);
     expect(restored.audioLinked, isFalse);
     expect(restored.playbackSpeed, 1.5);
     expect(restored.audioFadeIn, 0.5);
@@ -140,6 +146,36 @@ void main() {
     expect(controller.selectedSegment!.audioLinked, isFalse);
     controller.toggleSelectedAudioLink();
     expect(controller.selectedSegment!.audioLinked, isTrue);
+  });
+
+  test('video visibility audio pan and track locks update editor state', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 13, reason: 'test'),
+        HighlightSegment(order: 2, start: 15, end: 20, reason: 'test 2'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.toggleSelectedVideoEnabled();
+    expect(controller.selectedSegment!.videoEnabled, isFalse);
+
+    controller.setSelectedAudioPan(1.5);
+    expect(controller.selectedSegment!.audioPan, 1.0);
+
+    controller.resetSelectedAudioPan();
+    expect(controller.selectedSegment!.audioPan, 0);
+
+    controller.toggleAllAudioMute();
+    expect(controller.segments.every((segment) => segment.audioMuted), isTrue);
+
+    controller.toggleVideoTrackLock();
+    controller.toggleSelectedVideoEnabled();
+    expect(controller.selectedSegment!.videoEnabled, isFalse);
+
+    controller.toggleAudioTrackLock();
+    controller.toggleAllAudioMute();
+    expect(controller.segments.every((segment) => segment.audioMuted), isTrue);
   });
 
   test('ai director condenses weak clips and applies shorts preset', () {

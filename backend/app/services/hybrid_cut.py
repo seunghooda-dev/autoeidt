@@ -153,6 +153,8 @@ def refine_highlights_with_hybrid_cut(
                     "reason": str(highlight.get("reason", "AI 추천 구간")),
                     "script": "",
                     "source": str(highlight.get("source", "ai")),
+                    "video_enabled": bool(highlight.get("video_enabled", True)),
+                    "audio_pan": float(highlight.get("audio_pan", 0.0)),
                     "score": float(highlight.get("score", 0.0)),
                     "tags": list(highlight.get("tags", [])),
                 }

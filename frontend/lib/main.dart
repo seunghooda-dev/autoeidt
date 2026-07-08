@@ -537,6 +537,7 @@ class _TimelinePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final editor = context.read<EditorController>();
     return Padding(
       padding: compact
           ? EdgeInsets.zero
@@ -560,9 +561,47 @@ class _TimelinePanel extends StatelessWidget {
                           label: '${controller.segments.length} clips',
                         ),
                         const SizedBox(width: 6),
-                        const _SmallPill(label: 'V1 Video'),
+                        _TrackControlButton(
+                          label: controller.videoTrackLocked
+                              ? 'V1 Locked'
+                              : 'V1',
+                          icon: controller.videoTrackLocked
+                              ? Icons.lock
+                              : Icons.lock_open,
+                          tooltip: controller.videoTrackLocked
+                              ? 'V1 영상 트랙 잠금 해제'
+                              : 'V1 영상 트랙 잠금',
+                          selected: controller.videoTrackLocked,
+                          onPressed: editor.toggleVideoTrackLock,
+                        ),
                         const SizedBox(width: 6),
-                        const _SmallPill(label: 'A1 Audio'),
+                        _TrackControlButton(
+                          label: controller.audioTrackLocked
+                              ? 'A1 Locked'
+                              : 'A1',
+                          icon: controller.audioTrackLocked
+                              ? Icons.lock
+                              : Icons.lock_open,
+                          tooltip: controller.audioTrackLocked
+                              ? 'A1 오디오 트랙 잠금 해제'
+                              : 'A1 오디오 트랙 잠금',
+                          selected: controller.audioTrackLocked,
+                          onPressed: editor.toggleAudioTrackLock,
+                        ),
+                        const SizedBox(width: 6),
+                        _TrackControlButton(
+                          label: controller.allAudioMuted
+                              ? 'A1 Muted'
+                              : 'A1 Mix',
+                          icon: controller.allAudioMuted
+                              ? Icons.volume_off_outlined
+                              : Icons.volume_up_outlined,
+                          tooltip: controller.allAudioMuted
+                              ? 'A1 전체 음소거 해제'
+                              : 'A1 전체 음소거',
+                          selected: controller.allAudioMuted,
+                          onPressed: editor.toggleAllAudioMute,
+                        ),
                         const Spacer(),
                         _SmallPill(
                           label:
@@ -699,6 +738,8 @@ class _TimelineEditorBody extends StatelessWidget {
       markOut: controller.markOut,
       waveform: controller.waveform,
       zoom: controller.timelineZoom,
+      videoTrackLocked: controller.videoTrackLocked,
+      audioTrackLocked: controller.audioTrackLocked,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onScrub: (seconds) {
         context.read<EditorController>().seekTo(seconds, autoplay: false);
@@ -719,6 +760,10 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudioMute: context
           .read<EditorController>()
           .toggleSelectedAudioMute,
+      onToggleVideoEnabled: context
+          .read<EditorController>()
+          .toggleSelectedVideoEnabled,
+      onResetAudioPan: context.read<EditorController>().resetSelectedAudioPan,
     );
   }
 }
@@ -919,6 +964,50 @@ class _SmallPill extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: colorScheme.onSurface,
           fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackControlButton extends StatelessWidget {
+  const _TrackControlButton({
+    required this.label,
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: selected
+              ? colorScheme.primary
+              : colorScheme.onSurface,
+          backgroundColor: selected
+              ? colorScheme.primary.withValues(alpha: 0.10)
+              : colorScheme.surfaceContainerHighest,
+          side: BorderSide(
+            color: selected ? colorScheme.primary : colorScheme.outline,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
       ),
     );

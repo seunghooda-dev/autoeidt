@@ -41,10 +41,12 @@ class HighlightSegment(BaseModel):
     reason: str
     script: str = ""
     source: str = "ai"
+    video_enabled: bool = True
     audio_start: float | None = None
     audio_end: float | None = None
     audio_muted: bool = False
     audio_volume: float = 1.0
+    audio_pan: float = 0.0
     audio_linked: bool = True
     playback_speed: float = 1.0
     audio_fade_in: float = 0.0
@@ -64,6 +66,11 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_volume_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 2.0))
+
+    @field_validator("audio_pan")
+    @classmethod
+    def audio_pan_must_be_safe(cls, value: float) -> float:
+        return max(-1.0, min(float(value), 1.0))
 
     @field_validator("playback_speed")
     @classmethod
