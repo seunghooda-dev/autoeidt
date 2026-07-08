@@ -265,6 +265,38 @@ void main() {
     expect(secondsToTimecodeFrame(controller.segments[2].start), 1199);
   });
 
+  testWidgets('selected clip lift and extract shortcuts edit timeline', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 20, end: 40, reason: 'two'),
+        HighlightSegment(order: 3, start: 50, end: 60, reason: 'three'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.semicolon, control: true);
+    expect(controller.segments[1].videoEnabled, isFalse);
+    expect(controller.segments[1].audioMuted, isTrue);
+
+    controller.undo();
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.quote, control: true);
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegment!.reason, 'three');
+  });
+
   testWidgets('mouse wheel zooms the timeline track', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -416,6 +448,10 @@ void main() {
     expect(find.text('Alt+.'), findsOneWidget);
     expect(find.text('Roll outgoing earlier 1f'), findsOneWidget);
     expect(find.text('Alt+Shift+,'), findsOneWidget);
+    expect(find.text('Lift selected clip'), findsOneWidget);
+    expect(find.text('Ctrl+;'), findsOneWidget);
+    expect(find.text('Extract selected clip'), findsOneWidget);
+    expect(find.text("Ctrl+'"), findsOneWidget);
 
     await tester.tap(find.text('Move detached audio later 1f'));
     await tester.pumpAndSettle();

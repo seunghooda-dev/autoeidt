@@ -855,6 +855,44 @@ void main() {
     expect(controller.outputDurationSeconds, closeTo(60, 0.001));
   });
 
+  test('selected clip lift and extract mirror premiere edit behavior', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 20, end: 40, reason: 'two'),
+        HighlightSegment(order: 3, start: 50, end: 60, reason: 'three'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    final originalOutputFrames = secondsToTimecodeFrame(
+      controller.outputDurationSeconds,
+    );
+
+    controller.liftSelectedSegment();
+
+    expect(controller.segments.length, 3);
+    expect(controller.selectedSegmentOrder, 2);
+    expect(controller.segments[1].videoEnabled, isFalse);
+    expect(controller.segments[1].audioMuted, isTrue);
+    expect(controller.segments[1].source, contains('lift-gap'));
+    expect(
+      secondsToTimecodeFrame(controller.outputDurationSeconds),
+      originalOutputFrames,
+    );
+
+    controller.undo();
+    controller.extractSelectedSegment();
+
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegmentOrder, 2);
+    expect(controller.segments[1].reason, 'three');
+    expect(
+      secondsToTimecodeFrame(controller.outputDurationSeconds),
+      originalOutputFrames - 600,
+    );
+  });
+
   test('track targets lift only selected tracks inside marked range', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 90

@@ -362,6 +362,8 @@ class EditorController extends ChangeNotifier {
       segments.any(
         (segment) => _segmentOverlapsRange(segment, markIn!, markOut!),
       );
+  bool get canLiftOrExtractSelectedSegment =>
+      selectedSegment != null && hasAnyTrackTarget && targetedTracksUnlocked;
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -1574,6 +1576,53 @@ class EditorController extends ChangeNotifier {
 
   void extractMarkedRange() {
     _editMarkedRange(leaveGap: false);
+  }
+
+  void liftSelectedSegment() {
+    _editSelectedSegment(leaveGap: true);
+  }
+
+  void extractSelectedSegment() {
+    _editSelectedSegment(leaveGap: false);
+  }
+
+  void _editSelectedSegment({required bool leaveGap}) {
+    final selected = selectedSegment;
+    if (selected == null || !canLiftOrExtractSelectedSegment) {
+      return;
+    }
+    final output = <HighlightSegment>[];
+    var changed = false;
+    int? selectionIndex;
+    for (final segment in segments) {
+      if (segment.order != selected.order) {
+        output.add(segment);
+        continue;
+      }
+      changed = true;
+      selectionIndex = output.length;
+      if (leaveGap || !allTrackTargetsEnabled) {
+        final gap = allTrackTargetsEnabled
+            ? _gapSegmentForRange(segment, segment.start, segment.end)
+            : _targetedGapSegmentForRange(segment, segment.start, segment.end);
+        if (gap != null) {
+          output.add(gap);
+        }
+      }
+    }
+    if (!changed) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = segments.isEmpty
+        ? null
+        : ((selectionIndex ?? segments.length - 1)
+                  .clamp(0, segments.length - 1)
+                  .toInt() +
+              1);
+    renderUrl = null;
+    notifyListeners();
   }
 
   void _editMarkedRange({required bool leaveGap}) {

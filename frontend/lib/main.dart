@@ -144,6 +144,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.applyDefaultVideoTransition();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyX) {
       editor.clearMarks();
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.semicolon) {
+      editor.liftSelectedSegment();
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.quote) {
+      editor.extractSelectedSegment();
     } else if (isCtrl && isAlt && key == LogicalKeyboardKey.keyM) {
       editor.clearTimelineMarkers();
     } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyM) {
@@ -1374,6 +1384,12 @@ class _TimelineEditorBody extends StatelessWidget {
           .read<EditorController>()
           .duplicateSelectedSegment,
       onDeleteSegment: context.read<EditorController>().deleteSelectedSegment,
+      onLiftSelectedSegment: context
+          .read<EditorController>()
+          .liftSelectedSegment,
+      onExtractSelectedSegment: context
+          .read<EditorController>()
+          .extractSelectedSegment,
       onMoveSegment: context.read<EditorController>().moveSelectedSegment,
       onToggleAudioLink: context
           .read<EditorController>()

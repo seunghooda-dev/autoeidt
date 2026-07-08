@@ -56,6 +56,8 @@ enum _TimelineMenuAction {
   split,
   duplicate,
   delete,
+  liftSelected,
+  extractSelected,
   moveEarlier,
   moveLater,
   toggleAudioLink,
@@ -131,6 +133,8 @@ class TimelineEditor extends StatefulWidget {
     this.onSplitAt,
     this.onDuplicateSegment,
     this.onDeleteSegment,
+    this.onLiftSelectedSegment,
+    this.onExtractSelectedSegment,
     this.onMoveSegment,
     this.onToggleAudioLink,
     this.onToggleAudioMute,
@@ -203,6 +207,8 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<double>? onSplitAt;
   final VoidCallback? onDuplicateSegment;
   final VoidCallback? onDeleteSegment;
+  final VoidCallback? onLiftSelectedSegment;
+  final VoidCallback? onExtractSelectedSegment;
   final ValueChanged<int>? onMoveSegment;
   final VoidCallback? onToggleAudioLink;
   final VoidCallback? onToggleAudioMute;
@@ -508,6 +514,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onDuplicateSegment?.call();
       case _TimelineMenuAction.delete:
         widget.onDeleteSegment?.call();
+      case _TimelineMenuAction.liftSelected:
+        widget.onLiftSelectedSegment?.call();
+      case _TimelineMenuAction.extractSelected:
+        widget.onExtractSelectedSegment?.call();
       case _TimelineMenuAction.moveEarlier:
         widget.onMoveSegment?.call(-1);
       case _TimelineMenuAction.moveLater:
@@ -591,6 +601,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         segmentIndex >= 0 &&
         segmentIndex < widget.segments.length - 1 &&
         widget.onRollOutgoingEditFrames != null;
+    final canLiftOrExtractSelected =
+        segment != null &&
+        (widget.videoTrackTargeted ||
+            widget.audioTrack1Targeted ||
+            widget.audioTrack2Targeted) &&
+        (!widget.videoTrackTargeted || !videoLocked) &&
+        (!(widget.audioTrack1Targeted || widget.audioTrack2Targeted) ||
+            !audioLocked);
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -993,6 +1011,22 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.delete,
         shortcut: 'Delete',
         enabled: clipEditable,
+      ),
+      _menuItem(
+        Icons.vertical_align_center,
+        'Lift selected clip',
+        _TimelineMenuAction.liftSelected,
+        shortcut: 'Ctrl+;',
+        enabled:
+            canLiftOrExtractSelected && widget.onLiftSelectedSegment != null,
+      ),
+      _menuItem(
+        Icons.playlist_remove,
+        'Extract selected clip',
+        _TimelineMenuAction.extractSelected,
+        shortcut: "Ctrl+'",
+        enabled:
+            canLiftOrExtractSelected && widget.onExtractSelectedSegment != null,
       ),
       _menuItem(
         Icons.keyboard_arrow_up,
