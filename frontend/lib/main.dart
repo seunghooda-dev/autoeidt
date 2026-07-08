@@ -755,16 +755,29 @@ class _ImportedMediaTile extends StatelessWidget {
     }
     final colorScheme = Theme.of(context).colorScheme;
     final duration = controller.timelineSourceDuration;
+    final path = controller.sourceMediaPath;
+    final hasPath = path != null && path.isNotEmpty;
+    final needsRelink = controller.sourceMediaNeedsRelink;
+    final subtitle = needsRelink
+        ? 'Offline media · Relink required'
+        : duration > 0
+        ? 'Drag to timeline · ${formatSeconds(duration)}'
+        : 'Drag to timeline';
     final tile = Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
-        border: Border.all(color: colorScheme.outline),
+        border: Border.all(
+          color: needsRelink ? colorScheme.error : colorScheme.outline,
+        ),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
         children: [
-          Icon(Icons.movie_creation_outlined, color: colorScheme.primary),
+          Icon(
+            needsRelink ? Icons.link_off : Icons.movie_creation_outlined,
+            color: needsRelink ? colorScheme.error : colorScheme.primary,
+          ),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -777,23 +790,42 @@ class _ImportedMediaTile extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 Text(
-                  duration > 0
-                      ? 'Drag to timeline · ${formatSeconds(duration)}'
-                      : 'Drag to timeline',
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                    color: needsRelink
+                        ? colorScheme.error
+                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (hasPath)
+                  Text(
+                    path,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
               ],
             ),
           ),
-          Icon(Icons.drag_indicator, color: colorScheme.onSurfaceVariant),
+          if (needsRelink)
+            OutlinedButton.icon(
+              onPressed: context.read<EditorController>().relinkSourceMedia,
+              icon: const Icon(Icons.link, size: 16),
+              label: const Text('Relink'),
+            )
+          else
+            Icon(Icons.drag_indicator, color: colorScheme.onSurfaceVariant),
         ],
       ),
     );
 
+    if (needsRelink) {
+      return tile;
+    }
     return Draggable<String>(
       data: 'selected-media',
       feedback: Material(

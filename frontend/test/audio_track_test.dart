@@ -1,5 +1,6 @@
 import 'dart:io' as io;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
@@ -105,6 +106,8 @@ void main() {
       exportAspectRatio: '9:16',
       markIn: 10.5,
       markOut: 88.0,
+      originalFilename: 'source.mxf',
+      originalPath: r'C:\media\source.mxf',
       shortsCandidates: [
         {
           'id': 3,
@@ -135,6 +138,8 @@ void main() {
     expect(restored.exportAspectRatio, '9:16');
     expect(restored.markIn, 10.5);
     expect(restored.markOut, 88.0);
+    expect(restored.originalFilename, 'source.mxf');
+    expect(restored.originalPath, r'C:\media\source.mxf');
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
@@ -201,6 +206,9 @@ void main() {
       directory: directory,
       clock: () => DateTime.utc(2026, 1, 2, 3, 4, 5),
     );
+    final sourcePath =
+        '${directory.path}${io.Platform.pathSeparator}source.mp4';
+    await io.File(sourcePath).writeAsBytes([0, 1, 2]);
     final controller =
         EditorController(
             autoStartEngine: false,
@@ -209,6 +217,11 @@ void main() {
             projectRecoveryDebounce: const Duration(milliseconds: 10),
           )
           ..projectName = 'Autosaved Timeline'
+          ..selectedFile = PlatformFile(
+            name: 'source.mp4',
+            size: 123,
+            path: sourcePath,
+          )
           ..duration = 180
           ..segments = const [
             HighlightSegment(order: 1, start: 30, end: 60, reason: 'first cut'),
@@ -223,6 +236,8 @@ void main() {
     final snapshot = await service.readSnapshot();
     expect(snapshot, isNotNull);
     expect(snapshot!.project.name, 'Autosaved Timeline');
+    expect(snapshot.project.originalFilename, 'source.mp4');
+    expect(snapshot.project.originalPath, controller.selectedFile!.path);
     expect(snapshot.project.segments.single.end, 75);
     expect(snapshot.project.markOut, 60);
 
@@ -232,10 +247,14 @@ void main() {
       enableProjectRecovery: true,
       projectRecoveryDebounce: const Duration(milliseconds: 10),
     );
-    await restored.restoreRecoveryProject();
+    await restored.restoreRecoveryProject(initializePreview: false);
 
     expect(restored.hasRecoverySnapshot, isTrue);
     expect(restored.projectName, 'Autosaved Timeline');
+    expect(restored.selectedFile?.name, 'source.mp4');
+    expect(restored.selectedFile?.path, sourcePath);
+    expect(restored.sourceMediaIsLinked, isTrue);
+    expect(restored.sourceMediaNeedsRelink, isFalse);
     expect(restored.duration, 180);
     expect(restored.segments.single.end, 75);
     expect(restored.markIn, 30);
@@ -246,6 +265,11 @@ void main() {
 
   test('editor project state captures current render settings', () {
     final controller = EditorController(autoStartEngine: false)
+      ..selectedFile = PlatformFile(
+        name: 'news_source.mxf',
+        size: 1024,
+        path: r'C:\media\news_source.mxf',
+      )
       ..duration = 120
       ..includeCaptions = false
       ..captionStylePreset = 'shorts'
@@ -294,6 +318,8 @@ void main() {
     expect(project.exportAspectRatio, '9:16');
     expect(project.markIn, 10.5);
     expect(project.markOut, 88.0);
+    expect(project.originalFilename, 'news_source.mxf');
+    expect(project.originalPath, r'C:\media\news_source.mxf');
     expect(project.timelineMarkers.single.label, 'Fact');
     expect(project.timelineMarkers.single.color, 'green');
     expect(project.timelineMarkers.single.enabled, isFalse);

@@ -354,6 +354,7 @@ class RenderResponse(BaseModel):
 
 class ProjectState(BaseModel):
     name: str = "AutoEdit Project"
+    original_path: str | None = None
     duration: float = 0
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)

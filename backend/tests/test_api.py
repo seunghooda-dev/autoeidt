@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -117,7 +119,13 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
     ]
 
 
-def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
+def test_project_endpoints_preserve_render_settings(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "relinked_source.mxf"
+    source_path.write_bytes(b"fake media")
+
     class FakeStore:
         def __init__(self) -> None:
             self.data = {
@@ -127,6 +135,7 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
                 "progress": 100,
                 "message": "done",
                 "original_filename": "source.mp4",
+                "video_path": "C:/old/source.mp4",
             }
 
         def load(self, job_id: str) -> dict:
@@ -144,6 +153,7 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
         "/api/jobs/job-1/project",
         json={
             "name": "Shorts Project",
+            "original_path": str(source_path),
             "duration": 120,
             "segments": [],
             "captions": [],
@@ -179,6 +189,8 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["original_filename"] == "relinked_source.mxf"
+    assert payload["original_path"] == str(source_path.resolve())
     assert payload["include_captions"] is False
     assert payload["caption_style_preset"] == "shorts"
     assert payload["export_aspect_ratio"] == "9:16"
@@ -194,6 +206,7 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
 
     assert get_response.status_code == 200
     get_payload = get_response.json()
+    assert get_payload["original_path"] == str(source_path.resolve())
     assert get_payload["include_captions"] is False
     assert get_payload["caption_style_preset"] == "shorts"
     assert get_payload["export_aspect_ratio"] == "9:16"

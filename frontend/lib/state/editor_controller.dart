@@ -147,6 +147,23 @@ class EditorController extends ChangeNotifier {
   };
 
   bool get hasFile => selectedFile != null;
+  String? get sourceMediaPath => selectedFile?.path;
+  bool get sourceMediaNeedsRelink {
+    if (kIsWeb || selectedFile == null) {
+      return false;
+    }
+    final path = sourceMediaPath;
+    return path == null || path.isEmpty || !io.File(path).existsSync();
+  }
+
+  bool get sourceMediaIsLinked {
+    final path = sourceMediaPath;
+    return !kIsWeb &&
+        path != null &&
+        path.isNotEmpty &&
+        io.File(path).existsSync();
+  }
+
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get hasTimelineSource => hasTimeline || hasFile;
   double get timelineSourceDuration {
@@ -545,6 +562,7 @@ class EditorController extends ChangeNotifier {
       name: projectName,
       jobId: jobId,
       originalFilename: job?.originalFilename ?? selectedFile?.name,
+      originalPath: selectedFile?.path,
       duration: duration,
       segments: segments,
       captions: captions,
@@ -637,6 +655,33 @@ class EditorController extends ChangeNotifier {
       unawaited(_initializeLocalPreview(selectedFile!.path!));
       unawaited(probeSelectedMedia());
     }
+  }
+
+  Future<void> relinkSourceMedia() async {
+    errorMessage = null;
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: '원본 미디어 다시 연결',
+      type: kIsWeb ? FileType.video : FileType.custom,
+      allowedExtensions: kIsWeb ? null : supportedVideoExtensions,
+      allowMultiple: false,
+      withData: kIsWeb,
+      withReadStream: !kIsWeb,
+    );
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final file = result.files.single;
+    selectedFile = file;
+    selectedMediaProbe = null;
+    renderUrl = null;
+    notifyListeners();
+
+    if (!kIsWeb && file.path != null) {
+      unawaited(_initializeLocalPreview(file.path!));
+      unawaited(probeSelectedMedia());
+    }
+    await saveProjectToBackend(silent: true);
   }
 
   Future<void> probeSelectedMedia() async {
@@ -963,7 +1008,10 @@ class EditorController extends ChangeNotifier {
       final payload = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
       final project = ProjectState.fromJson(payload);
       _applyProject(project, keepJob: false);
-      if (jobId != null) {
+      if (!kIsWeb && sourceMediaIsLinked) {
+        unawaited(_initializeLocalPreview(sourceMediaPath!));
+        unawaited(probeSelectedMedia());
+      } else if (jobId != null) {
         try {
           await _initializePreview(jobId!);
         } catch (_) {
@@ -991,7 +1039,7 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> restoreRecoveryProject() async {
+  Future<void> restoreRecoveryProject({bool initializePreview = true}) async {
     if (!_projectRecoveryEnabled) {
       return;
     }
@@ -1021,7 +1069,10 @@ class EditorController extends ChangeNotifier {
       recoverySnapshotSavedAt = snapshot.savedAt;
       _lastRecoveryPayload = jsonEncode(snapshot.project.toJson());
 
-      if (jobId != null) {
+      if (initializePreview && !kIsWeb && sourceMediaIsLinked) {
+        unawaited(_initializeLocalPreview(sourceMediaPath!));
+        unawaited(probeSelectedMedia());
+      } else if (initializePreview && jobId != null) {
         try {
           await _initializePreview(jobId!);
         } catch (_) {
@@ -5519,9 +5570,15 @@ class EditorController extends ChangeNotifier {
         job = null;
       }
       jobId = project.jobId;
-      selectedFile = project.originalFilename == null
+      final restoredPath = project.originalPath;
+      final restoredName =
+          project.originalFilename ??
+          (restoredPath == null
+              ? null
+              : io.File(restoredPath).uri.pathSegments.last);
+      selectedFile = restoredName == null
           ? null
-          : PlatformFile(name: project.originalFilename!, size: 0);
+          : PlatformFile(name: restoredName, size: 0, path: restoredPath);
     }
     duration = project.duration;
     _manualPlayheadSeconds = 0;

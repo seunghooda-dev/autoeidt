@@ -266,8 +266,13 @@ def get_project(job_id: str) -> ProjectResponse:
     job = _load_job_or_404(job_id)
     return ProjectResponse(
         job_id=job_id,
-        name=job.get("project_name") or job.get("original_filename") or "AutoEdit Project",
+        name=(
+            job.get("project_name")
+            or job.get("original_filename")
+            or "AutoEdit Project"
+        ),
         original_filename=job.get("original_filename"),
+        original_path=job.get("video_path"),
         duration=float(job.get("duration") or 0),
         segments=job.get("segments") or [],
         captions=job.get("captions") or [],
@@ -285,10 +290,23 @@ def get_project(job_id: str) -> ProjectResponse:
 
 @router.post("/{job_id}/project", response_model=ProjectResponse)
 def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
-    _load_job_or_404(job_id)
+    job = _load_job_or_404(job_id)
+    relinked_path: Path | None = None
+    if payload.original_path:
+        relinked_path = _resolve_local_file(payload.original_path)
     updated = store.update(
         job_id,
         project_name=payload.name,
+        original_filename=(
+            relinked_path.name
+            if relinked_path is not None
+            else job.get("original_filename")
+        ),
+        video_path=(
+            str(relinked_path)
+            if relinked_path is not None
+            else job.get("video_path")
+        ),
         duration=payload.duration,
         segments=[segment.model_dump() for segment in payload.segments],
         captions=[caption.model_dump() for caption in payload.captions],
@@ -308,6 +326,7 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         job_id=job_id,
         name=updated.get("project_name") or payload.name,
         original_filename=updated.get("original_filename"),
+        original_path=updated.get("video_path"),
         duration=float(updated.get("duration") or 0),
         segments=updated.get("segments") or [],
         captions=updated.get("captions") or [],

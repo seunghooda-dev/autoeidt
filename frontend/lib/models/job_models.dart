@@ -615,11 +615,13 @@ class ProjectState {
     this.markOut,
     this.jobId,
     this.originalFilename,
+    this.originalPath,
   });
 
   final String name;
   final String? jobId;
   final String? originalFilename;
+  final String? originalPath;
   final double duration;
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
@@ -645,6 +647,7 @@ class ProjectState {
       name: json['name'] as String? ?? 'AutoEdit Project',
       jobId: json['job_id'] as String?,
       originalFilename: json['original_filename'] as String?,
+      originalPath: json['original_path'] as String?,
       duration: (json['duration'] as num?)?.toDouble() ?? 0,
       segments: rawSegments
           .map(
@@ -679,6 +682,7 @@ class ProjectState {
       'name': name,
       if (jobId != null) 'job_id': jobId,
       if (originalFilename != null) 'original_filename': originalFilename,
+      if (originalPath != null) 'original_path': originalPath,
       'duration': duration,
       'segments': segments.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
