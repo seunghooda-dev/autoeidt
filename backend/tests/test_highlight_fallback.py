@@ -70,6 +70,36 @@ def test_missing_stt_fallback_prefers_audio_activity_ranges() -> None:
     assert silence_overlap / total_duration < 0.2
 
 
+def test_missing_stt_fallback_uses_scene_changes_inside_audio_activity() -> None:
+    silences = [
+        SilenceRange(start=0.0, end=35.0, duration=35.0),
+        SilenceRange(start=75.0, end=120.0, duration=45.0),
+        SilenceRange(start=165.0, end=190.0, duration=25.0),
+        SilenceRange(start=225.0, end=240.0, duration=15.0),
+    ]
+
+    highlights = fallback_review_highlights(
+        duration=240,
+        target_min_seconds=90,
+        target_max_seconds=120,
+        silence_ranges=silences,
+        scene_points=[130.0, 140.0, 150.0],
+    )
+
+    assert highlights
+    assert any(
+        item["source"] == "fallback-audio-visual-review"
+        for item in highlights
+    )
+    visual = next(
+        item
+        for item in highlights
+        if item["source"] == "fallback-audio-visual-review"
+    )
+    assert "화면전환" in visual["tags"]
+    assert visual["start"] <= 140 <= visual["end"]
+
+
 def test_missing_stt_fallback_is_not_used_as_script_preview() -> None:
     transcript = fallback_transcript(90)
 

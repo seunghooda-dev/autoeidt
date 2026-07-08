@@ -5,6 +5,7 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.schemas import JobStatus
 from app.services.ffmpeg_service import (
+    detect_scene_changes,
     detect_silence,
     extract_audio,
     generate_waveform,
@@ -328,20 +329,6 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             noise_db=settings.silence_noise_db,
             min_duration=min_silence,
         )
-        if transcript and all(item.get("source") == "fallback_stt" for item in transcript):
-            raw_highlights = _normalize_highlights(
-                fallback_review_highlights(
-                    duration,
-                    settings.target_highlight_seconds_min,
-                    settings.target_highlight_seconds_max,
-                    silence_ranges=silence_ranges,
-                ),
-                duration,
-            )
-        candidate_silences = _silences_overlapping_highlights(
-            silence_ranges,
-            raw_highlights,
-        )
 
         _set_task_state(
             task,
@@ -352,7 +339,33 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             "시각적 변화 보호 구간 확인 중",
             silences=silence_ranges_to_dicts(silence_ranges),
         )
-        protected_silences = build_protected_silences(video_path, candidate_silences)
+        scene_points = detect_scene_changes(
+            video_path,
+            threshold=settings.scene_change_threshold,
+        )
+        if transcript and all(
+            item.get("source") == "fallback_stt" for item in transcript
+        ):
+            raw_highlights = _normalize_highlights(
+                fallback_review_highlights(
+                    duration,
+                    settings.target_highlight_seconds_min,
+                    settings.target_highlight_seconds_max,
+                    silence_ranges=silence_ranges,
+                    scene_points=scene_points,
+                ),
+                duration,
+            )
+        candidate_silences = _silences_overlapping_highlights(
+            silence_ranges,
+            raw_highlights,
+        )
+
+        protected_silences = build_protected_silences(
+            video_path,
+            candidate_silences,
+            scene_points=scene_points,
+        )
 
         refined = refine_highlights_with_hybrid_cut(
             raw_highlights,

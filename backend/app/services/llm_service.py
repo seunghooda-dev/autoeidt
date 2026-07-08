@@ -50,6 +50,28 @@ def _coerce_silence_ranges(
     return merged
 
 
+def _coerce_scene_points(
+    scene_points: list[Any] | None,
+    duration: float,
+) -> list[float]:
+    points: list[float] = []
+    for item in scene_points or []:
+        if isinstance(item, dict):
+            value = item.get(
+                "time",
+                item.get("seconds", item.get("point", 0.0)),
+            )
+        else:
+            value = item
+        try:
+            point = float(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= point <= duration:
+            points.append(point)
+    return sorted(set(points))
+
+
 def _speech_ranges_from_silence(
     duration: float,
     silence_ranges: list[Any] | None,
@@ -99,10 +121,12 @@ def _audio_activity_review_highlights(
     clip_count: int,
     clip_length: float,
     speech_ranges: list[tuple[float, float]],
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     if not speech_ranges:
         return []
 
+    scene_points = scene_points or []
     windows: list[dict[str, Any]] = []
     seen: set[tuple[int, int]] = set()
     for index, (speech_start, speech_end) in enumerate(speech_ranges):
@@ -145,7 +169,9 @@ def _audio_activity_review_highlights(
             abs((center / max(duration, 0.001)) - 0.45),
             0.45,
         )
-        score = density * 0.78 + center_bias * 0.22
+        scene_count = sum(1 for point in scene_points if start <= point <= end)
+        scene_score = min(scene_count / 3.0, 1.0)
+        score = density * 0.64 + center_bias * 0.18 + scene_score * 0.18
         key = (round(start), round(end))
         if key in seen:
             continue
@@ -157,6 +183,7 @@ def _audio_activity_review_highlights(
                 "density": density,
                 "score": score,
                 "speech_seconds": speech_overlap,
+                "scene_count": scene_count,
             }
         )
 
@@ -181,15 +208,28 @@ def _audio_activity_review_highlights(
         ):
             continue
         density = float(window["density"])
+        scene_count = int(window.get("scene_count", 0))
+        tags = ["검토필요", "오디오활성", "STT미설정"]
+        if scene_count > 0:
+            tags.insert(2, "화면전환")
         selected.append(
             {
                 "start": round(start, 3),
                 "end": round(end, 3),
-                "reason": "STT 없이 오디오 활동과 무음 탐지를 기준으로 잡은 검토용 후보 구간입니다.",
+                "reason": (
+                    "STT 없이 오디오 활동, 무음 탐지, 화면 전환을 기준으로 "
+                    "잡은 검토용 후보 구간입니다."
+                    if scene_count > 0
+                    else "STT 없이 오디오 활동과 무음 탐지를 기준으로 잡은 검토용 후보 구간입니다."
+                ),
                 "script": "",
-                "source": "fallback-audio-review",
+                "source": (
+                    "fallback-audio-visual-review"
+                    if scene_count > 0
+                    else "fallback-audio-review"
+                ),
                 "score": round(3.0 + density * 4.0, 2),
-                "tags": ["검토필요", "오디오활성", "STT미설정"],
+                "tags": tags,
             }
         )
         selected_total += duration_seconds
@@ -375,6 +415,7 @@ def fallback_review_highlights(
     target_min_seconds: float,
     target_max_seconds: float,
     silence_ranges: list[Any] | None = None,
+    scene_points: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     duration = max(float(duration or 0), 1.0)
     target_total = _fallback_target_total(
@@ -389,6 +430,7 @@ def fallback_review_highlights(
         clip_count,
         clip_length,
         _speech_ranges_from_silence(duration, silence_ranges),
+        _coerce_scene_points(scene_points, duration),
     )
     if audio_activity:
         return audio_activity
