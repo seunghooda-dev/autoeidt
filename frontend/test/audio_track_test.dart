@@ -1,7 +1,10 @@
+import 'dart:io' as io;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/services/api_client.dart';
+import 'package:highlight_editor_app/services/project_recovery_service.dart';
 import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
 
@@ -139,6 +142,106 @@ void main() {
     expect(restored.shortsCandidates.single['label'], 'News 03');
     expect(restored.shortsCandidates.single['quality_score'], 88.0);
     expect(restored.selectedShortsId, 3);
+  });
+
+  test(
+    'project recovery service writes restores and clears snapshots',
+    () async {
+      final directory = await io.Directory.systemTemp.createTemp(
+        'autoedit_recovery_service_test',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+
+      final service = ProjectRecoveryService(
+        directory: directory,
+        clock: () => DateTime.utc(2026, 1, 2, 3, 4, 5),
+      );
+      const project = ProjectState(
+        name: 'Recovered News Cut',
+        duration: 120,
+        segments: [
+          HighlightSegment(order: 1, start: 10, end: 42, reason: 'hook'),
+        ],
+        captions: [],
+        waveform: [0.1, 0.4],
+        markIn: 10,
+        markOut: 42,
+      );
+
+      final saved = await service.saveProject(project);
+      expect(saved.savedAt, DateTime.utc(2026, 1, 2, 3, 4, 5));
+      expect(await service.hasSnapshot(), isTrue);
+
+      final snapshot = await service.readSnapshot();
+      expect(snapshot, isNotNull);
+      expect(snapshot!.project.name, 'Recovered News Cut');
+      expect(snapshot.project.segments.single.end, 42);
+      expect(snapshot.project.markIn, 10);
+
+      await service.clearSnapshot();
+      expect(await service.hasSnapshot(), isFalse);
+    },
+  );
+
+  test('editor controller autosaves and restores recovery snapshot', () async {
+    final directory = await io.Directory.systemTemp.createTemp(
+      'autoedit_controller_recovery_test',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final service = ProjectRecoveryService(
+      directory: directory,
+      clock: () => DateTime.utc(2026, 1, 2, 3, 4, 5),
+    );
+    final controller =
+        EditorController(
+            autoStartEngine: false,
+            recoveryService: service,
+            enableProjectRecovery: true,
+            projectRecoveryDebounce: const Duration(milliseconds: 10),
+          )
+          ..projectName = 'Autosaved Timeline'
+          ..duration = 180
+          ..segments = const [
+            HighlightSegment(order: 1, start: 30, end: 60, reason: 'first cut'),
+          ]
+          ..selectedSegmentOrder = 1
+          ..markIn = 30
+          ..markOut = 60;
+
+    controller.updateSegment(controller.segments.first.copyWith(end: 75));
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    final snapshot = await service.readSnapshot();
+    expect(snapshot, isNotNull);
+    expect(snapshot!.project.name, 'Autosaved Timeline');
+    expect(snapshot.project.segments.single.end, 75);
+    expect(snapshot.project.markOut, 60);
+
+    final restored = EditorController(
+      autoStartEngine: false,
+      recoveryService: service,
+      enableProjectRecovery: true,
+      projectRecoveryDebounce: const Duration(milliseconds: 10),
+    );
+    await restored.restoreRecoveryProject();
+
+    expect(restored.hasRecoverySnapshot, isTrue);
+    expect(restored.projectName, 'Autosaved Timeline');
+    expect(restored.duration, 180);
+    expect(restored.segments.single.end, 75);
+    expect(restored.markIn, 30);
+
+    controller.dispose();
+    restored.dispose();
   });
 
   test('editor project state captures current render settings', () {

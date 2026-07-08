@@ -22,7 +22,7 @@ void main() {
   VideoPlayerMediaKit.ensureInitialized(windows: true);
   runApp(
     ChangeNotifierProvider(
-      create: (_) => EditorController(),
+      create: (_) => EditorController(enableProjectRecovery: true),
       child: const HighlightEditorApp(),
     ),
   );
@@ -518,6 +518,13 @@ class _CommandBar extends StatelessWidget {
               icon: Icons.folder_open,
               label: 'Open',
               onPressed: editor.importProjectFile,
+            ),
+            _ToolbarButton(
+              icon: Icons.restore,
+              label: 'Recover',
+              onPressed: controller.hasRecoverySnapshot
+                  ? editor.restoreRecoveryProject
+                  : null,
             ),
             const _ToolbarDivider(),
             _ToolbarButton(

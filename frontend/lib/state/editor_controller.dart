@@ -11,6 +11,7 @@ import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 import '../services/api_client.dart';
 import '../services/local_engine_service.dart';
+import '../services/project_recovery_service.dart';
 import '../utils/timecode.dart';
 
 class EditorController extends ChangeNotifier {
@@ -18,21 +19,36 @@ class EditorController extends ChangeNotifier {
     ApiClient? apiClient,
     LocalEngineService? engineService,
     bool autoStartEngine = true,
+    ProjectRecoveryService? recoveryService,
+    bool enableProjectRecovery = false,
+    Duration projectRecoveryDebounce = const Duration(milliseconds: 800),
   }) : _apiClient = apiClient ?? ApiClient(),
-       _engineService = engineService ?? LocalEngineService() {
+       _engineService = engineService ?? LocalEngineService(),
+       _recoveryService = recoveryService ?? ProjectRecoveryService(),
+       _projectRecoveryEnabled = enableProjectRecovery && !kIsWeb,
+       _projectRecoveryDebounce = projectRecoveryDebounce {
     if (_demoMode) {
       _loadDemoProject();
     } else if (autoStartEngine) {
       unawaited(ensureLocalEngine());
     }
+    if (_projectRecoveryEnabled) {
+      unawaited(refreshProjectRecoveryStatus());
+    }
   }
 
   final ApiClient _apiClient;
   final LocalEngineService _engineService;
+  final ProjectRecoveryService _recoveryService;
+  final bool _projectRecoveryEnabled;
+  final Duration _projectRecoveryDebounce;
   Timer? _pollTimer;
   Timer? _stylePollTimer;
+  Timer? _recoverySaveTimer;
   final List<_EditorSnapshot> _undoStack = [];
   final List<_EditorSnapshot> _redoStack = [];
+  String? _lastRecoveryPayload;
+  bool _isDisposed = false;
 
   LocalEngineState engineState = LocalEngineState.idle();
   PlatformFile? selectedFile;
@@ -47,6 +63,8 @@ class EditorController extends ChangeNotifier {
   bool isUploading = false;
   bool isTrainingStyle = false;
   bool isRendering = false;
+  bool hasRecoverySnapshot = false;
+  DateTime? recoverySnapshotSavedAt;
   String? errorMessage;
   double duration = 0;
   List<HighlightSegment> segments = [];
@@ -251,6 +269,16 @@ class EditorController extends ChangeNotifier {
       job?.status != 'rendering';
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  bool get hasRecoverableProject =>
+      jobId != null ||
+      duration > 0 ||
+      segments.isNotEmpty ||
+      captions.isNotEmpty ||
+      waveform.isNotEmpty ||
+      timelineMarkers.isNotEmpty ||
+      shortsCandidates.isNotEmpty ||
+      markIn != null ||
+      markOut != null;
   bool get isRazorTool => timelineTool == 'razor';
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   bool get allAudioMuted =>
@@ -944,6 +972,79 @@ class EditorController extends ChangeNotifier {
       }
     } catch (error) {
       errorMessage = '프로젝트 불러오기 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> refreshProjectRecoveryStatus() async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    try {
+      final snapshot = await _recoveryService.readSnapshot();
+      hasRecoverySnapshot = snapshot != null;
+      recoverySnapshotSavedAt = snapshot?.savedAt;
+    } catch (_) {
+      hasRecoverySnapshot = false;
+      recoverySnapshotSavedAt = null;
+    }
+    notifyListeners();
+  }
+
+  Future<void> restoreRecoveryProject() async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    try {
+      final snapshot = await _recoveryService.readSnapshot();
+      if (snapshot == null) {
+        hasRecoverySnapshot = false;
+        recoverySnapshotSavedAt = null;
+        errorMessage = '복구할 자동 저장본이 없습니다.';
+        notifyListeners();
+        return;
+      }
+
+      if (hasRecoverableProject) {
+        _commitHistory();
+      }
+      errorMessage = null;
+      isUploading = false;
+      isRendering = false;
+      isProbingMedia = false;
+      isPreparingPreview = false;
+      uploadProgress = 0;
+      selectedMediaProbe = null;
+      await _disposeVideoController();
+      _applyProject(snapshot.project, keepJob: false, resetHistory: false);
+      hasRecoverySnapshot = true;
+      recoverySnapshotSavedAt = snapshot.savedAt;
+      _lastRecoveryPayload = jsonEncode(snapshot.project.toJson());
+
+      if (jobId != null) {
+        try {
+          await _initializePreview(jobId!);
+        } catch (_) {
+          await _disposeVideoController();
+        }
+      }
+    } catch (error) {
+      errorMessage = '자동 저장본 복구 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> clearRecoverySnapshot() async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    try {
+      await _recoveryService.clearSnapshot();
+      hasRecoverySnapshot = false;
+      recoverySnapshotSavedAt = null;
+      _lastRecoveryPayload = null;
+    } catch (error) {
+      errorMessage = '자동 저장본 삭제 실패: $error';
     }
     notifyListeners();
   }
@@ -5413,8 +5514,14 @@ class EditorController extends ChangeNotifier {
     bool resetHistory = true,
   }) {
     projectName = project.name;
-    if (!keepJob && project.jobId != null) {
+    if (!keepJob) {
+      if (jobId != project.jobId) {
+        job = null;
+      }
       jobId = project.jobId;
+      selectedFile = project.originalFilename == null
+          ? null
+          : PlatformFile(name: project.originalFilename!, size: 0);
     }
     duration = project.duration;
     _manualPlayheadSeconds = 0;
@@ -5446,6 +5553,41 @@ class EditorController extends ChangeNotifier {
     renderUrl = null;
     if (resetHistory) {
       _clearHistory();
+    }
+  }
+
+  void _scheduleProjectRecoverySave() {
+    if (!_projectRecoveryEnabled || _isDisposed || !hasRecoverableProject) {
+      return;
+    }
+    if (_recoverySaveTimer?.isActive ?? false) {
+      return;
+    }
+    _recoverySaveTimer = Timer(_projectRecoveryDebounce, () {
+      unawaited(_writeProjectRecoverySnapshot());
+    });
+  }
+
+  Future<void> _writeProjectRecoverySnapshot() async {
+    if (!_projectRecoveryEnabled || _isDisposed || !hasRecoverableProject) {
+      return;
+    }
+    final project = projectState;
+    final payload = jsonEncode(project.toJson());
+    if (payload == _lastRecoveryPayload) {
+      return;
+    }
+    try {
+      final snapshot = await _recoveryService.saveProject(project);
+      _lastRecoveryPayload = payload;
+      if (_isDisposed) {
+        return;
+      }
+      hasRecoverySnapshot = true;
+      recoverySnapshotSavedAt = snapshot.savedAt;
+      super.notifyListeners();
+    } catch (_) {
+      // Recovery must never interrupt editing.
     }
   }
 
@@ -5639,9 +5781,20 @@ class EditorController extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (_isDisposed) {
+      return;
+    }
+    super.notifyListeners();
+    _scheduleProjectRecoverySave();
+  }
+
+  @override
   void dispose() {
+    _isDisposed = true;
     _pollTimer?.cancel();
     _stylePollTimer?.cancel();
+    _recoverySaveTimer?.cancel();
     videoController?.dispose();
     unawaited(_engineService.dispose());
     super.dispose();
