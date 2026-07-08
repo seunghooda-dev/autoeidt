@@ -1889,61 +1889,78 @@ class EditorController extends ChangeNotifier {
         }
         return a.start.compareTo(b.start);
       });
-    final output = <ShortsCandidate>[];
-    final used = <int>{};
+    final strategies = _shortsBuildStrategies();
+    final pool = <ShortsCandidate>[];
     var nextId = 1;
-    for (final seed in ranked) {
-      if (output.length >= maxCandidates) {
-        break;
-      }
-      if (used.contains(seed.order) || seed.score > 0 && seed.score < 4.5) {
-        continue;
-      }
-      final group = _buildShortsGroup(
-        seed,
-        used,
-        minSeconds: minSeconds,
-        maxSeconds: maxSeconds,
-      );
-      if (group.isEmpty) {
-        continue;
-      }
-      for (final segment in group) {
-        used.add(segment.order);
-      }
-      final normalized = _reorderSegments([
-        for (final segment in group)
-          _referenceStyleSegment(
-            segment,
-            maxSeconds,
-          ).copyWith(source: _appendSource(segment.source, 'shorts')),
-      ]);
-      output.add(
-        _scoreShortsCandidate(
-          ShortsCandidate(
-            id: nextId,
-            label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
-            reason: _shortsReason(normalized),
-            segments: normalized,
-            selected: true,
+    for (final strategy in strategies) {
+      final strategyUsed = <int>{};
+      var strategyCount = 0;
+      for (final seed in _rankSegmentsForShortsStrategy(
+        strategy.kind,
+        ranked,
+      )) {
+        if (strategyCount >= strategy.maxCandidates) {
+          break;
+        }
+        if (_skipSeedForShortsStrategy(strategy.kind, seed)) {
+          continue;
+        }
+        final group = _buildShortsGroup(
+          seed,
+          strategyUsed,
+          minSeconds: minSeconds,
+          maxSeconds: maxSeconds,
+        );
+        if (group.isEmpty) {
+          continue;
+        }
+        for (final segment in group) {
+          strategyUsed.add(segment.order);
+        }
+        final normalized = _reorderSegments([
+          for (final segment in group)
+            _referenceStyleSegment(
+              segment,
+              maxSeconds,
+            ).copyWith(source: _appendSource(segment.source, 'shorts')),
+        ]);
+        pool.add(
+          _scoreShortsCandidate(
+            ShortsCandidate(
+              id: nextId,
+              label: '${strategy.label} ${nextId.toString().padLeft(2, '0')}',
+              reason: _shortsReason(normalized),
+              segments: normalized,
+              strategyKind: strategy.kind,
+              strategyLabel: strategy.label,
+              selected: true,
+            ),
           ),
-        ),
-      );
-      nextId += 1;
+        );
+        nextId += 1;
+        strategyCount += 1;
+      }
     }
-    if (output.isEmpty) {
-      output.add(
+    if (pool.isEmpty) {
+      pool.add(
         _scoreShortsCandidate(
           ShortsCandidate(
             id: 1,
-            label: 'Shorts 01',
+            label: 'Balanced 01',
             reason: '현재 타임라인 기반 기본 쇼츠 후보',
             segments: _reorderSegments(segments.take(4).toList()),
+            strategyKind: 'balanced',
+            strategyLabel: 'Balanced',
             selected: true,
           ),
         ),
       );
     }
+    final output = _selectDiverseShortsCandidates(
+      pool,
+      strategies,
+      maxCandidates: maxCandidates,
+    );
     output.sort((a, b) {
       final scoreCompare = b.qualityScore.compareTo(a.qualityScore);
       if (scoreCompare != 0) {
@@ -1955,13 +1972,186 @@ class EditorController extends ChangeNotifier {
       for (var index = 0; index < output.length; index++)
         output[index].copyWith(
           id: index + 1,
-          label: 'Shorts ${(index + 1).toString().padLeft(2, '0')}',
+          label:
+              '${output[index].strategyLabel} ${(index + 1).toString().padLeft(2, '0')}',
         ),
     ];
     shortsCandidates = rankedOutput;
     selectedShortsId = rankedOutput.first.id;
     _loadShortsCandidateToTimeline(rankedOutput.first);
     notifyListeners();
+  }
+
+  List<_ShortsBuildStrategy> _shortsBuildStrategies() {
+    return const [
+      _ShortsBuildStrategy(
+        kind: 'balanced',
+        label: 'Balanced',
+        maxCandidates: 3,
+      ),
+      _ShortsBuildStrategy(kind: 'hook', label: 'Hook', maxCandidates: 2),
+      _ShortsBuildStrategy(kind: 'news', label: 'News', maxCandidates: 2),
+      _ShortsBuildStrategy(kind: 'info', label: 'Info', maxCandidates: 2),
+      _ShortsBuildStrategy(kind: 'risk', label: 'Risk', maxCandidates: 1),
+    ];
+  }
+
+  List<ShortsCandidate> _selectDiverseShortsCandidates(
+    List<ShortsCandidate> pool,
+    List<_ShortsBuildStrategy> strategies, {
+    required int maxCandidates,
+  }) {
+    final selected = <ShortsCandidate>[];
+    final signatures = <String>{};
+
+    void addCandidate(ShortsCandidate candidate) {
+      if (selected.length >= maxCandidates) {
+        return;
+      }
+      final signature = _shortsCandidateSignature(candidate);
+      if (signatures.add(signature)) {
+        selected.add(candidate);
+      }
+    }
+
+    for (final strategy in strategies) {
+      final strategyCandidates =
+          pool
+              .where((candidate) => candidate.strategyKind == strategy.kind)
+              .toList()
+            ..sort((a, b) => b.qualityScore.compareTo(a.qualityScore));
+      if (strategyCandidates.isNotEmpty) {
+        addCandidate(strategyCandidates.first);
+      }
+    }
+
+    final rankedPool = [...pool]
+      ..sort((a, b) => b.qualityScore.compareTo(a.qualityScore));
+    for (final candidate in rankedPool) {
+      addCandidate(candidate);
+      if (selected.length >= maxCandidates) {
+        break;
+      }
+    }
+    return selected.isEmpty
+        ? rankedPool.take(maxCandidates).toList()
+        : selected;
+  }
+
+  String _shortsCandidateSignature(ShortsCandidate candidate) {
+    return candidate.segments
+        .map(
+          (segment) =>
+              '${segment.start.toStringAsFixed(1)}-${segment.end.toStringAsFixed(1)}',
+        )
+        .join('|');
+  }
+
+  List<HighlightSegment> _rankSegmentsForShortsStrategy(
+    String strategyKind,
+    List<HighlightSegment> input,
+  ) {
+    final ranked = [...input]
+      ..sort((a, b) {
+        final scoreCompare = _shortsSeedScore(
+          strategyKind,
+          b,
+        ).compareTo(_shortsSeedScore(strategyKind, a));
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.start.compareTo(b.start);
+      });
+    return ranked;
+  }
+
+  bool _skipSeedForShortsStrategy(String strategyKind, HighlightSegment seed) {
+    if (seed.score > 0 && seed.score < 4.5 && strategyKind != 'risk') {
+      return true;
+    }
+    if (strategyKind == 'risk') {
+      return !_segmentHasRiskSignal(seed);
+    }
+    if (strategyKind == 'news') {
+      return !_segmentHasAnyTag(seed, const {
+            '뉴스핵심',
+            '근거',
+            '영향',
+            '대응',
+            '출처확인',
+            '시간축',
+            '발언',
+          }) &&
+          !_containsAny(seed.reason, const ['뉴스', '속보', '단독', '발언', '확인']);
+    }
+    if (strategyKind == 'info') {
+      return !_segmentHasAnyTag(seed, const {'문제해결', '구체성', '비교', '근거'}) &&
+          !_containsAny(seed.script, const ['방법', '이유', '차이', '원인', '비교']);
+    }
+    return false;
+  }
+
+  double _shortsSeedScore(String strategyKind, HighlightSegment segment) {
+    final base = segment.score > 0 ? segment.score * 10 : 52.0;
+    final text =
+        '${segment.reason} ${segment.script} ${segment.tags.join(' ')}';
+    return switch (strategyKind) {
+      'hook' =>
+        base +
+            (_containsAny(text, const [
+                  '결과',
+                  '핵심',
+                  '충격',
+                  '문제',
+                  '원인',
+                  '논란',
+                  '후킹',
+                  '유지율',
+                ])
+                ? 28
+                : 0) +
+            (segment.start <= 60 ? 8 : 0),
+      'news' =>
+        base +
+            _tagMatchCount(segment, const {
+                  '뉴스핵심',
+                  '근거',
+                  '영향',
+                  '대응',
+                  '출처확인',
+                  '시간축',
+                  '발언',
+                }) *
+                13 +
+            (_containsAny(text, const ['속보', '단독', '공식', '발표', '확인']) ? 16 : 0),
+      'info' =>
+        base +
+            _tagMatchCount(segment, const {'문제해결', '구체성', '비교', '근거'}) * 12 +
+            (_containsAny(text, const ['방법', '이유', '차이', '원인', '비교', '수치'])
+                ? 14
+                : 0),
+      'risk' => base + (_segmentHasRiskSignal(segment) ? 42 : -80),
+      _ => base + (_segmentHasRiskSignal(segment) ? -10 : 0),
+    };
+  }
+
+  bool _segmentHasRiskSignal(HighlightSegment segment) {
+    return _riskPattern.hasMatch(segment.reason) ||
+        _riskPattern.hasMatch(segment.script) ||
+        segment.tags.any((tag) => _riskPattern.hasMatch(tag));
+  }
+
+  bool _segmentHasAnyTag(HighlightSegment segment, Set<String> tags) {
+    return segment.tags.any(tags.contains);
+  }
+
+  int _tagMatchCount(HighlightSegment segment, Set<String> tags) {
+    return segment.tags.where(tags.contains).length;
+  }
+
+  bool _containsAny(String value, List<String> needles) {
+    final normalized = value.toLowerCase();
+    return needles.any((needle) => normalized.contains(needle.toLowerCase()));
   }
 
   ShortsCandidate _scoreShortsCandidate(ShortsCandidate candidate) {
@@ -3557,12 +3747,26 @@ class AutoFixReviewItem {
   final AutoFixAction action;
 }
 
+class _ShortsBuildStrategy {
+  const _ShortsBuildStrategy({
+    required this.kind,
+    required this.label,
+    required this.maxCandidates,
+  });
+
+  final String kind;
+  final String label;
+  final int maxCandidates;
+}
+
 class ShortsCandidate {
   const ShortsCandidate({
     required this.id,
     required this.label,
     required this.reason,
     required this.segments,
+    this.strategyKind = 'balanced',
+    this.strategyLabel = 'Balanced',
     this.qualityScore = 0,
     this.qualityGrade = 'C',
     this.riskCount = 0,
@@ -3575,6 +3779,8 @@ class ShortsCandidate {
   final String label;
   final String reason;
   final List<HighlightSegment> segments;
+  final String strategyKind;
+  final String strategyLabel;
   final double qualityScore;
   final String qualityGrade;
   final int riskCount;
@@ -3592,6 +3798,8 @@ class ShortsCandidate {
     String? label,
     String? reason,
     List<HighlightSegment>? segments,
+    String? strategyKind,
+    String? strategyLabel,
     double? qualityScore,
     String? qualityGrade,
     int? riskCount,
@@ -3604,6 +3812,8 @@ class ShortsCandidate {
       label: label ?? this.label,
       reason: reason ?? this.reason,
       segments: segments ?? this.segments,
+      strategyKind: strategyKind ?? this.strategyKind,
+      strategyLabel: strategyLabel ?? this.strategyLabel,
       qualityScore: qualityScore ?? this.qualityScore,
       qualityGrade: qualityGrade ?? this.qualityGrade,
       riskCount: riskCount ?? this.riskCount,

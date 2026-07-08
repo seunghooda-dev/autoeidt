@@ -317,6 +317,8 @@ class _ShortsCandidateTile extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _CandidateStrategyBadge(candidate: candidate),
+                  const SizedBox(width: 6),
                   _CandidateQualityBadge(candidate: candidate),
                   const SizedBox(width: 6),
                   Text(
@@ -385,6 +387,45 @@ class _ShortsCandidateTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CandidateStrategyBadge extends StatelessWidget {
+  const _CandidateStrategyBadge({required this.candidate});
+
+  final ShortsCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = _strategyColor(colorScheme, candidate.strategyKind);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.52)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        candidate.strategyLabel,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Color _strategyColor(ColorScheme colorScheme, String strategyKind) {
+    return switch (strategyKind) {
+      'hook' => colorScheme.primary,
+      'news' => colorScheme.secondary,
+      'info' => colorScheme.tertiary,
+      'risk' => colorScheme.error,
+      _ => colorScheme.outline,
+    };
   }
 }
 

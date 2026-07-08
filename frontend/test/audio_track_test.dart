@@ -528,7 +528,7 @@ void main() {
       ]
       ..selectedSegmentOrder = 1;
 
-    controller.buildMultiShortsCandidates(maxCandidates: 3);
+    controller.buildMultiShortsCandidates(maxCandidates: 5);
     expect(controller.hasShortsCandidates, isTrue);
     expect(controller.selectedShortsCandidate, isNotNull);
     expect(controller.exportAspectRatio, '9:16');
@@ -548,6 +548,13 @@ void main() {
       controller.shortsCandidates.first.strengths.isNotEmpty ||
           controller.shortsCandidates.first.issues.isNotEmpty,
       isTrue,
+    );
+    expect(
+      controller.shortsCandidates
+          .map((candidate) => candidate.strategyKind)
+          .toSet()
+          .length,
+      greaterThan(1),
     );
 
     final selectedId = controller.selectedShortsId!;
