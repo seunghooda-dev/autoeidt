@@ -132,6 +132,10 @@ def _normalize_highlights(
         color_saturation = max(0.0, min(float(item.get("color_saturation", 1.0)), 2.0))
         audio_fade_in = max(0.0, min(float(item.get("audio_fade_in", 0.0)), 10.0))
         audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
+        audio_channel_1_enabled = bool(item.get("audio_channel_1_enabled", True))
+        audio_channel_2_enabled = bool(item.get("audio_channel_2_enabled", True))
+        if not audio_channel_1_enabled and not audio_channel_2_enabled:
+            audio_channel_1_enabled = True
         score = max(0.0, min(float(item.get("score", 0.0)), 20.0))
         tags = [str(tag) for tag in item.get("tags", []) if str(tag).strip()]
         normalized.append(
@@ -155,6 +159,8 @@ def _normalize_highlights(
                 "audio_pan": round(audio_pan, 2),
                 "audio_normalize": bool(item.get("audio_normalize", False)),
                 "audio_linked": audio_linked,
+                "audio_channel_1_enabled": audio_channel_1_enabled,
+                "audio_channel_2_enabled": audio_channel_2_enabled,
                 "playback_speed": round(playback_speed, 3),
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),

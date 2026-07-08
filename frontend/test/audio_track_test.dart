@@ -23,6 +23,8 @@ void main() {
       audioPan: -0.4,
       audioNormalize: true,
       audioLinked: false,
+      audioChannel1Enabled: true,
+      audioChannel2Enabled: false,
       playbackSpeed: 1.5,
       audioFadeIn: 0.5,
       audioFadeOut: 1.0,
@@ -44,6 +46,8 @@ void main() {
     expect(json['audio_pan'], -0.4);
     expect(json['audio_normalize'], isTrue);
     expect(json['audio_linked'], isFalse);
+    expect(json['audio_channel_1_enabled'], isTrue);
+    expect(json['audio_channel_2_enabled'], isFalse);
     expect(json['playback_speed'], 1.5);
     expect(json['audio_fade_in'], 0.5);
     expect(json['audio_fade_out'], 1.0);
@@ -64,6 +68,8 @@ void main() {
     expect(restored.audioPan, -0.4);
     expect(restored.audioNormalize, isTrue);
     expect(restored.audioLinked, isFalse);
+    expect(restored.audioChannel1Enabled, isTrue);
+    expect(restored.audioChannel2Enabled, isFalse);
     expect(restored.playbackSpeed, 1.5);
     expect(restored.audioFadeIn, 0.5);
     expect(restored.audioFadeOut, 1.0);
@@ -239,6 +245,16 @@ void main() {
     controller.setSelectedColorContrast(5);
     controller.setSelectedColorSaturation(5);
     controller.toggleSelectedAudioNormalize();
+    expect(controller.selectedSegment!.audioChannel1Enabled, isTrue);
+    expect(controller.selectedSegment!.audioChannel2Enabled, isTrue);
+    controller.toggleSelectedAudioChannel2();
+    expect(controller.selectedSegment!.audioChannel1Enabled, isTrue);
+    expect(controller.selectedSegment!.audioChannel2Enabled, isFalse);
+    controller.toggleSelectedAudioChannel1();
+    expect(controller.selectedSegment!.audioChannel1Enabled, isTrue);
+    expect(controller.selectedSegment!.audioChannel2Enabled, isFalse);
+    controller.toggleSelectedAudioChannel2();
+    expect(controller.selectedSegment!.audioChannel2Enabled, isTrue);
     var selected = controller.selectedSegment!;
     expect(selected.videoFadeIn, closeTo(4, 0.01));
     expect(selected.videoFadeOut, closeTo(4, 0.01));

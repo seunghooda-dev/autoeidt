@@ -58,6 +58,12 @@ class ClipInspector extends StatelessWidget {
           end: formatSeconds(selected.effectiveAudioEnd),
         ),
         const SizedBox(height: 8),
+        _TimecodeRow(
+          label: 'A2',
+          start: formatSeconds(selected.effectiveAudioStart),
+          end: formatSeconds(selected.effectiveAudioEnd),
+        ),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -211,7 +217,33 @@ class ClipInspector extends StatelessWidget {
                     : Icons.volume_up_outlined,
                 size: 18,
               ),
-              label: Text(selected.audioMuted ? '음소거 해제' : 'A1 음소거'),
+              label: Text(selected.audioMuted ? '음소거 해제' : 'A1/A2 음소거'),
+            ),
+            FilterChip(
+              selected: selected.audioChannel1Enabled,
+              onSelected: controller.audioTrackLocked
+                  ? null
+                  : (_) => editor.toggleSelectedAudioChannel1(),
+              avatar: Icon(
+                selected.audioChannel1Enabled
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+                size: 18,
+              ),
+              label: Text(selected.audioChannel1Enabled ? 'A1 활성' : 'A1 꺼짐'),
+            ),
+            FilterChip(
+              selected: selected.audioChannel2Enabled,
+              onSelected: controller.audioTrackLocked
+                  ? null
+                  : (_) => editor.toggleSelectedAudioChannel2(),
+              avatar: Icon(
+                selected.audioChannel2Enabled
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+                size: 18,
+              ),
+              label: Text(selected.audioChannel2Enabled ? 'A2 활성' : 'A2 꺼짐'),
             ),
             FilterChip(
               selected: selected.audioNormalize,
@@ -222,14 +254,14 @@ class ClipInspector extends StatelessWidget {
               label: const Text('Loudness'),
             ),
             IconButton.outlined(
-              tooltip: 'A1 1프레임 앞으로',
+              tooltip: 'A1/A2 1프레임 앞으로',
               onPressed: selected.audioLinked || controller.audioTrackLocked
                   ? null
                   : () => editor.nudgeSelectedAudioFrames(-1),
               icon: const Icon(Icons.keyboard_double_arrow_left),
             ),
             IconButton.outlined(
-              tooltip: 'A1 1프레임 뒤로',
+              tooltip: 'A1/A2 1프레임 뒤로',
               onPressed: selected.audioLinked || controller.audioTrackLocked
                   ? null
                   : () => editor.nudgeSelectedAudioFrames(1),

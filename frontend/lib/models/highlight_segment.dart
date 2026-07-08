@@ -19,6 +19,8 @@ class HighlightSegment {
     this.audioPan = 0.0,
     this.audioNormalize = false,
     this.audioLinked = true,
+    this.audioChannel1Enabled = true,
+    this.audioChannel2Enabled = true,
     this.playbackSpeed = 1.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
@@ -45,6 +47,8 @@ class HighlightSegment {
   final double audioPan;
   final bool audioNormalize;
   final bool audioLinked;
+  final bool audioChannel1Enabled;
+  final bool audioChannel2Enabled;
   final double playbackSpeed;
   final double audioFadeIn;
   final double audioFadeOut;
@@ -56,6 +60,8 @@ class HighlightSegment {
   double get effectiveAudioStart => audioStart ?? start;
   double get effectiveAudioEnd => audioEnd ?? end;
   double get audioDuration => effectiveAudioEnd - effectiveAudioStart;
+  bool get hasActiveAudioChannel =>
+      audioChannel1Enabled || audioChannel2Enabled;
 
   HighlightSegment copyWith({
     int? order,
@@ -77,6 +83,8 @@ class HighlightSegment {
     double? audioPan,
     bool? audioNormalize,
     bool? audioLinked,
+    bool? audioChannel1Enabled,
+    bool? audioChannel2Enabled,
     double? playbackSpeed,
     double? audioFadeIn,
     double? audioFadeOut,
@@ -103,6 +111,8 @@ class HighlightSegment {
       audioPan: audioPan ?? this.audioPan,
       audioNormalize: audioNormalize ?? this.audioNormalize,
       audioLinked: audioLinked ?? this.audioLinked,
+      audioChannel1Enabled: audioChannel1Enabled ?? this.audioChannel1Enabled,
+      audioChannel2Enabled: audioChannel2Enabled ?? this.audioChannel2Enabled,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
@@ -169,6 +179,14 @@ class HighlightSegment {
           (json['audio_linked'] as bool?) ??
           (json['audioLinked'] as bool?) ??
           true,
+      audioChannel1Enabled:
+          (json['audio_channel_1_enabled'] as bool?) ??
+          (json['audioChannel1Enabled'] as bool?) ??
+          true,
+      audioChannel2Enabled:
+          (json['audio_channel_2_enabled'] as bool?) ??
+          (json['audioChannel2Enabled'] as bool?) ??
+          true,
       playbackSpeed:
           (json['playback_speed'] as num?)?.toDouble() ??
           (json['playbackSpeed'] as num?)?.toDouble() ??
@@ -213,6 +231,8 @@ class HighlightSegment {
       'audio_pan': audioPan,
       'audio_normalize': audioNormalize,
       'audio_linked': audioLinked,
+      'audio_channel_1_enabled': audioChannel1Enabled,
+      'audio_channel_2_enabled': audioChannel2Enabled,
       'playback_speed': playbackSpeed,
       'audio_fade_in': audioFadeIn,
       'audio_fade_out': audioFadeOut,

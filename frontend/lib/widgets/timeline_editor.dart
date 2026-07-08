@@ -8,7 +8,7 @@ import 'time_format.dart';
 
 enum _DragEdge { start, end }
 
-enum _DragTrack { video, audio }
+enum _DragTrack { video, audio1, audio2 }
 
 enum _TimelineMenuAction {
   selectionTool,
@@ -33,6 +33,8 @@ enum _TimelineMenuAction {
   moveLater,
   toggleAudioLink,
   toggleAudioMute,
+  toggleAudioChannel1,
+  toggleAudioChannel2,
   toggleVideoEnabled,
   resetAudioPan,
 }
@@ -75,6 +77,8 @@ class TimelineEditor extends StatefulWidget {
     this.onMoveSegment,
     this.onToggleAudioLink,
     this.onToggleAudioMute,
+    this.onToggleAudioChannel1,
+    this.onToggleAudioChannel2,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onZoomDelta,
@@ -115,6 +119,8 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onMoveSegment;
   final VoidCallback? onToggleAudioLink;
   final VoidCallback? onToggleAudioMute;
+  final VoidCallback? onToggleAudioChannel1;
+  final VoidCallback? onToggleAudioChannel2;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final ValueChanged<double>? onZoomDelta;
@@ -128,8 +134,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
   static const double _handleVisualWidth = 4;
   static const double _minSegmentSeconds = 1.0;
   static const double _videoTop = 42;
-  static const double _audioTop = 88;
-  static const double _laneHeight = 30;
+  static const double _audio1Top = 86;
+  static const double _audio2Top = 122;
+  static const double _laneHeight = 28;
+  static const double _footerTop = 158;
 
   int? _activeIndex;
   _DragEdge? _activeEdge;
@@ -197,7 +205,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                 onPanCancel: _finishDrag,
                 child: SizedBox(
                   width: width,
-                  height: 168,
+                  height: 194,
                   child: CustomPaint(
                     painter: _TimelinePainter(
                       duration: widget.duration,
@@ -215,11 +223,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
                     child: Align(
                       alignment: Alignment.bottomLeft,
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 140),
+                        padding: const EdgeInsets.only(top: _footerTop),
                         child: SizedBox(
                           width: width,
                           child: Text(
-                            '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1 분리 ${_detachedAudioCount()}개',
+                            '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1/A2 분리 ${_detachedAudioCount()}개',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.labelMedium,
@@ -351,6 +359,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onToggleAudioLink?.call();
       case _TimelineMenuAction.toggleAudioMute:
         widget.onToggleAudioMute?.call();
+      case _TimelineMenuAction.toggleAudioChannel1:
+        widget.onToggleAudioChannel1?.call();
+      case _TimelineMenuAction.toggleAudioChannel2:
+        widget.onToggleAudioChannel2?.call();
       case _TimelineMenuAction.toggleVideoEnabled:
         widget.onToggleVideoEnabled?.call();
       case _TimelineMenuAction.resetAudioPan:
@@ -365,8 +377,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final videoLocked = widget.videoTrackLocked;
     final audioLocked = widget.audioTrackLocked;
     final clipEditable = segment != null && !videoLocked && !audioLocked;
-    final trackLabel = track == _DragTrack.audio
-        ? 'A1 Audio'
+    final trackLabel = _isAudioTrack(track)
+        ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
         ? 'V1 Video'
         : 'Timeline';
@@ -534,13 +546,35 @@ class _TimelineEditorState extends State<TimelineEditor> {
         segment?.audioMuted ?? false
             ? Icons.volume_up_outlined
             : Icons.volume_off_outlined,
-        segment?.audioMuted ?? false ? 'Unmute A1' : 'Mute A1',
+        segment?.audioMuted ?? false ? 'Unmute A1/A2' : 'Mute A1/A2',
         _TimelineMenuAction.toggleAudioMute,
         enabled: segment != null && !audioLocked,
       ),
       _menuItem(
+        segment?.audioChannel1Enabled ?? true
+            ? Icons.check_box_outlined
+            : Icons.check_box_outline_blank,
+        segment?.audioChannel1Enabled ?? true ? 'Disable A1' : 'Enable A1',
+        _TimelineMenuAction.toggleAudioChannel1,
+        enabled:
+            segment != null &&
+            !audioLocked &&
+            ((segment.audioChannel2Enabled) || !segment.audioChannel1Enabled),
+      ),
+      _menuItem(
+        segment?.audioChannel2Enabled ?? true
+            ? Icons.check_box_outlined
+            : Icons.check_box_outline_blank,
+        segment?.audioChannel2Enabled ?? true ? 'Disable A2' : 'Enable A2',
+        _TimelineMenuAction.toggleAudioChannel2,
+        enabled:
+            segment != null &&
+            !audioLocked &&
+            ((segment.audioChannel1Enabled) || !segment.audioChannel2Enabled),
+      ),
+      _menuItem(
         Icons.balance_outlined,
-        'Reset A1 pan',
+        'Reset A1/A2 pan',
         _TimelineMenuAction.resetAudioPan,
         enabled: segment != null && !audioLocked,
       ),
@@ -732,8 +766,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
     if (y >= _videoTop - 10 && y <= _videoTop + _laneHeight + 10) {
       return _DragTrack.video;
     }
-    if (y >= _audioTop - 10 && y <= _audioTop + _laneHeight + 10) {
-      return _DragTrack.audio;
+    if (y >= _audio1Top - 8 && y <= _audio1Top + _laneHeight + 8) {
+      return _DragTrack.audio1;
+    }
+    if (y >= _audio2Top - 8 && y <= _audio2Top + _laneHeight + 8) {
+      return _DragTrack.audio2;
     }
     return null;
   }
@@ -743,6 +780,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         ? widget.videoTrackLocked
         : widget.audioTrackLocked;
   }
+
+  bool _isAudioTrack(_DragTrack? track) =>
+      track == _DragTrack.audio1 || track == _DragTrack.audio2;
+
+  String _audioTrackLabel(_DragTrack track) =>
+      track == _DragTrack.audio2 ? 'A2' : 'A1';
 
   int? _segmentIndexAt(double x, double width, _DragTrack? track) {
     if (track == null) {
@@ -809,7 +852,8 @@ class _TimelinePainter extends CustomPainter {
   });
 
   static const double _videoTop = _TimelineEditorState._videoTop;
-  static const double _audioTop = _TimelineEditorState._audioTop;
+  static const double _audio1Top = _TimelineEditorState._audio1Top;
+  static const double _audio2Top = _TimelineEditorState._audio2Top;
   static const double _laneHeight = _TimelineEditorState._laneHeight;
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
@@ -836,9 +880,11 @@ class _TimelinePainter extends CustomPainter {
     final radius = Radius.circular(5);
     final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
     _drawTrack(canvas, size, _videoTop, radius, trackPaint);
-    _drawTrack(canvas, size, _audioTop, radius, trackPaint);
+    _drawTrack(canvas, size, _audio1Top, radius, trackPaint);
+    _drawTrack(canvas, size, _audio2Top, radius, trackPaint);
     _drawLaneLabel(canvas, 'V1', _videoTop, _videoClipColor);
-    _drawLaneLabel(canvas, 'A1', _audioTop, _audioClipColor);
+    _drawLaneLabel(canvas, 'A1', _audio1Top, _audioClipColor);
+    _drawLaneLabel(canvas, 'A2', _audio2Top, _audioClipColor);
 
     _drawWaveform(canvas, size);
     _drawInOutRange(canvas, size);
@@ -917,16 +963,21 @@ class _TimelinePainter extends CustomPainter {
       ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.50)
       ..strokeWidth = 1;
     final step = size.width / waveform.length;
-    final centerY = _audioTop + _laneHeight / 2;
+    final centers = <double>[
+      _audio1Top + _laneHeight / 2,
+      _audio2Top + _laneHeight / 2,
+    ];
     for (var index = 0; index < waveform.length; index++) {
       final x = index * step;
       final peak = waveform[index].clamp(0.0, 1.0).toDouble();
       final halfHeight = math.max(1.0, peak * _laneHeight / 2);
-      canvas.drawLine(
-        Offset(x, centerY - halfHeight),
-        Offset(x, centerY + halfHeight),
-        wavePaint,
-      );
+      for (final centerY in centers) {
+        canvas.drawLine(
+          Offset(x, centerY - halfHeight),
+          Offset(x, centerY + halfHeight),
+          wavePaint,
+        );
+      }
     }
   }
 
@@ -943,7 +994,7 @@ class _TimelinePainter extends CustomPainter {
         left,
         _videoTop - 7,
         math.max(2, right - left),
-        _audioTop - _videoTop + _laneHeight + 14,
+        _audio2Top - _videoTop + _laneHeight + 14,
       ),
       Radius.circular(6),
     );
@@ -989,7 +1040,7 @@ class _TimelinePainter extends CustomPainter {
       final top = isMajor ? 24.0 : 29.0;
       canvas.drawLine(
         Offset(x, top),
-        Offset(x, isMajor ? _audioTop + _laneHeight + 6 : 38),
+        Offset(x, isMajor ? _audio2Top + _laneHeight + 6 : 38),
         isMajor ? tickPaint : minorTickPaint,
       );
       if (isMajor) {
@@ -1067,7 +1118,7 @@ class _TimelinePainter extends CustomPainter {
       _drawClipBlock(
         canvas,
         size,
-        top: _audioTop,
+        top: _audio1Top,
         start: 0,
         end: duration,
         fill: _audioClipColor,
@@ -1075,7 +1126,20 @@ class _TimelinePainter extends CustomPainter {
         radius: radius,
         handlesActive: false,
         label: 'A1 Source',
-        track: _DragTrack.audio,
+        track: _DragTrack.audio1,
+      );
+      _drawClipBlock(
+        canvas,
+        size,
+        top: _audio2Top,
+        start: 0,
+        end: duration,
+        fill: _audioClipColor,
+        border: _audioClipColor,
+        radius: radius,
+        handlesActive: false,
+        label: 'A2 Source',
+        track: _DragTrack.audio2,
       );
       return;
     }
@@ -1098,7 +1162,7 @@ class _TimelinePainter extends CustomPainter {
             ? (isActive ? _videoClipActiveColor : _videoClipColor)
             : colorScheme.error,
         radius: radius,
-        handlesActive: isActive && activeTrack != _DragTrack.audio,
+        handlesActive: isActive && !_isAudioTrack(activeTrack),
         disabledPattern: !segment.videoEnabled,
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
@@ -1113,27 +1177,73 @@ class _TimelinePainter extends CustomPainter {
           : segment.audioPan.abs() > 0.001
           ? colorScheme.primary
           : (isActive ? _audioClipActiveColor : _audioClipColor);
-      _drawClipBlock(
+      _drawAudioChannelBlock(
         canvas,
         size,
-        top: _audioTop,
-        start: segment.effectiveAudioStart,
-        end: segment.effectiveAudioEnd,
-        fill: segment.audioMuted
-            ? audioFill.withValues(alpha: 0.26)
-            : audioFill.withValues(alpha: segment.audioLinked ? 0.84 : 0.95),
+        segment: segment,
+        top: _audio1Top,
+        channelEnabled: segment.audioChannel1Enabled,
+        channelLabel: 'A1',
+        fill: audioFill,
         border: audioBorder,
         radius: radius,
         handlesActive: isActive && activeTrack != _DragTrack.video,
-        label: segment.audioMuted
-            ? 'A1 muted C${segment.order}'
-            : 'A1 C${segment.order}',
-        track: _DragTrack.audio,
+        track: _DragTrack.audio1,
+      );
+      _drawAudioChannelBlock(
+        canvas,
+        size,
+        segment: segment,
+        top: _audio2Top,
+        channelEnabled: segment.audioChannel2Enabled,
+        channelLabel: 'A2',
+        fill: audioFill,
+        border: audioBorder,
+        radius: radius,
+        handlesActive: isActive && activeTrack != _DragTrack.video,
+        track: _DragTrack.audio2,
       );
       if (segment.audioPan.abs() > 0.001) {
         _drawPanIndicator(canvas, size, segment);
       }
     }
+  }
+
+  bool _isAudioTrack(_DragTrack? track) =>
+      track == _DragTrack.audio1 || track == _DragTrack.audio2;
+
+  void _drawAudioChannelBlock(
+    Canvas canvas,
+    Size size, {
+    required HighlightSegment segment,
+    required double top,
+    required bool channelEnabled,
+    required String channelLabel,
+    required Color fill,
+    required Color border,
+    required Radius radius,
+    required bool handlesActive,
+    required _DragTrack track,
+  }) {
+    final disabled = segment.audioMuted || !channelEnabled;
+    _drawClipBlock(
+      canvas,
+      size,
+      top: top,
+      start: segment.effectiveAudioStart,
+      end: segment.effectiveAudioEnd,
+      fill: disabled
+          ? fill.withValues(alpha: 0.22)
+          : fill.withValues(alpha: segment.audioLinked ? 0.84 : 0.95),
+      border: channelEnabled ? border : colorScheme.outline,
+      radius: radius,
+      handlesActive: handlesActive,
+      disabledPattern: disabled,
+      label: disabled
+          ? '$channelLabel off C${segment.order}'
+          : '$channelLabel C${segment.order}',
+      track: track,
+    );
   }
 
   void _drawClipBlock(
@@ -1327,16 +1437,18 @@ class _TimelinePainter extends CustomPainter {
     final width = math.max(2.0, right - left);
     final panX =
         left + ((segment.audioPan + 1.0) / 2.0).clamp(0.0, 1.0) * width;
-    final center = Offset(panX, _audioTop + _laneHeight / 2);
-    canvas.drawCircle(center, 4.5, Paint()..color = colorScheme.surface);
-    canvas.drawCircle(
-      center,
-      3.0,
-      Paint()
-        ..color = segment.audioPan < 0
-            ? colorScheme.primary
-            : colorScheme.tertiary,
-    );
+    for (final top in [_audio1Top, _audio2Top]) {
+      final center = Offset(panX, top + _laneHeight / 2);
+      canvas.drawCircle(center, 4.5, Paint()..color = colorScheme.surface);
+      canvas.drawCircle(
+        center,
+        3.0,
+        Paint()
+          ..color = segment.audioPan < 0
+              ? colorScheme.primary
+              : colorScheme.tertiary,
+      );
+    }
   }
 
   void _drawFadeOverlay(Canvas canvas, Size size, HighlightSegment segment) {
@@ -1399,7 +1511,7 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = 2;
     canvas.drawLine(
       Offset(playheadX, 4),
-      Offset(playheadX, _audioTop + _laneHeight + 12),
+      Offset(playheadX, _audio2Top + _laneHeight + 12),
       playheadPaint,
     );
     final triangle = Path()
@@ -1423,7 +1535,7 @@ class _TimelinePainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawLine(
       Offset(x, 22),
-      Offset(x, _audioTop + _laneHeight + 10),
+      Offset(x, _audio2Top + _laneHeight + 10),
       linePaint,
     );
 

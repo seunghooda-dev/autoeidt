@@ -500,6 +500,16 @@ def _segment_audio_pan(segment: dict) -> float:
     return max(-1.0, min(float(segment.get("audio_pan", 0.0)), 1.0))
 
 
+def _segment_audio_channel_1_enabled(segment: dict) -> bool:
+    channel_1 = bool(segment.get("audio_channel_1_enabled", True))
+    channel_2 = bool(segment.get("audio_channel_2_enabled", True))
+    return channel_1 or not channel_2
+
+
+def _segment_audio_channel_2_enabled(segment: dict) -> bool:
+    return bool(segment.get("audio_channel_2_enabled", True))
+
+
 def _segment_video_enabled(segment: dict) -> bool:
     return bool(segment.get("video_enabled", True))
 
@@ -564,6 +574,10 @@ def _segment_uses_default_audio(segment: dict) -> bool:
     if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
         return False
     if abs(_segment_audio_pan(segment)) > 0.001:
+        return False
+    if not _segment_audio_channel_1_enabled(segment):
+        return False
+    if not _segment_audio_channel_2_enabled(segment):
         return False
     if _segment_audio_normalize(segment):
         return False
@@ -663,6 +677,95 @@ def _caption_style_force_style(style: dict | None) -> str:
     )
 
 
+def _audio_stream_count(video_path: Path) -> int:
+    try:
+        result = _run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            timeout=60,
+        )
+    except FFmpegError:
+        return 1
+    data = json.loads(result.stdout or "{}")
+    return len(data.get("streams") or [])
+
+
+def _silence_audio_filter(label: str, duration: float, layout: str = "mono") -> str:
+    return (
+        f"anullsrc=channel_layout={layout}:sample_rate=48000,"
+        f"atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[{label}]"
+    )
+
+
+def _segment_audio_source_filters(
+    index: int,
+    audio_start: float,
+    audio_end: float,
+    video_duration: float,
+    volume: float,
+    channel_1_enabled: bool,
+    channel_2_enabled: bool,
+    audio_stream_count: int,
+) -> tuple[list[str], str]:
+    filters: list[str] = []
+    source_label = f"asrc{index}"
+    if volume <= 0 or (not channel_1_enabled and not channel_2_enabled):
+        filters.append(_silence_audio_filter(source_label, video_duration, "stereo"))
+        return filters, f"[{source_label}]"
+
+    if audio_stream_count >= 2:
+        channel_labels: list[str] = []
+        for channel_index, enabled in enumerate(
+            [channel_1_enabled, channel_2_enabled]
+        ):
+            channel_label = f"a{index}ch{channel_index + 1}"
+            if enabled:
+                filters.append(
+                    f"[0:a:{channel_index}]"
+                    f"atrim=start={audio_start:.6f}:end={audio_end:.6f},"
+                    "asetpts=PTS-STARTPTS,"
+                    "pan=mono|c0=c0,"
+                    f"volume={volume:.3f},"
+                    "apad,"
+                    f"atrim=duration={video_duration:.6f},"
+                    f"asetpts=PTS-STARTPTS[{channel_label}]"
+                )
+            else:
+                filters.append(
+                    _silence_audio_filter(channel_label, video_duration, "mono")
+                )
+            channel_labels.append(f"[{channel_label}]")
+        filters.append(
+            f"{''.join(channel_labels)}amerge=inputs=2,"
+            f"aformat=channel_layouts=stereo[{source_label}]"
+        )
+        return filters, f"[{source_label}]"
+
+    left_expr = "c0" if channel_1_enabled else "0*c0"
+    right_expr = "c1" if channel_2_enabled else "0*c1"
+    filters.append(
+        f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
+        "asetpts=PTS-STARTPTS,"
+        f"volume={volume:.3f},"
+        "aformat=channel_layouts=stereo,"
+        f"pan=stereo|c0={left_expr}|c1={right_expr},"
+        "apad,"
+        f"atrim=duration={video_duration:.6f},"
+        f"asetpts=PTS-STARTPTS[{source_label}]"
+    )
+    return filters, f"[{source_label}]"
+
+
 def _render_reencode_with_video_args(
     video_path: Path,
     segments: list[dict],
@@ -675,6 +778,7 @@ def _render_reencode_with_video_args(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
     concat_inputs: list[str] = []
+    audio_stream_count = _audio_stream_count(video_path)
     for index, segment in enumerate(segments):
         start = float(segment["start"])
         end = float(segment["end"])
@@ -691,6 +795,8 @@ def _render_reencode_with_video_args(
             if segment.get("audio_muted", False)
             else _segment_audio_volume(segment)
         )
+        channel_1_enabled = _segment_audio_channel_1_enabled(segment)
+        channel_2_enabled = _segment_audio_channel_2_enabled(segment)
         video_steps = [
             f"[0:v]trim=start={start:.6f}:end={end:.6f}",
             f"setpts=(PTS-STARTPTS)/{speed:.6f}",
@@ -719,22 +825,27 @@ def _render_reencode_with_video_args(
             video_steps.append(f"fade=t=out:st={fade_start:.6f}:d={video_fade_out:.6f}")
         video_steps[-1] = f"{video_steps[-1]}[v{index}]"
         filters.append(",".join(video_steps))
+        audio_source_filters, audio_source = _segment_audio_source_filters(
+            index,
+            audio_start,
+            audio_end,
+            video_duration,
+            volume,
+            channel_1_enabled,
+            channel_2_enabled,
+            audio_stream_count,
+        )
+        filters.extend(audio_source_filters)
         pan = _segment_audio_pan(segment)
         left_gain = 1.0 if pan <= 0 else 1.0 - pan
         right_gain = 1.0 if pan >= 0 else 1.0 + pan
         audio_steps = [
-            f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f}",
-            "asetpts=PTS-STARTPTS",
-            f"volume={volume:.3f}",
-            "aformat=channel_layouts=stereo",
+            f"{audio_source}asetpts=PTS-STARTPTS",
             (
                 f"pan=stereo|c0={left_gain:.6f}*c0|c1={right_gain:.6f}*c1"
                 if abs(pan) > 0.001
                 else "anull"
             ),
-            "apad",
-            f"atrim=duration={video_duration:.6f}",
-            "asetpts=PTS-STARTPTS",
             *_atempo_filters(speed),
             "apad",
             f"atrim=duration={output_duration:.6f}",

@@ -171,7 +171,10 @@ class EditorController extends ChangeNotifier {
   bool get isRazorTool => timelineTool == 'razor';
   String get timelineToolLabel => isRazorTool ? 'Razor C' : 'Selection V';
   bool get allAudioMuted =>
-      segments.isNotEmpty && segments.every((segment) => segment.audioMuted);
+      segments.isNotEmpty &&
+      segments.every(
+        (segment) => segment.audioMuted || !segment.hasActiveAudioChannel,
+      );
   bool get hasValidMarks =>
       markIn != null &&
       markOut != null &&
@@ -1087,6 +1090,38 @@ class EditorController extends ChangeNotifier {
     updateSegment(
       selected.copyWith(
         audioMuted: !selected.audioMuted,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void toggleSelectedAudioChannel1() {
+    _toggleSelectedAudioChannel(1);
+  }
+
+  void toggleSelectedAudioChannel2() {
+    _toggleSelectedAudioChannel(2);
+  }
+
+  void _toggleSelectedAudioChannel(int channel) {
+    final selected = selectedSegment;
+    if (selected == null || audioTrackLocked) {
+      return;
+    }
+    final nextChannel1 = channel == 1
+        ? !selected.audioChannel1Enabled
+        : selected.audioChannel1Enabled;
+    final nextChannel2 = channel == 2
+        ? !selected.audioChannel2Enabled
+        : selected.audioChannel2Enabled;
+    if (!nextChannel1 && !nextChannel2) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioChannel1Enabled: nextChannel1,
+        audioChannel2Enabled: nextChannel2,
+        audioMuted: false,
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
@@ -2261,6 +2296,9 @@ class EditorController extends ChangeNotifier {
     final colorBrightness = segment.colorBrightness.clamp(-0.3, 0.3).toDouble();
     final colorContrast = segment.colorContrast.clamp(0.5, 1.8).toDouble();
     final colorSaturation = segment.colorSaturation.clamp(0.0, 2.0).toDouble();
+    final audioChannel1Enabled =
+        segment.audioChannel1Enabled || !segment.audioChannel2Enabled;
+    final audioChannel2Enabled = segment.audioChannel2Enabled;
     final normalizedSegment = segment.copyWith(
       start: start,
       end: end,
@@ -2268,6 +2306,8 @@ class EditorController extends ChangeNotifier {
       colorBrightness: colorBrightness,
       colorContrast: colorContrast,
       colorSaturation: colorSaturation,
+      audioChannel1Enabled: audioChannel1Enabled,
+      audioChannel2Enabled: audioChannel2Enabled,
     );
     final volume = segment.audioVolume.clamp(0.0, 2.0).toDouble();
     final maxFade = (normalizedSegment.outputDuration / 2)

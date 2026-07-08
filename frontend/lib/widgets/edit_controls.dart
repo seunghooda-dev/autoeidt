@@ -77,6 +77,10 @@ class EditControls extends StatelessWidget {
               color: Theme.of(context).colorScheme.secondary,
               label: 'A1 Audio',
             ),
+            _TrackLegend(
+              color: Theme.of(context).colorScheme.secondary,
+              label: 'A2 Audio',
+            ),
           ],
         ),
       ],

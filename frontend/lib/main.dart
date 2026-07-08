@@ -711,6 +711,7 @@ class _TimelinePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final editor = context.read<EditorController>();
+    final selected = controller.selectedSegment;
     final timelineContent = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -738,28 +739,54 @@ class _TimelinePanel extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               _TrackControlButton(
-                label: controller.audioTrackLocked ? 'A1 Locked' : 'A1',
+                label: controller.audioTrackLocked ? 'A1/A2 Locked' : 'A1/A2',
                 icon: controller.audioTrackLocked
                     ? Icons.lock
                     : Icons.lock_open,
                 tooltip: controller.audioTrackLocked
-                    ? 'A1 오디오 트랙 잠금 해제'
-                    : 'A1 오디오 트랙 잠금',
+                    ? 'A1/A2 오디오 트랙 잠금 해제'
+                    : 'A1/A2 오디오 트랙 잠금',
                 selected: controller.audioTrackLocked,
                 onPressed: editor.toggleAudioTrackLock,
               ),
               const SizedBox(width: 6),
               _TrackControlButton(
-                label: controller.allAudioMuted ? 'A1 Muted' : 'A1 Mix',
+                label: controller.allAudioMuted ? 'A1/A2 Muted' : 'A1/A2 Mix',
                 icon: controller.allAudioMuted
                     ? Icons.volume_off_outlined
                     : Icons.volume_up_outlined,
                 tooltip: controller.allAudioMuted
-                    ? 'A1 전체 음소거 해제'
-                    : 'A1 전체 음소거',
+                    ? 'A1/A2 전체 음소거 해제'
+                    : 'A1/A2 전체 음소거',
                 selected: controller.allAudioMuted,
                 onPressed: editor.toggleAllAudioMute,
               ),
+              if (selected != null) ...[
+                const SizedBox(width: 6),
+                _TrackControlButton(
+                  label: selected.audioChannel1Enabled ? 'A1 On' : 'A1 Off',
+                  icon: selected.audioChannel1Enabled
+                      ? Icons.check_box_outlined
+                      : Icons.check_box_outline_blank,
+                  tooltip: selected.audioChannel1Enabled
+                      ? '선택 클립 A1 채널 비활성화'
+                      : '선택 클립 A1 채널 활성화',
+                  selected: selected.audioChannel1Enabled,
+                  onPressed: editor.toggleSelectedAudioChannel1,
+                ),
+                const SizedBox(width: 6),
+                _TrackControlButton(
+                  label: selected.audioChannel2Enabled ? 'A2 On' : 'A2 Off',
+                  icon: selected.audioChannel2Enabled
+                      ? Icons.check_box_outlined
+                      : Icons.check_box_outline_blank,
+                  tooltip: selected.audioChannel2Enabled
+                      ? '선택 클립 A2 채널 비활성화'
+                      : '선택 클립 A2 채널 활성화',
+                  selected: selected.audioChannel2Enabled,
+                  onPressed: editor.toggleSelectedAudioChannel2,
+                ),
+              ],
               const Spacer(),
               _SmallPill(
                 label:
@@ -1003,6 +1030,12 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudioMute: context
           .read<EditorController>()
           .toggleSelectedAudioMute,
+      onToggleAudioChannel1: context
+          .read<EditorController>()
+          .toggleSelectedAudioChannel1,
+      onToggleAudioChannel2: context
+          .read<EditorController>()
+          .toggleSelectedAudioChannel2,
       onToggleVideoEnabled: context
           .read<EditorController>()
           .toggleSelectedVideoEnabled,

@@ -16,6 +16,7 @@ def test_highlight_segment_accepts_track_controls() -> None:
         audio_volume=3,
         audio_pan=-2,
         audio_normalize=True,
+        audio_channel_2_enabled=False,
     )
 
     assert segment.video_enabled is False
@@ -27,6 +28,8 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.audio_volume == 2.0
     assert segment.audio_pan == -1.0
     assert segment.audio_normalize is True
+    assert segment.audio_channel_1_enabled is True
+    assert segment.audio_channel_2_enabled is False
 
 
 def test_caption_style_clamps_unsafe_values() -> None:

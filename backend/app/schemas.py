@@ -98,6 +98,8 @@ class HighlightSegment(BaseModel):
     audio_pan: float = 0.0
     audio_normalize: bool = False
     audio_linked: bool = True
+    audio_channel_1_enabled: bool = True
+    audio_channel_2_enabled: bool = True
     playback_speed: float = 1.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0

@@ -163,6 +163,12 @@ def refine_highlights_with_hybrid_cut(
                     "color_saturation": float(highlight.get("color_saturation", 1.0)),
                     "audio_pan": float(highlight.get("audio_pan", 0.0)),
                     "audio_normalize": bool(highlight.get("audio_normalize", False)),
+                    "audio_channel_1_enabled": bool(
+                        highlight.get("audio_channel_1_enabled", True)
+                    ),
+                    "audio_channel_2_enabled": bool(
+                        highlight.get("audio_channel_2_enabled", True)
+                    ),
                     "score": float(highlight.get("score", 0.0)),
                     "tags": list(highlight.get("tags", [])),
                 }
