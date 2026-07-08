@@ -876,6 +876,19 @@ class _QualityReviewPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed:
+                      controller.segments.isEmpty ||
+                          (controller.renderSafetyBlockCount == 0 &&
+                              controller.renderSafetyWarnCount == 0)
+                      ? null
+                      : context
+                            .read<EditorController>()
+                            .applyRenderSafetyAutoRepair,
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 17),
+                  label: const Text('Make Safe'),
+                ),
+                const SizedBox(height: 8),
                 for (final item in visibleSafety) _SafetyRow(item: item),
                 if (safety.length > visibleSafety.length)
                   Padding(

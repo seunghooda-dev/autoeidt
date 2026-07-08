@@ -548,6 +548,47 @@ void main() {
     },
   );
 
+  test('render safety auto repair fixes mechanical export blockers', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..jobId = 'job-2'
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 10.4,
+          reason: '검증된 짧은 설명',
+          script: '출처가 확인된 짧은 설명입니다',
+          videoEnabled: false,
+          audioStart: 12,
+          audioEnd: 11,
+          audioMuted: true,
+          videoFadeIn: 2,
+          videoFadeOut: 2,
+          audioFadeIn: 2,
+          audioFadeOut: 2,
+        ),
+      ];
+
+    expect(controller.renderSafetyBlockCount, greaterThan(0));
+    expect(controller.canRender, isFalse);
+
+    controller.applyRenderSafetyAutoRepair();
+
+    expect(controller.renderSafetyBlockCount, 0);
+    expect(controller.canRender, isTrue);
+    expect(controller.segments.first.videoEnabled, isTrue);
+    expect(controller.segments.first.audioMuted, isFalse);
+    expect(controller.segments.first.hasActiveAudioChannel, isTrue);
+    expect(controller.segments.first.audioNormalize, isTrue);
+    expect(controller.segments.first.duration, greaterThanOrEqualTo(2.0));
+    expect(
+      controller.segments.first.videoFadeIn +
+          controller.segments.first.videoFadeOut,
+      lessThan(controller.segments.first.duration),
+    );
+  });
+
   test('multi shorts candidates can be built edited and selected', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 1800

@@ -1902,6 +1902,63 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyRenderSafetyAutoRepair() {
+    if (segments.isEmpty) {
+      return;
+    }
+    var applied = false;
+    var workingSegments = List<HighlightSegment>.of(segments);
+    for (var pass = 0; pass < 3; pass++) {
+      var changedThisPass = false;
+      final nextSegments = <HighlightSegment>[];
+      for (final segment in workingSegments) {
+        final repaired = _repairSegmentForRenderSafety(segment);
+        nextSegments.add(repaired.$1);
+        if (repaired.$2) {
+          changedThisPass = true;
+          applied = true;
+        }
+      }
+      workingSegments = _reorderSegments(nextSegments);
+      if (!changedThisPass) {
+        break;
+      }
+    }
+
+    final remainingBlocks = _buildRenderSafetyChecklist(
+      workingSegments,
+      aspectRatio: exportAspectRatio,
+      requireCaptions: includeCaptions,
+    ).where((item) => item.status == EditorialCheckStatus.block).toList();
+    RenderSafetyItem? firstManualBlock;
+    for (final block in remainingBlocks) {
+      if (block.segmentOrder != null) {
+        firstManualBlock = block;
+        break;
+      }
+    }
+
+    if (!applied && remainingBlocks.isEmpty) {
+      return;
+    }
+    if (applied) {
+      _commitHistory();
+      segments = workingSegments;
+      renderUrl = null;
+    }
+    if (firstManualBlock?.segmentOrder != null) {
+      selectedSegmentOrder = firstManualBlock!.segmentOrder;
+    } else if (segments.isNotEmpty) {
+      selectedSegmentOrder = (selectedSegmentOrder ?? segments.first.order)
+          .clamp(1, segments.length)
+          .toInt();
+    }
+    errorMessage = remainingBlocks.isEmpty
+        ? null
+        : '자동 수리 후에도 수동 검수 필요: ${remainingBlocks.first.label} · ${remainingBlocks.first.detail}';
+    notifyListeners();
+  }
+
   void buildMultiShortsCandidates({
     int maxCandidates = 6,
     double minSeconds = 120,
@@ -3631,6 +3688,104 @@ class EditorController extends ChangeNotifier {
       return a.segmentOrder.compareTo(b.segmentOrder);
     });
     return output;
+  }
+
+  (HighlightSegment, bool) _repairSegmentForRenderSafety(
+    HighlightSegment segment,
+  ) {
+    var next = segment;
+    var changed = false;
+
+    var start = _snapToFrame(_clampProjectTime(next.start));
+    var end = _snapToFrame(_clampProjectTime(next.end));
+    if (end <= start) {
+      end = _snapToFrame(_clampProjectTime(start + 2.0));
+      if (end <= start && duration > 0) {
+        start = _snapToFrame(_clampProjectTime(math.max(0, duration - 2.0)));
+        end = _snapToFrame(_clampProjectTime(duration));
+      }
+    }
+    if (start != next.start || end != next.end) {
+      next = next.copyWith(
+        start: start,
+        end: end,
+        audioStart: next.audioLinked ? start : next.audioStart,
+        audioEnd: next.audioLinked ? end : next.audioEnd,
+      );
+      changed = true;
+    }
+
+    if (next.duration < 2.0) {
+      next = _padSegmentForAutoFix(next);
+      changed = true;
+    }
+
+    if (!next.videoEnabled) {
+      next = next.copyWith(videoEnabled: true);
+      changed = true;
+    }
+
+    if (next.playbackSpeed <= 0) {
+      next = next.copyWith(playbackSpeed: 1.0);
+      changed = true;
+    }
+
+    if (next.effectiveAudioEnd <= next.effectiveAudioStart ||
+        next.audioMuted ||
+        !next.hasActiveAudioChannel ||
+        next.audioVolume <= 0.01) {
+      next = next.copyWith(
+        audioStart: next.start,
+        audioEnd: next.end,
+        audioLinked: true,
+        audioMuted: false,
+        audioChannel1Enabled: true,
+        audioChannel2Enabled: true,
+        audioNormalize: true,
+        audioPan: 0,
+        audioVolume: 1.0,
+      );
+      changed = true;
+    } else if (!next.audioNormalize ||
+        next.audioPan.abs() > 0.001 ||
+        next.audioVolume < 0.85 ||
+        next.audioVolume > 1.15) {
+      next = next.copyWith(
+        audioNormalize: true,
+        audioPan: 0,
+        audioVolume: next.audioVolume.clamp(0.85, 1.15).toDouble(),
+      );
+      changed = true;
+    }
+
+    final maxVideoFade = (next.duration / 3).clamp(0.04, 0.18).toDouble();
+    if (next.videoFadeIn + next.videoFadeOut >= next.duration) {
+      next = next.copyWith(
+        videoFadeIn: math.min(next.videoFadeIn, maxVideoFade),
+        videoFadeOut: math.min(next.videoFadeOut, maxVideoFade),
+      );
+      changed = true;
+    } else if (next.videoFadeIn == 0 && next.videoFadeOut == 0) {
+      next = next.copyWith(videoFadeIn: 0.08, videoFadeOut: 0.12);
+      changed = true;
+    }
+
+    final maxAudioFade = (next.audioDuration / 3).clamp(0.04, 0.18).toDouble();
+    if (next.audioFadeIn + next.audioFadeOut >= next.audioDuration) {
+      next = next.copyWith(
+        audioFadeIn: math.min(next.audioFadeIn, maxAudioFade),
+        audioFadeOut: math.min(next.audioFadeOut, maxAudioFade),
+      );
+      changed = true;
+    } else if (next.audioFadeIn == 0 && next.audioFadeOut == 0) {
+      next = next.copyWith(audioFadeIn: 0.08, audioFadeOut: 0.16);
+      changed = true;
+    }
+
+    if (!changed) {
+      return (segment, false);
+    }
+    return (_directorSegment(_normalizeSegmentAudio(next)), true);
   }
 
   HighlightSegment? _applyAutoFixToSegment(
