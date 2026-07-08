@@ -3430,6 +3430,11 @@ class EditorController extends ChangeNotifier {
       candidateSegments,
       candidate.strategyKind,
     );
+    final storyIssues = _shortsStoryIssues(
+      candidateSegments,
+      candidate.strategyKind,
+      duration: duration,
+    );
     final completionScore = _shortsCompletionScore(
       candidateSegments,
       candidate.strategyKind,
@@ -3478,6 +3483,7 @@ class EditorController extends ChangeNotifier {
         captionScore: captionScore,
         storyScore: storyScore,
         completionScore: completionScore,
+        storyIssues: storyIssues,
       ),
       storyFlow: _shortsStoryFlow(candidateSegments, candidate.strategyKind),
       storyScore: storyScore,
@@ -3616,6 +3622,79 @@ class EditorController extends ChangeNotifier {
 
   int _shortsOfflineReviewCount(List<HighlightSegment> input) {
     return input.where(_isOfflineReviewSegment).length;
+  }
+
+  List<String> _shortsStoryIssues(
+    List<HighlightSegment> input,
+    String strategyKind, {
+    required double duration,
+  }) {
+    if (input.isEmpty) {
+      return const ['No story'];
+    }
+    final roles = [
+      for (final segment in input) _shortsStoryRole(segment, strategyKind),
+    ];
+    final tagText = input
+        .expand((segment) => segment.tags)
+        .join(' ')
+        .toLowerCase();
+    final scriptText = input
+        .map((segment) => '${segment.reason} ${segment.script}')
+        .join(' ')
+        .toLowerCase();
+    final hasHook =
+        roles.first == 'hook' ||
+        roles.contains('hook') ||
+        _containsAny(scriptText, const ['결과', '핵심', '문제', '왜', '충격']);
+    final hasEvidence =
+        roles.contains('evidence') ||
+        roles.contains('risk') ||
+        tagText.contains('근거') ||
+        tagText.contains('검증팩트') ||
+        tagText.contains('출처확인') ||
+        _containsAny(scriptText, const ['공식', '출처', '확인', '발표', '보고서']);
+    final hasContext =
+        roles.contains('context') ||
+        tagText.contains('문제해결') ||
+        tagText.contains('구체성') ||
+        _containsAny(scriptText, const ['원인', '이유', '방법', '차이']);
+    final hasImpact =
+        roles.contains('impact') ||
+        tagText.contains('영향') ||
+        _containsAny(scriptText, const ['영향', '피해', '우려', '시민', '주민']);
+    final hasEnding =
+        roles.contains('resolution') ||
+        roles.contains('close') ||
+        tagText.contains('대응') ||
+        _containsAny(scriptText, const ['대응', '결론', '다음', '앞으로']);
+    final issues = <String>[];
+    if (strategyKind == 'risk' && !roles.contains('risk')) {
+      issues.add('Missing risk');
+    } else if (strategyKind != 'risk' && !hasHook) {
+      issues.add('Missing hook');
+    }
+    if (!hasEvidence && !hasContext) {
+      issues.add('Missing evidence');
+    }
+    if (duration >= 90 && !hasImpact && !hasEnding) {
+      issues.add('Missing impact');
+    }
+    if (duration >= 90 &&
+        !const {'impact', 'resolution', 'close'}.contains(roles.last)) {
+      issues.add('Weak ending');
+    }
+    for (var index = 1; index < roles.length; index++) {
+      if (_shortsRoleRank(roles[index]) < _shortsRoleRank(roles[index - 1])) {
+        issues.add('Story order');
+        break;
+      }
+    }
+    if (roles.length > 1 &&
+        roles.take(roles.length - 1).any((role) => role == 'close')) {
+      issues.add('Early CTA');
+    }
+    return issues;
   }
 
   List<RenderSafetyItem> _buildRenderSafetyChecklist(
@@ -3977,6 +4056,7 @@ class EditorController extends ChangeNotifier {
     required double captionScore,
     required double storyScore,
     required double completionScore,
+    required List<String> storyIssues,
   }) {
     final issues = <String>[];
     if (duration < 90) {
@@ -3993,6 +4073,7 @@ class EditorController extends ChangeNotifier {
     if (hookScore < 50) {
       issues.add('Weak hook');
     }
+    issues.addAll(storyIssues);
     if (completionScore < 55) {
       issues.add('Incomplete');
     }
@@ -6337,12 +6418,25 @@ class ShortsCandidate {
       issues.contains('Risk review') ||
       issues.contains('Offline review');
 
+  bool get hasBlockingStoryIssue => issues.any(
+    const {
+      'Missing risk',
+      'Missing hook',
+      'Missing evidence',
+      'Missing impact',
+      'Weak ending',
+      'Story order',
+      'Early CTA',
+    }.contains,
+  );
+
   bool get isPublishReady =>
       qualityScore >= 70 &&
       storyScore >= 58 &&
       hookScore >= 50 &&
       completionScore >= 55 &&
       !hasSeriousReviewIssue &&
+      !hasBlockingStoryIssue &&
       !issues.contains('Story flow') &&
       !issues.contains('Weak hook') &&
       !issues.contains('Incomplete') &&

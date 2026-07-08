@@ -29,6 +29,7 @@ void main() {
           storyFlow: ['Hook', 'Evidence'],
           storyScore: 72,
           strengths: ['Story'],
+          issues: ['Missing impact'],
         ),
       ]
       ..selectedShortsId = 1;
@@ -57,5 +58,6 @@ void main() {
     expect(find.text('Evidence'), findsOneWidget);
     expect(find.text('Impact'), findsOneWidget);
     expect(find.text('Resolution'), findsOneWidget);
+    expect(find.text('Missing impact'), findsWidgets);
   });
 }

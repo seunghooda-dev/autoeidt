@@ -1935,6 +1935,50 @@ void main() {
     );
   });
 
+  test(
+    'shorts diagnostics block publish ready state when evidence is missing',
+    () {
+      final controller = EditorController(autoStartEngine: false)
+        ..duration = 240
+        ..segments = const [
+          HighlightSegment(
+            order: 1,
+            start: 0,
+            end: 52,
+            reason: '결과부터 보는 핵심 문제',
+            script: '오늘 핵심 문제를 먼저 보여드립니다',
+            score: 9,
+            tags: ['Story:Hook', '유지율'],
+            audioNormalize: true,
+          ),
+          HighlightSegment(
+            order: 2,
+            start: 60,
+            end: 118,
+            reason: '시청자 행동 유도',
+            script: '이 내용을 기억하고 다음 편도 봐주세요',
+            score: 8,
+            tags: ['Story:Close', 'CTA'],
+            audioNormalize: true,
+          ),
+        ];
+
+      controller.buildMultiShortsCandidates(
+        maxCandidates: 2,
+        minSeconds: 90,
+        maxSeconds: 130,
+      );
+
+      final missingEvidence = controller.shortsCandidates.firstWhere(
+        (candidate) => candidate.issues.contains('Missing evidence'),
+      );
+
+      expect(missingEvidence.hasBlockingStoryIssue, isTrue);
+      expect(missingEvidence.isPublishReady, isFalse);
+      expect(missingEvidence.readinessDetail, 'Missing evidence');
+    },
+  );
+
   test('backend story arc tags drive shorts flow scoring', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 900
