@@ -2630,8 +2630,15 @@ class EditorController extends ChangeNotifier {
   String _shortsStoryRole(HighlightSegment segment, String strategyKind) {
     final text =
         '${segment.reason} ${segment.script} ${segment.tags.join(' ')}';
+    final explicitRole = _explicitShortsStoryRole(segment);
+    if (explicitRole == 'risk') {
+      return strategyKind == 'risk' ? 'risk' : 'evidence';
+    }
     if (_segmentHasRiskSignal(segment)) {
       return strategyKind == 'risk' ? 'risk' : 'evidence';
+    }
+    if (explicitRole != null) {
+      return explicitRole;
     }
     if (_containsAny(text, const ['결과', '핵심', '충격', '문제', '후킹', '유지율'])) {
       return 'hook';
@@ -2644,8 +2651,12 @@ class EditorController extends ChangeNotifier {
         _containsAny(text, const ['방법', '이유', '원인', '차이', '비교', '수치'])) {
       return 'context';
     }
-    if (_segmentHasAnyTag(segment, const {'영향', '대응'}) ||
-        _containsAny(text, const ['영향', '대응', '결론', '그래서', '앞으로'])) {
+    if (_segmentHasAnyTag(segment, const {'대응'}) ||
+        _containsAny(text, const ['대응', '조치', '대책', '결론', '앞으로'])) {
+      return 'resolution';
+    }
+    if (_segmentHasAnyTag(segment, const {'영향'}) ||
+        _containsAny(text, const ['영향', '피해', '우려', '시민', '주민'])) {
       return 'impact';
     }
     if (_segmentHasAnyTag(segment, const {'CTA'})) {
@@ -2654,13 +2665,36 @@ class EditorController extends ChangeNotifier {
     return strategyKind == 'hook' ? 'context' : 'evidence';
   }
 
+  String? _explicitShortsStoryRole(HighlightSegment segment) {
+    for (final tag in segment.tags) {
+      switch (tag) {
+        case 'Story:Hook':
+          return 'hook';
+        case 'Story:Risk':
+          return 'risk';
+        case 'Story:Context':
+          return 'context';
+        case 'Story:Evidence':
+          return 'evidence';
+        case 'Story:Impact':
+          return 'impact';
+        case 'Story:Resolution':
+          return 'resolution';
+        case 'Story:Close':
+          return 'close';
+      }
+    }
+    return null;
+  }
+
   int _shortsRoleRank(String role) {
     return switch (role) {
       'hook' => 0,
       'risk' => 1,
+      'context' => 1,
       'evidence' => 2,
-      'context' => 3,
-      'impact' => 4,
+      'impact' => 3,
+      'resolution' => 4,
       'close' => 5,
       _ => 3,
     };
@@ -2679,6 +2713,7 @@ class EditorController extends ChangeNotifier {
       'evidence' => (0.50, 0.55),
       'context' => (0.45, 0.60),
       'impact' => (0.35, isLast ? 1.10 : 0.70),
+      'resolution' => (0.35, isLast ? 1.20 : 0.80),
       'close' => (0.30, 1.00),
       _ => (0.45, 0.55),
     };
@@ -2692,6 +2727,7 @@ class EditorController extends ChangeNotifier {
       'evidence' => 'Story:Evidence',
       'context' => 'Story:Context',
       'impact' => 'Story:Impact',
+      'resolution' => 'Story:Resolution',
       'close' => 'Story:Close',
       _ => 'Story:Context',
     };
@@ -2718,6 +2754,7 @@ class EditorController extends ChangeNotifier {
       'evidence' => 'Evidence',
       'context' => 'Context',
       'impact' => 'Impact',
+      'resolution' => 'Resolution',
       'close' => 'Close',
       _ => 'Context',
     };
@@ -2741,8 +2778,17 @@ class EditorController extends ChangeNotifier {
     if (roles.contains('context')) {
       score += 10;
     }
-    if (roles.contains('impact') || roles.contains('close')) {
+    if (roles.contains('impact')) {
       score += 8;
+    }
+    if (roles.contains('resolution') || roles.contains('close')) {
+      score += 8;
+    }
+    if (roles.contains('hook') &&
+        roles.contains('evidence') &&
+        roles.contains('impact') &&
+        roles.contains('resolution')) {
+      score += 10;
     }
     for (var index = 1; index < roles.length; index++) {
       if (_shortsRoleRank(roles[index]) < _shortsRoleRank(roles[index - 1])) {
@@ -2881,6 +2927,11 @@ class EditorController extends ChangeNotifier {
       '대응',
       '발언',
       '유지율',
+      'Story:Hook',
+      'Story:Context',
+      'Story:Evidence',
+      'Story:Impact',
+      'Story:Resolution',
     };
     final strongCount = tags.where(strongSignals.contains).length;
     final density = input.isEmpty ? 0.0 : tags.length / input.length;
@@ -3278,14 +3329,14 @@ class EditorController extends ChangeNotifier {
     if (signalScore >= 72) {
       strengths.add('Signals');
     }
+    if (storyScore >= 78) {
+      strengths.add('Story');
+    }
     if (audioScore >= 90) {
       strengths.add('Audio');
     }
     if (captionScore >= 80) {
       strengths.add('Captions');
-    }
-    if (storyScore >= 78) {
-      strengths.add('Story');
     }
     return strengths.take(4).toList();
   }

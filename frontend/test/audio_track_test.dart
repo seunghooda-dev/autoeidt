@@ -1338,6 +1338,79 @@ void main() {
       isFalse,
     );
   });
+
+  test('backend story arc tags drive shorts flow scoring', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 900
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 30,
+          reason: 'hook',
+          score: 8,
+          tags: ['Story:Hook'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 36,
+          end: 66,
+          reason: 'context',
+          score: 7,
+          tags: ['Story:Context'],
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 72,
+          end: 102,
+          reason: 'evidence',
+          score: 8,
+          tags: ['Story:Evidence'],
+        ),
+        HighlightSegment(
+          order: 4,
+          start: 108,
+          end: 138,
+          reason: 'impact',
+          score: 7,
+          tags: ['Story:Impact'],
+        ),
+        HighlightSegment(
+          order: 5,
+          start: 144,
+          end: 174,
+          reason: 'resolution',
+          score: 7,
+          tags: ['Story:Resolution'],
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 5,
+      minSeconds: 150,
+      maxSeconds: 180,
+    );
+
+    final storyCandidate = controller.shortsCandidates.firstWhere(
+      (candidate) => const [
+        'Hook',
+        'Context',
+        'Evidence',
+        'Impact',
+        'Resolution',
+      ].every(candidate.storyFlow.contains),
+    );
+    expect(storyCandidate.storyFlow, [
+      'Hook',
+      'Context',
+      'Evidence',
+      'Impact',
+      'Resolution',
+    ]);
+    expect(storyCandidate.storyScore, 100);
+    expect(storyCandidate.strengths, contains('Story'));
+  });
 }
 
 class _RecordingApiClient extends ApiClient {
