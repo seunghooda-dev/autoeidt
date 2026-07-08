@@ -367,6 +367,7 @@ class BatchRenderItem(BaseModel):
     label: str = "shorts"
     segments: list[HighlightSegment]
     output_name: str = "shorts.mp4"
+    aspect_ratio: str | None = None
 
 
 class BatchRenderItemResult(BaseModel):
@@ -375,6 +376,7 @@ class BatchRenderItemResult(BaseModel):
     url: str = ""
     output_name: str = ""
     kind: str = "video"
+    aspect_ratio: str = ""
     duration_seconds: float = 0.0
     size_bytes: int = 0
     warnings: list[str] = Field(default_factory=list)

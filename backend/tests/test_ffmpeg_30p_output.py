@@ -110,3 +110,35 @@ def test_preview_proxy_forces_30p_non_drop_output(
     assert "fps=30" in vf_filter
     assert _command_value(command, "-r") == "30"
     assert _command_value(command, "-write_tmcd") == "0"
+
+
+def test_square_render_profile_outputs_30p_square_frame(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 2)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [{"order": 1, "start": 10.0, "end": 12.0, "reason": "test"}],
+        tmp_path / "square.mp4",
+        aspect_ratio="1:1",
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+
+    assert "scale=1080:1080" in filter_complex
+    assert "pad=1080:1080" in filter_complex
+    assert "fps=30" in filter_complex

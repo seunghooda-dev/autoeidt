@@ -727,13 +727,15 @@ class _CommandBar extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             SegmentedButton<String>(
+              multiSelectionEnabled: true,
               segments: const [
                 ButtonSegment(value: '16:9', label: Text('16:9')),
                 ButtonSegment(value: '9:16', label: Text('9:16')),
+                ButtonSegment(value: '1:1', label: Text('1:1')),
               ],
-              selected: {controller.exportAspectRatio},
+              selected: controller.selectedExportProfileSet,
               onSelectionChanged: controller.hasTimeline
-                  ? (value) => editor.setExportAspectRatio(value.first)
+                  ? editor.setExportProfiles
                   : null,
             ),
             const SizedBox(width: 8),
@@ -750,7 +752,11 @@ class _CommandBar extends StatelessWidget {
               onPressed: controller.canRender ? editor.requestRender : null,
               icon: const Icon(Icons.file_upload_outlined),
               label: Text(
-                controller.renderUrl == null ? 'Export' : 'Re-export',
+                controller.hasMultiFormatExport
+                    ? 'Export All'
+                    : controller.renderUrl == null
+                    ? 'Export'
+                    : 'Re-export',
               ),
             ),
             const SizedBox(width: 8),

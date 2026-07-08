@@ -230,6 +230,9 @@ class _RenderOutputRow extends StatelessWidget {
 
   String get _metadataText {
     final parts = <String>[];
+    if (output.aspectRatio.isNotEmpty) {
+      parts.add(output.aspectRatio);
+    }
     if (output.durationSeconds > 0) {
       parts.add(formatSeconds(output.durationSeconds));
     }

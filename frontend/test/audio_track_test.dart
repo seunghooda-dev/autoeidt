@@ -246,9 +246,8 @@ void main() {
           ..markOut = 60;
 
     controller.updateSegment(controller.segments.first.copyWith(end: 75));
-    await Future<void>.delayed(const Duration(milliseconds: 60));
 
-    final snapshot = await service.readSnapshot();
+    final snapshot = await _waitForRecoverySnapshot(service);
     expect(snapshot, isNotNull);
     expect(snapshot!.project.name, 'Autosaved Timeline');
     expect(snapshot.project.originalFilename, 'source.mp4');
@@ -1695,6 +1694,57 @@ void main() {
     },
   );
 
+  test(
+    'multi format export sends one batch item per selected profile',
+    () async {
+      final apiClient = _RecordingApiClient();
+      final controller =
+          EditorController(apiClient: apiClient, autoStartEngine: false)
+            ..jobId = 'job-multi'
+            ..duration = 120
+            ..includeCaptions = true
+            ..captions = const [
+              CaptionSegment(order: 1, start: 10, end: 40, text: 'caption'),
+            ]
+            ..segments = const [
+              HighlightSegment(
+                order: 1,
+                start: 10,
+                end: 40,
+                reason: '검증된 설명',
+                script: '공식 출처가 확인된 설명입니다',
+                audioNormalize: true,
+              ),
+            ];
+
+      controller.setExportProfiles({'16:9', '9:16', '1:1'});
+      expect(controller.hasMultiFormatExport, isTrue);
+      expect(controller.exportProfilesLabel, contains('YouTube 16:9'));
+      expect(controller.exportProfilesLabel, contains('Shorts 9:16'));
+      expect(controller.exportProfilesLabel, contains('Square 1:1'));
+
+      await controller.requestRender();
+
+      expect(apiClient.renderRequested, isFalse);
+      expect(apiClient.batchRenderRequested, isTrue);
+      expect(apiClient.batchRenderItems, hasLength(3));
+      expect(
+        apiClient.batchRenderItems.map((item) => item['aspect_ratio']).toList(),
+        ['16:9', '9:16', '1:1'],
+      );
+      expect(
+        apiClient.batchRenderItems.map((item) => item['output_name']).toList(),
+        [
+          'youtube_highlights_16x9.mp4',
+          'youtube_shorts_9x16.mp4',
+          'social_square_1x1.mp4',
+        ],
+      );
+      await Future<void>.delayed(Duration.zero);
+      controller.dispose();
+    },
+  );
+
   test('offline fallback review clips are surfaced as preflight warnings', () {
     final controller = EditorController(autoStartEngine: false)
       ..jobId = 'job-offline'
@@ -2038,6 +2088,7 @@ void main() {
                 label: 'Shorts 01',
                 outputName: 'shorts_01.mp4',
                 url: '/api/jobs/job-4/download/shorts_01.mp4',
+                aspectRatio: '9:16',
                 path: 'C:/AutoEdit/outputs/shorts_01.mp4',
                 durationSeconds: 45.5,
                 sizeBytes: 123456,
@@ -2046,6 +2097,7 @@ void main() {
                 label: 'Shorts 02',
                 outputName: 'shorts_02.mp4',
                 url: '/api/jobs/job-4/download/shorts_02.mp4',
+                aspectRatio: '1:1',
                 path: 'C:/AutoEdit/outputs/shorts_02.mp4',
                 durationSeconds: 61.2,
                 sizeBytes: 234567,
@@ -2076,6 +2128,7 @@ void main() {
 
     expect(outputs, hasLength(4));
     expect(outputs.first.outputName, 'shorts_01.mp4');
+    expect(outputs.first.aspectRatio, '9:16');
     expect(
       outputs.first.url,
       'http://127.0.0.1:1/api/jobs/job-4/download/shorts_01.mp4',
@@ -2085,6 +2138,7 @@ void main() {
       'http://127.0.0.1:1/api/jobs/job-4/download/shorts_02.mp4',
     );
     expect(outputs[1].path, 'C:/AutoEdit/outputs/shorts_02.mp4');
+    expect(outputs[1].aspectRatio, '1:1');
     expect(outputs[1].durationSeconds, 61.2);
     expect(outputs[1].sizeBytes, 234567);
     expect(outputs[1].warnings.single, contains('파일 크기'));
@@ -2582,6 +2636,21 @@ double _candidateTemporalOverlapRatio(
     }
   }
   return overlap / denominator;
+}
+
+Future<ProjectRecoverySnapshot?> _waitForRecoverySnapshot(
+  ProjectRecoveryService service,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  ProjectRecoverySnapshot? snapshot;
+  do {
+    snapshot = await service.readSnapshot();
+    if (snapshot != null) {
+      return snapshot;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  } while (DateTime.now().isBefore(deadline));
+  return snapshot;
 }
 
 class _RecordingApiClient extends ApiClient {

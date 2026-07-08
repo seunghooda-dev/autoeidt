@@ -407,6 +407,7 @@ def batch_render_job(
             "label": item.label,
             "segments": [segment.model_dump() for segment in item.segments],
             "output_name": safe_filename(item.output_name or "shorts.mp4"),
+            "aspect_ratio": item.aspect_ratio,
         }
         for item in payload.items
     ]

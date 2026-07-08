@@ -124,6 +124,9 @@ def _write_batch_render_manifest(
 
     outputs: list[dict[str, Any]] = []
     for item_index, item in enumerate(rendered_items, start=1):
+        aspect_ratio = str(
+            item.get("aspect_ratio") or options.get("aspect_ratio") or "9:16"
+        )
         outputs.append(
             {
                 "index": item_index,
@@ -131,6 +134,7 @@ def _write_batch_render_manifest(
                 "output_name": item.get("output_name") or "",
                 "path": item.get("path") or "",
                 "url": item.get("url") or "",
+                "aspect_ratio": aspect_ratio,
                 "duration_seconds": item.get("duration_seconds") or 0.0,
                 "duration_timecode": _seconds_to_30p_timecode(
                     float(item.get("duration_seconds") or 0)
@@ -179,6 +183,14 @@ def _write_batch_render_manifest(
             }
         )
 
+    aspect_ratios = sorted(
+        {
+            str(
+                item.get("aspect_ratio") or options.get("aspect_ratio") or "9:16"
+            )
+            for item in rendered_items
+        }
+    )
     manifest = {
         "job_id": job_id,
         "generated_at": generated_at,
@@ -187,7 +199,8 @@ def _write_batch_render_manifest(
         "timeline_frame_rate": TIMECODE_FRAME_RATE,
         "timeline_timecode_mode": "non_drop",
         "timeline_timebase": "30p NDF",
-        "aspect_ratio": str(options.get("aspect_ratio") or "9:16"),
+        "aspect_ratio": aspect_ratios[0] if len(aspect_ratios) == 1 else "mixed",
+        "aspect_ratios": aspect_ratios,
         "include_captions": bool(options.get("include_captions", True)),
         "output_count": len(rendered_items),
         "total_duration_seconds": total_duration,
@@ -207,6 +220,7 @@ def _write_batch_render_manifest(
                 "item_index",
                 "label",
                 "output_name",
+                "aspect_ratio",
                 "path",
                 "url",
                 "duration_timecode",
@@ -234,6 +248,7 @@ def _write_batch_render_manifest(
                         output["index"],
                         output["label"],
                         output["output_name"],
+                        output["aspect_ratio"],
                         output["path"],
                         output["url"],
                         output["duration_timecode"],
@@ -935,20 +950,24 @@ def render_batch_video_job(
                 reserved_output_names,
             )
             progress = 10 + int(index / total * 80)
+            item_label = str(item.get("label") or f"Output {index}")
             _set_task_state(
                 task,
                 job_id,
                 JobStatus.rendering,
                 "batch_rendering",
                 progress,
-                f"쇼츠 {index}/{total} 렌더링 중",
+                f"{item_label} {index}/{total} 렌더링 중",
                 batch_render_items=rendered_items,
+            )
+            aspect_ratio = str(
+                item.get("aspect_ratio") or options.get("aspect_ratio") or "9:16"
             )
             rendered_path = render_highlights(
                 video_path,
                 normalized,
                 output_path,
-                aspect_ratio=str(options.get("aspect_ratio") or "9:16"),
+                aspect_ratio=aspect_ratio,
                 captions=captions,
                 caption_style=caption_style,
             )
@@ -965,6 +984,7 @@ def render_batch_video_job(
                     "url": f"/api/jobs/{job_id}/download/{rendered_path.name}",
                     "output_name": rendered_path.name,
                     "kind": "video",
+                    "aspect_ratio": aspect_ratio,
                     "duration_seconds": render_duration_seconds,
                     "size_bytes": render_size_bytes,
                     "warnings": render_warnings,

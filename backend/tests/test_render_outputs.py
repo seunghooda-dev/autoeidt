@@ -135,6 +135,7 @@ def test_batch_render_job_deduplicates_output_names(
 
     fake_store = FakeStore()
     rendered_names: list[str] = []
+    rendered_aspect_ratios: list[str] = []
 
     def fake_render_highlights(
         video_path: Path,
@@ -143,6 +144,7 @@ def test_batch_render_job_deduplicates_output_names(
         **kwargs,
     ) -> Path:
         rendered_names.append(output_path.name)
+        rendered_aspect_ratios.append(kwargs["aspect_ratio"])
         output_path.write_text(output_path.name, encoding="utf-8")
         return output_path
 
@@ -155,11 +157,13 @@ def test_batch_render_job_deduplicates_output_names(
             {
                 "label": "Shorts 01",
                 "output_name": "shorts.mp4",
+                "aspect_ratio": "16:9",
                 "segments": [{"order": 1, "start": 0, "end": 10, "reason": "a"}],
             },
             {
                 "label": "Shorts 02",
                 "output_name": "shorts.mp4",
+                "aspect_ratio": "9:16",
                 "segments": [
                     {
                         "order": 1,
@@ -175,9 +179,14 @@ def test_batch_render_job_deduplicates_output_names(
     )
 
     assert rendered_names == ["shorts.mp4", "shorts_002.mp4"]
+    assert rendered_aspect_ratios == ["16:9", "9:16"]
     assert [
         item["output_name"] for item in result["batch_render_items"]
     ] == rendered_names
+    assert [item["aspect_ratio"] for item in result["batch_render_items"]] == [
+        "16:9",
+        "9:16",
+    ]
     assert result["batch_render_items"][0]["duration_seconds"] == 10.0
     assert result["batch_render_items"][1]["duration_seconds"] == 5.0
     assert result["batch_render_items"][0]["size_bytes"] == len("shorts.mp4")
@@ -196,8 +205,11 @@ def test_batch_render_job_deduplicates_output_names(
     )
     assert manifest["timeline_frame_rate"] == 30.0
     assert manifest["timeline_timecode_mode"] == "non_drop"
+    assert manifest["aspect_ratio"] == "mixed"
+    assert manifest["aspect_ratios"] == ["16:9", "9:16"]
     assert manifest["output_count"] == 2
     assert manifest["total_duration_timecode"] == "00:00:15:00"
+    assert manifest["outputs"][0]["aspect_ratio"] == "16:9"
     assert manifest["outputs"][0]["duration_timecode"] == "00:00:10:00"
     assert manifest["outputs"][0]["segments"][0]["source_out_timecode"] == (
         "00:00:10:00"
@@ -205,5 +217,8 @@ def test_batch_render_job_deduplicates_output_names(
     csv_text = (fake_store.output / "render_manifest.csv").read_text(
         encoding="utf-8-sig"
     )
-    assert "item_index,label,output_name,path,url,duration_timecode" in csv_text
+    assert (
+        "item_index,label,output_name,aspect_ratio,path,url,duration_timecode"
+        in csv_text
+    )
     assert "Shorts 02" in csv_text

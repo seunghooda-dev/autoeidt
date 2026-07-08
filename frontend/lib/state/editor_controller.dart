@@ -80,6 +80,7 @@ class EditorController extends ChangeNotifier {
   bool includeCaptions = true;
   String captionStylePreset = 'news';
   String exportAspectRatio = '16:9';
+  List<String> selectedExportProfiles = ['16:9'];
   double timelineZoom = 1.0;
   double timelineTrackHeightScale = 1.0;
   bool timelineSnappingEnabled = true;
@@ -218,6 +219,7 @@ class EditorController extends ChangeNotifier {
                   ? _outputNameFromUrl(item.url)
                   : item.outputName,
               url: _apiClient.absoluteUrl(item.url),
+              aspectRatio: item.aspectRatio,
               path: item.path,
               durationSeconds: item.durationSeconds,
               sizeBytes: item.sizeBytes,
@@ -232,6 +234,7 @@ class EditorController extends ChangeNotifier {
                   : item.outputName,
               url: _apiClient.absoluteUrl(item.url),
               kind: item.kind,
+              aspectRatio: item.aspectRatio,
               path: item.path,
               durationSeconds: item.durationSeconds,
               sizeBytes: item.sizeBytes,
@@ -323,6 +326,15 @@ class EditorController extends ChangeNotifier {
       !isRendering &&
       job?.status != 'processing' &&
       job?.status != 'rendering';
+  Set<String> get selectedExportProfileSet => selectedExportProfiles.toSet();
+  bool get hasMultiFormatExport => selectedExportProfiles.length > 1;
+  String get exportProfilesLabel {
+    if (selectedExportProfiles.isEmpty) {
+      return 'No export profile';
+    }
+    return selectedExportProfiles.map(_exportProfileLabel).join(' + ');
+  }
+
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
   bool get hasRecoverableProject =>
@@ -987,11 +999,16 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> requestRender() async {
+    if (hasMultiFormatExport) {
+      await requestMultiFormatRender();
+      return;
+    }
+    final aspectRatio = selectedExportProfiles.isEmpty
+        ? exportAspectRatio
+        : selectedExportProfiles.first;
     await _requestRender(
-      aspectRatio: exportAspectRatio,
-      outputName: exportAspectRatio == '9:16'
-          ? 'youtube_shorts_highlights.mp4'
-          : 'youtube_highlights.mp4',
+      aspectRatio: aspectRatio,
+      outputName: _exportProfileOutputName(aspectRatio),
     );
   }
 
@@ -1011,6 +1028,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     exportAspectRatio = aspectRatio;
+    selectedExportProfiles = [aspectRatio];
     final repaired = _repairSegmentsForRenderSafety(segments);
     if (repaired.$2) {
       _commitHistory();
@@ -1047,6 +1065,62 @@ class EditorController extends ChangeNotifier {
     } catch (error) {
       isRendering = false;
       errorMessage = '렌더링 요청 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> requestMultiFormatRender() async {
+    final id = jobId;
+    if (id == null || segments.isEmpty || selectedExportProfiles.isEmpty) {
+      return;
+    }
+    final repaired = _repairSegmentsForRenderSafety(segments);
+    if (repaired.$2) {
+      _commitHistory();
+      segments = repaired.$1;
+      renderUrl = null;
+    }
+    for (final profile in selectedExportProfiles) {
+      final safetyBlocks = _buildRenderSafetyChecklist(
+        segments,
+        aspectRatio: profile,
+        requireCaptions: includeCaptions,
+      ).where((item) => item.status == EditorialCheckStatus.block).toList();
+      if (safetyBlocks.isNotEmpty) {
+        final firstBlock = safetyBlocks.first;
+        errorMessage =
+            '${_exportProfileLabel(profile)} 렌더 안전 검사 실패: ${firstBlock.label} · ${firstBlock.detail}';
+        notifyListeners();
+        return;
+      }
+    }
+
+    isRendering = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      await saveProjectToBackend(silent: true);
+      await _apiClient.requestBatchRender(
+        id,
+        [
+          for (final profile in selectedExportProfiles)
+            {
+              'label': _exportProfileLabel(profile),
+              'output_name': _exportProfileOutputName(profile),
+              'aspect_ratio': profile,
+              'segments': segments.map((segment) => segment.toJson()).toList(),
+            },
+        ],
+        captions: captions,
+        captionStyle: captionRenderStyle,
+        aspectRatio: selectedExportProfiles.first,
+        includeCaptions: includeCaptions,
+      );
+      _startPolling();
+    } catch (error) {
+      isRendering = false;
+      errorMessage = '멀티 포맷 렌더링 요청 실패: $error';
     }
     notifyListeners();
   }
@@ -4841,8 +4915,40 @@ class EditorController extends ChangeNotifier {
   void setExportAspectRatio(String value) {
     _commitHistory();
     exportAspectRatio = value;
+    selectedExportProfiles = [value];
     renderUrl = null;
     notifyListeners();
+  }
+
+  void setExportProfiles(Set<String> values) {
+    final ordered = [
+      for (final profile in const ['16:9', '9:16', '1:1'])
+        if (values.contains(profile)) profile,
+    ];
+    if (ordered.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    selectedExportProfiles = ordered;
+    exportAspectRatio = ordered.first;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  String _exportProfileLabel(String profile) {
+    return switch (profile) {
+      '9:16' => 'Shorts 9:16',
+      '1:1' => 'Square 1:1',
+      _ => 'YouTube 16:9',
+    };
+  }
+
+  String _exportProfileOutputName(String profile) {
+    return switch (profile) {
+      '9:16' => 'youtube_shorts_9x16.mp4',
+      '1:1' => 'social_square_1x1.mp4',
+      _ => 'youtube_highlights_16x9.mp4',
+    };
   }
 
   void zoomTimeline(double delta) {

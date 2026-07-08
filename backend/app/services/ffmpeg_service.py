@@ -891,6 +891,12 @@ def _render_reencode_with_video_args(
             "crop=1080:1920,setsar=1[framedv]"
         )
         video_chain = "[framedv]"
+    elif aspect_ratio == "1:1":
+        filter_complex += (
+            ";[basev]scale=1080:1080:force_original_aspect_ratio=decrease,"
+            "pad=1080:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[framedv]"
+        )
+        video_chain = "[framedv]"
     else:
         filter_complex += ";[basev]scale=1920:1080:force_original_aspect_ratio=decrease," \
             "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[framedv]"

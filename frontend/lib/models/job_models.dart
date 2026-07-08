@@ -231,6 +231,7 @@ class BatchRenderItemResult {
     required this.outputName,
     required this.url,
     this.kind = 'video',
+    this.aspectRatio = '',
     this.path = '',
     this.durationSeconds = 0,
     this.sizeBytes = 0,
@@ -241,6 +242,7 @@ class BatchRenderItemResult {
   final String outputName;
   final String url;
   final String kind;
+  final String aspectRatio;
   final String path;
   final double durationSeconds;
   final int sizeBytes;
@@ -254,6 +256,7 @@ class BatchRenderItemResult {
       outputName: json['output_name'] as String? ?? '',
       url: json['url'] as String? ?? '',
       kind: json['kind'] as String? ?? 'video',
+      aspectRatio: json['aspect_ratio'] as String? ?? '',
       path: json['path'] as String? ?? '',
       durationSeconds: (json['duration_seconds'] as num?)?.toDouble() ?? 0,
       sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
