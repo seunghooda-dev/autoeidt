@@ -153,6 +153,17 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
             "export_aspect_ratio": "9:16",
             "mark_in": 12.5,
             "mark_out": 58.0,
+            "shorts_candidates": [
+                {
+                    "id": 2,
+                    "label": "News 02",
+                    "reason": "strong news hook",
+                    "segments": [],
+                    "quality_score": 82.5,
+                    "selected": True,
+                }
+            ],
+            "selected_shorts_id": 2,
         },
     )
 
@@ -163,6 +174,8 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
     assert payload["export_aspect_ratio"] == "9:16"
     assert payload["mark_in"] == 12.5
     assert payload["mark_out"] == 58.0
+    assert payload["shorts_candidates"][0]["label"] == "News 02"
+    assert payload["selected_shorts_id"] == 2
 
     get_response = client.get("/api/jobs/job-1/project")
 
@@ -171,3 +184,5 @@ def test_project_endpoints_preserve_render_settings(monkeypatch) -> None:
     assert get_payload["include_captions"] is False
     assert get_payload["caption_style_preset"] == "shorts"
     assert get_payload["export_aspect_ratio"] == "9:16"
+    assert get_payload["shorts_candidates"][0]["quality_score"] == 82.5
+    assert get_payload["selected_shorts_id"] == 2

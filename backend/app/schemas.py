@@ -344,6 +344,8 @@ class ProjectState(BaseModel):
     segments: list[HighlightSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
+    shorts_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    selected_shorts_id: int | None = None
     include_captions: bool = True
     caption_style_preset: str = "news"
     export_aspect_ratio: str = "16:9"

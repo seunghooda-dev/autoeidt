@@ -92,6 +92,27 @@ void main() {
       exportAspectRatio: '9:16',
       markIn: 10.5,
       markOut: 88.0,
+      shortsCandidates: [
+        {
+          'id': 3,
+          'label': 'News 03',
+          'reason': 'stored candidate',
+          'segments': [
+            {
+              'order': 1,
+              'start': 12.0,
+              'end': 42.0,
+              'reason': 'hook',
+              'score': 8.0,
+              'tags': ['뉴스핵심'],
+            },
+          ],
+          'quality_score': 88.0,
+          'story_flow': ['Hook', 'Evidence'],
+          'selected': true,
+        },
+      ],
+      selectedShortsId: 3,
     );
 
     final restored = ProjectState.fromJson(project.toJson());
@@ -101,6 +122,9 @@ void main() {
     expect(restored.exportAspectRatio, '9:16');
     expect(restored.markIn, 10.5);
     expect(restored.markOut, 88.0);
+    expect(restored.shortsCandidates.single['label'], 'News 03');
+    expect(restored.shortsCandidates.single['quality_score'], 88.0);
+    expect(restored.selectedShortsId, 3);
   });
 
   test('editor project state captures current render settings', () {
@@ -110,7 +134,32 @@ void main() {
       ..captionStylePreset = 'shorts'
       ..exportAspectRatio = '9:16'
       ..markIn = 10.5
-      ..markOut = 88.0;
+      ..markOut = 88.0
+      ..shortsCandidates = const [
+        ShortsCandidate(
+          id: 4,
+          label: 'Hook 04',
+          reason: 'saved hook',
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 8,
+              end: 38,
+              reason: 'hook',
+              score: 8,
+              tags: ['후킹'],
+            ),
+          ],
+          strategyKind: 'hook',
+          strategyLabel: 'Hook',
+          qualityScore: 81,
+          qualityGrade: 'A',
+          storyFlow: ['Hook'],
+          storyScore: 70,
+          selected: true,
+        ),
+      ]
+      ..selectedShortsId = 4;
 
     final project = controller.projectState;
 
@@ -119,6 +168,50 @@ void main() {
     expect(project.exportAspectRatio, '9:16');
     expect(project.markIn, 10.5);
     expect(project.markOut, 88.0);
+    expect(project.shortsCandidates.single['id'], 4);
+    expect(project.shortsCandidates.single['strategy_kind'], 'hook');
+    expect(project.selectedShortsId, 4);
+  });
+
+  test('backend project save includes shorts candidates', () async {
+    final apiClient = _RecordingApiClient();
+    final controller =
+        EditorController(apiClient: apiClient, autoStartEngine: false)
+          ..jobId = 'job-1'
+          ..duration = 120
+          ..shortsCandidates = const [
+            ShortsCandidate(
+              id: 7,
+              label: 'News 07',
+              reason: 'persist me',
+              segments: [
+                HighlightSegment(
+                  order: 1,
+                  start: 20,
+                  end: 80,
+                  reason: 'impact',
+                  score: 9,
+                  tags: ['뉴스핵심'],
+                ),
+              ],
+              strategyKind: 'news',
+              strategyLabel: 'News',
+              qualityScore: 86,
+              qualityGrade: 'A',
+              storyFlow: ['Hook', 'Impact'],
+              storyScore: 72,
+            ),
+          ]
+          ..selectedShortsId = 7;
+
+    await controller.saveProjectToBackend();
+
+    expect(apiClient.savedProjectJobId, 'job-1');
+    expect(apiClient.savedProject?.shortsCandidates.single['id'], 7);
+    expect(apiClient.savedProject?.shortsCandidates.single['label'], 'News 07');
+    expect(apiClient.savedProject?.selectedShortsId, 7);
+    expect(controller.shortsCandidates.single.label, 'News 07');
+    expect(controller.selectedShortsId, 7);
   });
 
   test('linked audio follows video trim', () {
@@ -1091,9 +1184,13 @@ class _RecordingApiClient extends ApiClient {
   bool batchRenderRequested = false;
   List<HighlightSegment> renderSegments = const [];
   List<Map<String, dynamic>> batchRenderItems = const [];
+  String? savedProjectJobId;
+  ProjectState? savedProject;
 
   @override
   Future<ProjectState> saveProject(String jobId, ProjectState project) async {
+    savedProjectJobId = jobId;
+    savedProject = project;
     return project;
   }
 

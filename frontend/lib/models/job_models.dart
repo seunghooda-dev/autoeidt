@@ -500,6 +500,8 @@ class ProjectState {
     required this.segments,
     required this.captions,
     required this.waveform,
+    this.shortsCandidates = const [],
+    this.selectedShortsId,
     this.includeCaptions = true,
     this.captionStylePreset = 'news',
     this.exportAspectRatio = '16:9',
@@ -516,6 +518,8 @@ class ProjectState {
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
   final List<double> waveform;
+  final List<Map<String, dynamic>> shortsCandidates;
+  final int? selectedShortsId;
   final bool includeCaptions;
   final String captionStylePreset;
   final String exportAspectRatio;
@@ -526,6 +530,8 @@ class ProjectState {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
+    final rawShortsCandidates =
+        json['shorts_candidates'] as List<dynamic>? ?? const [];
     return ProjectState(
       name: json['name'] as String? ?? 'AutoEdit Project',
       jobId: json['job_id'] as String?,
@@ -540,6 +546,11 @@ class ProjectState {
           .map((item) => CaptionSegment.fromJson(item as Map<String, dynamic>))
           .toList(),
       waveform: rawWaveform.map((item) => (item as num).toDouble()).toList(),
+      shortsCandidates: rawShortsCandidates
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(),
+      selectedShortsId: (json['selected_shorts_id'] as num?)?.toInt(),
       includeCaptions: json['include_captions'] as bool? ?? true,
       captionStylePreset: json['caption_style_preset'] as String? ?? 'news',
       exportAspectRatio: json['export_aspect_ratio'] as String? ?? '16:9',
@@ -557,6 +568,8 @@ class ProjectState {
       'segments': segments.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
+      'shorts_candidates': shortsCandidates,
+      if (selectedShortsId != null) 'selected_shorts_id': selectedShortsId,
       'include_captions': includeCaptions,
       'caption_style_preset': captionStylePreset,
       'export_aspect_ratio': exportAspectRatio,

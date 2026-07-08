@@ -57,6 +57,16 @@ def test_project_state_accepts_render_settings() -> None:
         export_aspect_ratio="9:16",
         mark_in=12.5,
         mark_out=58.0,
+        shorts_candidates=[
+            {
+                "id": 1,
+                "label": "Hook 01",
+                "reason": "fast hook",
+                "segments": [],
+                "quality_score": 76.0,
+            }
+        ],
+        selected_shorts_id=1,
     )
 
     assert project.include_captions is False
@@ -64,3 +74,5 @@ def test_project_state_accepts_render_settings() -> None:
     assert project.export_aspect_ratio == "9:16"
     assert project.mark_in == 12.5
     assert project.mark_out == 58.0
+    assert project.shorts_candidates[0]["label"] == "Hook 01"
+    assert project.selected_shorts_id == 1

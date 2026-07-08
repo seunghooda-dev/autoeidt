@@ -492,6 +492,8 @@ class EditorController extends ChangeNotifier {
       segments: segments,
       captions: captions,
       waveform: waveform,
+      shortsCandidates: _serializeShortsCandidates(shortsCandidates),
+      selectedShortsId: selectedShortsId,
       includeCaptions: includeCaptions,
       captionStylePreset: captionStylePreset,
       exportAspectRatio: exportAspectRatio,
@@ -4308,6 +4310,138 @@ class EditorController extends ChangeNotifier {
     return source.contains(suffix) ? source : '$source+$suffix';
   }
 
+  List<Map<String, dynamic>> _serializeShortsCandidates(
+    List<ShortsCandidate> input,
+  ) {
+    return [
+      for (final candidate in input)
+        {
+          'id': candidate.id,
+          'label': candidate.label,
+          'reason': candidate.reason,
+          'segments': candidate.segments
+              .map((segment) => segment.toJson())
+              .toList(),
+          'strategy_kind': candidate.strategyKind,
+          'strategy_label': candidate.strategyLabel,
+          'quality_score': candidate.qualityScore,
+          'quality_grade': candidate.qualityGrade,
+          'risk_count': candidate.riskCount,
+          'strengths': candidate.strengths,
+          'issues': candidate.issues,
+          'story_flow': candidate.storyFlow,
+          'story_score': candidate.storyScore,
+          'selected': candidate.selected,
+        },
+    ];
+  }
+
+  List<ShortsCandidate> _shortsCandidatesFromProject(ProjectState project) {
+    final restored = <ShortsCandidate>[];
+    for (final raw in project.shortsCandidates) {
+      final rawSegments = raw['segments'] as List<dynamic>? ?? const [];
+      final candidateSegments = <HighlightSegment>[];
+      for (final rawSegment in rawSegments) {
+        if (rawSegment is! Map) {
+          continue;
+        }
+        try {
+          candidateSegments.add(
+            HighlightSegment.fromJson(Map<String, dynamic>.from(rawSegment)),
+          );
+        } catch (_) {
+          continue;
+        }
+      }
+      final fallbackId = restored.length + 1;
+      final id = _intFromProjectJson(
+        raw['id'],
+        fallbackId,
+      ).clamp(1, 9999).toInt();
+      var candidate = ShortsCandidate(
+        id: id,
+        label: _stringFromProjectJson(
+          raw['label'],
+          'Shorts ${id.toString().padLeft(2, '0')}',
+        ),
+        reason: _stringFromProjectJson(raw['reason'], ''),
+        segments: _reorderSegments(candidateSegments),
+        strategyKind: _stringFromProjectJson(
+          raw['strategy_kind'] ?? raw['strategyKind'],
+          'balanced',
+        ),
+        strategyLabel: _stringFromProjectJson(
+          raw['strategy_label'] ?? raw['strategyLabel'],
+          'Balanced',
+        ),
+        qualityScore: _doubleFromProjectJson(
+          raw['quality_score'] ?? raw['qualityScore'],
+          0,
+        ),
+        qualityGrade: _stringFromProjectJson(
+          raw['quality_grade'] ?? raw['qualityGrade'],
+          'C',
+        ),
+        riskCount: _intFromProjectJson(
+          raw['risk_count'] ?? raw['riskCount'],
+          0,
+        ),
+        strengths: _stringListFromProjectJson(raw['strengths']),
+        issues: _stringListFromProjectJson(raw['issues']),
+        storyFlow: _stringListFromProjectJson(
+          raw['story_flow'] ?? raw['storyFlow'],
+        ),
+        storyScore: _doubleFromProjectJson(
+          raw['story_score'] ?? raw['storyScore'],
+          0,
+        ),
+        selected: raw['selected'] as bool? ?? true,
+      );
+      if (candidate.qualityScore <= 0 && candidate.segments.isNotEmpty) {
+        candidate = _scoreShortsCandidate(candidate);
+      }
+      restored.add(candidate);
+    }
+    return restored;
+  }
+
+  String _stringFromProjectJson(Object? value, String fallback) {
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+    return fallback;
+  }
+
+  double _doubleFromProjectJson(Object? value, double fallback) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value) ?? fallback;
+    }
+    return fallback;
+  }
+
+  int _intFromProjectJson(Object? value, int fallback) {
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value) ?? fallback;
+    }
+    return fallback;
+  }
+
+  List<String> _stringListFromProjectJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
   ShortsCandidate? _shortsCandidateById(int id) {
     for (final candidate in shortsCandidates) {
       if (candidate.id == id) {
@@ -4441,8 +4575,15 @@ class EditorController extends ChangeNotifier {
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
-    shortsCandidates = [];
-    selectedShortsId = null;
+    shortsCandidates = _shortsCandidatesFromProject(project);
+    selectedShortsId =
+        shortsCandidates.any(
+          (candidate) => candidate.id == project.selectedShortsId,
+        )
+        ? project.selectedShortsId
+        : shortsCandidates.isEmpty
+        ? null
+        : shortsCandidates.first.id;
     includeCaptions = project.includeCaptions;
     captionStylePreset = project.captionStylePreset;
     exportAspectRatio = project.exportAspectRatio;
