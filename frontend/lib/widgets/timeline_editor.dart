@@ -84,6 +84,7 @@ class TimelineEditor extends StatefulWidget {
 
 class _TimelineEditorState extends State<TimelineEditor> {
   static const double _handleHitWidth = 16;
+  static const double _handleVisualWidth = 4;
   static const double _minSegmentSeconds = 1.0;
   static const double _videoTop = 42;
   static const double _audioTop = 88;
@@ -555,6 +556,8 @@ class _TimelinePainter extends CustomPainter {
   static const double _videoTop = _TimelineEditorState._videoTop;
   static const double _audioTop = _TimelineEditorState._audioTop;
   static const double _laneHeight = _TimelineEditorState._laneHeight;
+  static const double _handleVisualWidth =
+      _TimelineEditorState._handleVisualWidth;
 
   final double duration;
   final List<HighlightSegment> segments;
@@ -570,7 +573,7 @@ class _TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(6);
+    final radius = Radius.circular(5);
     final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
     _drawTrack(canvas, size, _videoTop, radius, trackPaint);
     _drawTrack(canvas, size, _audioTop, radius, trackPaint);
@@ -592,11 +595,35 @@ class _TimelinePainter extends CustomPainter {
     Radius radius,
     Paint paint,
   ) {
-    final track = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, top, size.width, _laneHeight),
-      radius,
-    );
+    final rect = Rect.fromLTWH(0, top, size.width, _laneHeight);
+    final track = RRect.fromRectAndRadius(rect, radius);
     canvas.drawRRect(track, paint);
+    canvas.drawRRect(
+      track,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            colorScheme.onSurface.withValues(alpha: 0.05),
+            colorScheme.surface.withValues(alpha: 0.12),
+          ],
+        ).createShader(rect),
+    );
+    canvas.drawRRect(
+      track,
+      Paint()
+        ..color = colorScheme.outline.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.7,
+    );
+    canvas.drawLine(
+      Offset(44, top + _laneHeight / 2),
+      Offset(size.width, top + _laneHeight / 2),
+      Paint()
+        ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.10)
+        ..strokeWidth = 1,
+    );
   }
 
   void _drawLaneLabel(Canvas canvas, String label, double top, Color color) {
@@ -749,13 +776,29 @@ class _TimelinePainter extends CustomPainter {
     final right = _secondsToX(end, size.width);
     final rect = Rect.fromLTWH(
       left,
-      top,
+      top + 2,
       math.max(2, right - left),
-      _laneHeight,
+      _laneHeight - 4,
     );
+    final rrect = RRect.fromRectAndRadius(rect, radius);
+    final clipShader = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [fill.withValues(alpha: 0.98), fill.withValues(alpha: 0.74)],
+    ).createShader(rect);
+    canvas.drawRRect(rrect, Paint()..shader = clipShader);
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, radius),
-      Paint()..color = fill,
+      rrect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            colorScheme.surface.withValues(alpha: 0.10),
+            Colors.transparent,
+            colorScheme.surface.withValues(alpha: 0.10),
+          ],
+        ).createShader(rect),
     );
     if (disabledPattern) {
       final patternPaint = Paint()
@@ -770,22 +813,49 @@ class _TimelinePainter extends CustomPainter {
       }
     }
 
-    final handlePaint = Paint()..color = colorScheme.surface;
+    if (rect.width > 8) {
+      canvas.drawLine(
+        Offset(rect.left + 3, rect.top + 1),
+        Offset(rect.right - 3, rect.top + 1),
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.22)
+          ..strokeWidth = 1,
+      );
+    }
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = border.withValues(alpha: handlesActive ? 0.86 : 0.42)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = handlesActive ? 1.1 : 0.7,
+    );
+
+    final handlePaint = Paint()
+      ..color = (handlesActive ? border : colorScheme.onSurfaceVariant)
+          .withValues(alpha: handlesActive ? 0.95 : 0.72);
+    final handleInnerPaint = Paint()
+      ..color = colorScheme.surface.withValues(alpha: 0.82)
+      ..strokeWidth = 0.8;
     final handleBorder = Paint()
-      ..color = border
+      ..color = colorScheme.surface.withValues(alpha: 0.72)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = handlesActive ? 1.6 : 1.1;
+      ..strokeWidth = 0.8;
     for (final handleX in [left, right]) {
       final handleRect = RRect.fromRectAndRadius(
         Rect.fromCenter(
           center: Offset(handleX, top + _laneHeight / 2),
-          width: 8,
-          height: _laneHeight + 10,
+          width: _handleVisualWidth,
+          height: _laneHeight + 4,
         ),
-        Radius.circular(4),
+        Radius.circular(2),
       );
       canvas.drawRRect(handleRect, handlePaint);
       canvas.drawRRect(handleRect, handleBorder);
+      canvas.drawLine(
+        Offset(handleX, top + 5),
+        Offset(handleX, top + _laneHeight - 5),
+        handleInnerPaint,
+      );
     }
   }
 
@@ -813,6 +883,8 @@ class _TimelinePainter extends CustomPainter {
     final clipWidth = math.max(2.0, right - left);
     final fadePaint = Paint()
       ..color = colorScheme.surface.withValues(alpha: 0.38);
+    final clipTop = _videoTop + 2;
+    final clipBottom = _videoTop + _laneHeight - 2;
 
     if (segment.videoFadeIn > 0) {
       final fadeEnd = _secondsToX(
@@ -822,9 +894,9 @@ class _TimelinePainter extends CustomPainter {
       final fadeWidth = math.min(clipWidth, fadeEnd - left);
       if (fadeWidth > 1) {
         final path = Path()
-          ..moveTo(left, _videoTop)
-          ..lineTo(left + fadeWidth, _videoTop)
-          ..lineTo(left, _videoTop + _laneHeight)
+          ..moveTo(left, clipTop)
+          ..lineTo(left + fadeWidth, clipTop)
+          ..lineTo(left, clipBottom)
           ..close();
         canvas.drawPath(path, fadePaint);
       }
@@ -838,9 +910,9 @@ class _TimelinePainter extends CustomPainter {
       final fadeWidth = math.min(clipWidth, right - fadeStart);
       if (fadeWidth > 1) {
         final path = Path()
-          ..moveTo(right, _videoTop)
-          ..lineTo(right, _videoTop + _laneHeight)
-          ..lineTo(right - fadeWidth, _videoTop + _laneHeight)
+          ..moveTo(right, clipTop)
+          ..lineTo(right, clipBottom)
+          ..lineTo(right - fadeWidth, clipBottom)
           ..close();
         canvas.drawPath(path, fadePaint);
       }
