@@ -242,6 +242,13 @@ class EditorController extends ChangeNotifier {
       markIn != null &&
       markOut != null &&
       markOut! - markIn! >= timecodeFrameDurationSeconds;
+  bool get canLiftOrExtractMarkedRange =>
+      hasValidMarks &&
+      !videoTrackLocked &&
+      !audioTrackLocked &&
+      segments.any(
+        (segment) => _segmentOverlapsRange(segment, markIn!, markOut!),
+      );
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -1221,6 +1228,80 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void liftMarkedRange() {
+    _editMarkedRange(leaveGap: true);
+  }
+
+  void extractMarkedRange() {
+    _editMarkedRange(leaveGap: false);
+  }
+
+  void _editMarkedRange({required bool leaveGap}) {
+    if (!canLiftOrExtractMarkedRange) {
+      return;
+    }
+    final rangeStart = _snapToFrame(_clampProjectTime(markIn!));
+    final rangeEnd = _snapToFrame(_clampProjectTime(markOut!));
+    if (rangeEnd - rangeStart < timecodeFrameDurationSeconds) {
+      return;
+    }
+
+    final output = <HighlightSegment>[];
+    int? selectionIndex;
+    var changed = false;
+    for (final segment in segments) {
+      if (!_segmentOverlapsRange(segment, rangeStart, rangeEnd)) {
+        output.add(segment);
+        continue;
+      }
+
+      changed = true;
+      selectionIndex ??= output.length;
+      final overlapStart = _snapToFrame(math.max(segment.start, rangeStart));
+      final overlapEnd = _snapToFrame(math.min(segment.end, rangeEnd));
+      final before = _trimSegmentToRange(
+        segment,
+        segment.start,
+        overlapStart,
+        sourceSuffix: leaveGap ? 'lift' : 'extract',
+        reasonSuffix: leaveGap ? 'lift before' : 'extract before',
+      );
+      final after = _trimSegmentToRange(
+        segment,
+        overlapEnd,
+        segment.end,
+        sourceSuffix: leaveGap ? 'lift' : 'extract',
+        reasonSuffix: leaveGap ? 'lift after' : 'extract after',
+      );
+      if (before != null) {
+        output.add(before);
+      }
+      if (leaveGap) {
+        final gap = _gapSegmentForRange(segment, overlapStart, overlapEnd);
+        if (gap != null) {
+          output.add(gap);
+        }
+      }
+      if (after != null) {
+        output.add(after);
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+    _commitHistory();
+    segments = _reorderSegments(output);
+    selectedSegmentOrder = segments.isEmpty
+        ? null
+        : ((selectionIndex ?? segments.length - 1)
+                  .clamp(0, segments.length - 1)
+                  .toInt() +
+              1);
+    renderUrl = null;
+    notifyListeners();
   }
 
   void addEditAtPlayhead() {
@@ -4123,6 +4204,109 @@ class EditorController extends ChangeNotifier {
         audioLinked: false,
         reason: '${segment.reason} / $reasonSuffix',
         source: source,
+      ),
+    );
+  }
+
+  bool _segmentOverlapsRange(
+    HighlightSegment segment,
+    double start,
+    double end,
+  ) {
+    return segment.start < end && segment.end > start;
+  }
+
+  HighlightSegment? _trimSegmentToRange(
+    HighlightSegment segment,
+    double start,
+    double end, {
+    required String sourceSuffix,
+    required String reasonSuffix,
+  }) {
+    final snappedStart = _snapToFrame(_clampProjectTime(start));
+    final snappedEnd = _snapToFrame(_clampProjectTime(end));
+    if (snappedEnd - snappedStart < timecodeFrameDurationSeconds) {
+      return null;
+    }
+    final source = _appendSource(segment.source, sourceSuffix);
+    final script = _scriptPreviewFor(snappedStart, snappedEnd);
+    final reason = '${segment.reason} / $reasonSuffix';
+    if (segment.audioLinked) {
+      return _normalizeSegmentAudio(
+        segment.copyWith(
+          start: snappedStart,
+          end: snappedEnd,
+          audioStart: snappedStart,
+          audioEnd: snappedEnd,
+          reason: reason,
+          script: script.isEmpty ? segment.script : script,
+          source: source,
+        ),
+      );
+    }
+
+    final videoDuration = math.max(
+      timecodeFrameDurationSeconds,
+      segment.duration,
+    );
+    final audioDuration = segment.audioDuration;
+    final startRatio = ((snappedStart - segment.start) / videoDuration)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final endRatio = ((snappedEnd - segment.start) / videoDuration)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final audioStart = _snapToFrame(
+      segment.effectiveAudioStart + audioDuration * startRatio,
+    );
+    final audioEnd = _snapToFrame(
+      segment.effectiveAudioStart + audioDuration * endRatio,
+    );
+    return _normalizeSegmentAudio(
+      segment.copyWith(
+        start: snappedStart,
+        end: snappedEnd,
+        audioStart: audioStart,
+        audioEnd: audioEnd,
+        audioLinked: false,
+        reason: reason,
+        script: script.isEmpty ? segment.script : script,
+        source: source,
+      ),
+    );
+  }
+
+  HighlightSegment? _gapSegmentForRange(
+    HighlightSegment segment,
+    double start,
+    double end,
+  ) {
+    final snappedStart = _snapToFrame(_clampProjectTime(start));
+    final snappedEnd = _snapToFrame(_clampProjectTime(end));
+    if (snappedEnd - snappedStart < timecodeFrameDurationSeconds) {
+      return null;
+    }
+    return _normalizeSegmentAudio(
+      segment.copyWith(
+        start: snappedStart,
+        end: snappedEnd,
+        reason: 'Lift gap In/Out',
+        script: '',
+        source: _appendSource(segment.source, 'lift-gap'),
+        videoEnabled: false,
+        videoFadeIn: 0,
+        videoFadeOut: 0,
+        audioStart: snappedStart,
+        audioEnd: snappedEnd,
+        audioMuted: true,
+        audioVolume: 0,
+        audioPan: 0,
+        audioNormalize: false,
+        audioLinked: true,
+        audioFadeIn: 0,
+        audioFadeOut: 0,
+        score: 0,
+        tags: [...segment.tags, if (!segment.tags.contains('gap')) 'gap'],
       ),
     );
   }

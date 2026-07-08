@@ -164,6 +164,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyX) {
       editor.markSelectedClip();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.semicolon) {
+      editor.liftMarkedRange();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.quote) {
+      editor.extractMarkedRange();
     } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyQ) {
       editor.extendSelectedStartToPlayhead();
     } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyW) {
@@ -448,6 +458,20 @@ class _CommandBar extends StatelessWidget {
               label: 'Apply',
               onPressed: selected != null && canUseMarks
                   ? editor.applyMarksToSelectedSegment
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.vertical_align_center,
+              label: 'Lift',
+              onPressed: controller.canLiftOrExtractMarkedRange
+                  ? editor.liftMarkedRange
+                  : null,
+            ),
+            _ToolbarButton(
+              icon: Icons.playlist_remove,
+              label: 'Extract',
+              onPressed: controller.canLiftOrExtractMarkedRange
+                  ? editor.extractMarkedRange
                   : null,
             ),
             _ToolbarButton(
@@ -1044,6 +1068,8 @@ class _TimelineEditorBody extends StatelessWidget {
       onClearMarks: context.read<EditorController>().clearMarks,
       onClearMarkIn: context.read<EditorController>().clearMarkIn,
       onClearMarkOut: context.read<EditorController>().clearMarkOut,
+      onLiftMarkedRange: context.read<EditorController>().liftMarkedRange,
+      onExtractMarkedRange: context.read<EditorController>().extractMarkedRange,
       onAddMarkerAt: context.read<EditorController>().addTimelineMarkerAt,
       onJumpToPreviousMarker: context
           .read<EditorController>()

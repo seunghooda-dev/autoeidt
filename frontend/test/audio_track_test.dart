@@ -471,6 +471,103 @@ void main() {
     expect(controller.selectedSegment!.audioLinked, isTrue);
   });
 
+  test('extract marked range removes source spans and closes the edit', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 20, reason: 'a'),
+        HighlightSegment(order: 2, start: 20, end: 50, reason: 'b'),
+        HighlightSegment(order: 3, start: 50, end: 80, reason: 'c'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(60);
+    expect(controller.canLiftOrExtractMarkedRange, isTrue);
+
+    controller.extractMarkedRange();
+
+    expect(controller.segments.length, 3);
+    expect(secondsToTimecodeFrame(controller.segments[0].start), 0);
+    expect(secondsToTimecodeFrame(controller.segments[0].end), 600);
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 600);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 900);
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 1800);
+    expect(secondsToTimecodeFrame(controller.segments[2].end), 2400);
+    expect(controller.segments.any((item) => !item.videoEnabled), isFalse);
+    expect(controller.outputDurationSeconds, closeTo(50, 0.001));
+
+    controller.undo();
+    expect(controller.segments.length, 3);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 1500);
+  });
+
+  test('lift marked range leaves a black silent gap', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 70, reason: 'wide'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(50);
+    controller.liftMarkedRange();
+
+    expect(controller.segments.length, 3);
+    expect(secondsToTimecodeFrame(controller.segments[0].start), 300);
+    expect(secondsToTimecodeFrame(controller.segments[0].end), 900);
+    expect(secondsToTimecodeFrame(controller.segments[1].start), 900);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 1500);
+    expect(controller.segments[1].videoEnabled, isFalse);
+    expect(controller.segments[1].audioMuted, isTrue);
+    expect(controller.segments[1].source, contains('lift-gap'));
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 1500);
+    expect(secondsToTimecodeFrame(controller.segments[2].end), 2100);
+    expect(controller.outputDurationSeconds, closeTo(60, 0.001));
+  });
+
+  test('extract marked range preserves detached audio timing', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 200
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 70,
+          reason: 'detached',
+          audioStart: 110,
+          audioEnd: 170,
+          audioLinked: false,
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setMarkInAt(30);
+    controller.setMarkOutAt(50);
+    controller.extractMarkedRange();
+
+    expect(controller.segments.length, 2);
+    expect(controller.segments[0].audioLinked, isFalse);
+    expect(controller.segments[1].audioLinked, isFalse);
+    expect(
+      secondsToTimecodeFrame(controller.segments[0].effectiveAudioStart),
+      3300,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.segments[0].effectiveAudioEnd),
+      3900,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.segments[1].effectiveAudioStart),
+      4500,
+    );
+    expect(
+      secondsToTimecodeFrame(controller.segments[1].effectiveAudioEnd),
+      5100,
+    );
+  });
+
   test('premiere style cut shortcuts update timeline edits', () {
     final controller = EditorController(autoStartEngine: false)
       ..duration = 30

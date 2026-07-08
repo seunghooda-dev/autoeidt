@@ -96,6 +96,23 @@ void main() {
     );
     expect(controller.timelineMarkers, isEmpty);
 
+    controller.setMarkInAt(6);
+    controller.setMarkOutAt(8);
+    await _pressShortcut(tester, LogicalKeyboardKey.semicolon);
+    expect(controller.segments.length, 3);
+    expect(controller.segments[1].videoEnabled, isFalse);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyZ, control: true);
+    expect(controller.segments.length, 1);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.quote);
+    expect(controller.segments.length, 2);
+    expect(secondsToTimecodeFrame(controller.segments.first.end), 180);
+    expect(secondsToTimecodeFrame(controller.segments.last.start), 240);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyZ, control: true);
+    expect(controller.segments.length, 1);
+
     await _pressShortcut(tester, LogicalKeyboardKey.delete);
     expect(controller.segments, isEmpty);
 

@@ -20,6 +20,8 @@ enum _TimelineMenuAction {
   clearMarks,
   clearIn,
   clearOut,
+  liftMarkedRange,
+  extractMarkedRange,
   addMarker,
   previousMarker,
   nextMarker,
@@ -68,6 +70,8 @@ class TimelineEditor extends StatefulWidget {
     this.onClearMarks,
     this.onClearMarkIn,
     this.onClearMarkOut,
+    this.onLiftMarkedRange,
+    this.onExtractMarkedRange,
     this.onAddMarkerAt,
     this.onJumpToPreviousMarker,
     this.onJumpToNextMarker,
@@ -116,6 +120,8 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearMarks;
   final VoidCallback? onClearMarkIn;
   final VoidCallback? onClearMarkOut;
+  final VoidCallback? onLiftMarkedRange;
+  final VoidCallback? onExtractMarkedRange;
   final ValueChanged<double>? onAddMarkerAt;
   final VoidCallback? onJumpToPreviousMarker;
   final VoidCallback? onJumpToNextMarker;
@@ -351,6 +357,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onClearMarkIn?.call();
       case _TimelineMenuAction.clearOut:
         widget.onClearMarkOut?.call();
+      case _TimelineMenuAction.liftMarkedRange:
+        widget.onLiftMarkedRange?.call();
+      case _TimelineMenuAction.extractMarkedRange:
+        widget.onExtractMarkedRange?.call();
       case _TimelineMenuAction.addMarker:
         widget.onAddMarkerAt?.call(seconds);
       case _TimelineMenuAction.previousMarker:
@@ -410,6 +420,17 @@ class _TimelineEditorState extends State<TimelineEditor> {
     final videoLocked = widget.videoTrackLocked;
     final audioLocked = widget.audioTrackLocked;
     final clipEditable = segment != null && !videoLocked && !audioLocked;
+    final hasMarkedRange =
+        widget.markIn != null &&
+        widget.markOut != null &&
+        widget.markOut! - widget.markIn! >= timecodeFrameDurationSeconds;
+    final canEditMarkedRange =
+        hasMarkedRange &&
+        !videoLocked &&
+        !audioLocked &&
+        widget.segments.any(
+          (item) => item.start < widget.markOut! && item.end > widget.markIn!,
+        );
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -474,6 +495,20 @@ class _TimelineEditorState extends State<TimelineEditor> {
         'Clear In/Out',
         _TimelineMenuAction.clearMarks,
         shortcut: 'Ctrl+Shift+X',
+      ),
+      _menuItem(
+        Icons.vertical_align_center,
+        'Lift In/Out',
+        _TimelineMenuAction.liftMarkedRange,
+        shortcut: ';',
+        enabled: canEditMarkedRange && widget.onLiftMarkedRange != null,
+      ),
+      _menuItem(
+        Icons.playlist_remove,
+        'Extract In/Out',
+        _TimelineMenuAction.extractMarkedRange,
+        shortcut: "'",
+        enabled: canEditMarkedRange && widget.onExtractMarkedRange != null,
       ),
       const PopupMenuDivider(),
       _menuHeader('Timeline Markers'),
