@@ -215,6 +215,40 @@ def _silences_overlapping_highlights(
     return output
 
 
+def _generate_waveform_for_analysis(
+    audio_path: Path,
+    analysis_warnings: list[str],
+) -> list[float]:
+    try:
+        return generate_waveform(audio_path)
+    except Exception as exc:
+        analysis_warnings.append(
+            "오디오 파형 생성에 실패했지만 분석은 계속 진행합니다. "
+            f"원인: {exc}"
+        )
+        return []
+
+
+def _detect_silences_for_analysis(
+    audio_path: Path,
+    noise_db: str,
+    min_duration: float,
+    analysis_warnings: list[str],
+) -> list:
+    try:
+        return detect_silence(
+            audio_path,
+            noise_db=noise_db,
+            min_duration=min_duration,
+        )
+    except Exception as exc:
+        analysis_warnings.append(
+            "침묵 구간 탐지에 실패해 무음 컷 보정 없이 분석을 계속 진행합니다. "
+            f"원인: {exc}"
+        )
+        return []
+
+
 def _detect_scene_points_for_analysis(
     video_path: Path,
     threshold: float,
@@ -327,7 +361,7 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
                 message
             )
         captions = _captions_from_transcript(transcript)
-        waveform = generate_waveform(audio_path)
+        waveform = _generate_waveform_for_analysis(audio_path, analysis_warnings)
 
         _set_task_state(
             task,
@@ -366,10 +400,11 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             0.25,
             settings.silence_min_duration * (1.25 - min(silence_aggressiveness, 0.95)),
         )
-        silence_ranges = detect_silence(
+        silence_ranges = _detect_silences_for_analysis(
             audio_path,
-            noise_db=settings.silence_noise_db,
-            min_duration=min_silence,
+            settings.silence_noise_db,
+            min_silence,
+            analysis_warnings,
         )
 
         _set_task_state(
