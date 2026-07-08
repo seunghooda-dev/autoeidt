@@ -1623,6 +1623,78 @@ void main() {
     expect(controller.segments.first.videoEnabled, isTrue);
   });
 
+  test('selected shorts export queue mirrors batch render order', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 240
+      ..captions = const [
+        CaptionSegment(order: 1, start: 10, end: 80, text: 'ready'),
+        CaptionSegment(order: 2, start: 100, end: 120, text: 'blocked'),
+      ]
+      ..shortsCandidates = const [
+        ShortsCandidate(
+          id: 1,
+          label: 'Ready 01',
+          reason: 'selected ready candidate',
+          selected: true,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 10,
+              end: 80,
+              reason: '검증된 설명',
+              script: '출처가 확인된 설명입니다',
+              audioNormalize: true,
+            ),
+          ],
+        ),
+        ShortsCandidate(
+          id: 2,
+          label: 'Ignored 02',
+          reason: 'not selected',
+          selected: false,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 82,
+              end: 120,
+              reason: '선택하지 않은 후보',
+              audioNormalize: true,
+            ),
+          ],
+        ),
+        ShortsCandidate(
+          id: 3,
+          label: 'Blocked 03',
+          reason: 'selected blocked candidate',
+          selected: true,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 100,
+              end: 100.4,
+              reason: '검수 필요한 짧은 컷',
+              videoEnabled: false,
+              audioMuted: true,
+            ),
+          ],
+        ),
+      ];
+
+    final queue = controller.selectedShortsExportQueue;
+
+    expect(queue, hasLength(2));
+    expect(queue.first.outputName, 'shorts_01.mp4');
+    expect(queue.first.statusLabel, 'Ready');
+    expect(queue.first.canRender, isTrue);
+    expect(queue.first.clipCount, 1);
+    expect(queue.last.outputName, 'shorts_02.mp4');
+    expect(queue.last.statusLabel, 'Blocked');
+    expect(queue.last.canRender, isFalse);
+    expect(queue.last.statusDetail, contains('Clip 1'));
+    expect(controller.selectedShortsExportReadyCount, 1);
+    expect(controller.selectedShortsExportDurationSeconds, closeTo(70.4, 0.01));
+  });
+
   test(
     'selected shorts render auto repairs candidates before batch API call',
     () async {

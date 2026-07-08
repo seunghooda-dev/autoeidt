@@ -254,6 +254,22 @@ class EditorController extends ChangeNotifier {
 
   int get selectedShortsCount =>
       shortsCandidates.where((candidate) => candidate.selected).length;
+  List<ShortsExportQueueItem> get selectedShortsExportQueue {
+    final selected = shortsCandidates
+        .where(
+          (candidate) => candidate.selected && candidate.segments.isNotEmpty,
+        )
+        .toList();
+    return [
+      for (var index = 0; index < selected.length; index++)
+        _buildShortsExportQueueItem(selected[index], index),
+    ];
+  }
+
+  double get selectedShortsExportDurationSeconds => selectedShortsExportQueue
+      .fold<double>(0, (total, item) => total + item.durationSeconds);
+  int get selectedShortsExportReadyCount =>
+      selectedShortsExportQueue.where((item) => item.canRender).length;
   int get selectedShortsRenderBlockCount =>
       _selectedShortsRenderSafetyCount(EditorialCheckStatus.block);
   int get selectedShortsRenderWarnCount =>
@@ -4086,6 +4102,42 @@ class EditorController extends ChangeNotifier {
     return count;
   }
 
+  ShortsExportQueueItem _buildShortsExportQueueItem(
+    ShortsCandidate candidate,
+    int index,
+  ) {
+    final safety = _buildRenderSafetyChecklist(
+      candidate.segments,
+      aspectRatio: '9:16',
+      requireCaptions: true,
+    );
+    final blocks = safety
+        .where((item) => item.status == EditorialCheckStatus.block)
+        .toList();
+    final warnings = safety
+        .where((item) => item.status == EditorialCheckStatus.warn)
+        .toList();
+    final firstIssue = blocks.isNotEmpty
+        ? blocks.first
+        : warnings.isNotEmpty
+        ? warnings.first
+        : null;
+    return ShortsExportQueueItem(
+      candidate: candidate,
+      outputName: _shortsOutputName(index),
+      durationSeconds: candidate.durationSeconds,
+      clipCount: candidate.segments.length,
+      blockCount: blocks.length,
+      warnCount: warnings.length,
+      statusDetail: firstIssue == null
+          ? '9:16 render ready'
+          : '${firstIssue.label} · ${firstIssue.detail}',
+    );
+  }
+
+  String _shortsOutputName(int index) =>
+      'shorts_${(index + 1).toString().padLeft(2, '0')}.mp4';
+
   ({ShortsCandidate candidate, RenderSafetyItem item})?
   _firstSelectedShortsRenderBlock() {
     for (final candidate in shortsCandidates) {
@@ -4366,8 +4418,7 @@ class EditorController extends ChangeNotifier {
           for (var index = 0; index < renderItems.length; index++)
             {
               'label': renderItems[index].label,
-              'output_name':
-                  'shorts_${(index + 1).toString().padLeft(2, '0')}.mp4',
+              'output_name': _shortsOutputName(index),
               'segments': renderItems[index].segments
                   .map((segment) => segment.toJson())
                   .toList(),
@@ -6548,6 +6599,38 @@ class RenderSafetyItem {
   final String detail;
   final EditorialCheckStatus status;
   final int? segmentOrder;
+}
+
+class ShortsExportQueueItem {
+  const ShortsExportQueueItem({
+    required this.candidate,
+    required this.outputName,
+    required this.durationSeconds,
+    required this.clipCount,
+    required this.blockCount,
+    required this.warnCount,
+    required this.statusDetail,
+  });
+
+  final ShortsCandidate candidate;
+  final String outputName;
+  final double durationSeconds;
+  final int clipCount;
+  final int blockCount;
+  final int warnCount;
+  final String statusDetail;
+
+  bool get canRender => blockCount == 0;
+
+  String get statusLabel {
+    if (blockCount > 0) {
+      return 'Blocked';
+    }
+    if (warnCount > 0) {
+      return 'Warn';
+    }
+    return 'Ready';
+  }
 }
 
 enum AutoFixSeverity { block, warn, polish }

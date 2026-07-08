@@ -212,6 +212,7 @@ class _MultiShortsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final candidates = controller.shortsCandidates;
+    final exportQueue = controller.selectedShortsExportQueue;
     final safetyBlocks = controller.selectedShortsRenderBlockCount;
     final safetyWarns = controller.selectedShortsRenderWarnCount;
     return _DirectorSection(
@@ -318,10 +319,153 @@ class _MultiShortsPanel extends StatelessWidget {
                 ),
               ),
             ],
+            if (exportQueue.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _ShortsExportQueuePanel(queue: exportQueue),
+            ],
             const SizedBox(height: 8),
             for (final candidate in candidates)
               _ShortsCandidateTile(candidate: candidate),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortsExportQueuePanel extends StatelessWidget {
+  const _ShortsExportQueuePanel({required this.queue});
+
+  final List<ShortsExportQueueItem> queue;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalSeconds = queue.fold<double>(
+      0,
+      (total, item) => total + item.durationSeconds,
+    );
+    final readyCount = queue.where((item) => item.canRender).length;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 1),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(
+              Icons.playlist_add_check,
+              size: 16,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                'Export Queue',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            Text(
+              '$readyCount/${queue.length} · ${formatSeconds(totalSeconds)}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        for (final item in queue.take(4)) _ShortsExportQueueRow(item: item),
+        if (queue.length > 4)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '+${queue.length - 4} queued exports',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ShortsExportQueueRow extends StatelessWidget {
+  const _ShortsExportQueueRow({required this.item});
+
+  final ShortsExportQueueItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusColor = switch (item.statusLabel) {
+      'Blocked' => colorScheme.error,
+      'Warn' => const Color(0xFFF59E0B),
+      _ => colorScheme.primary,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: statusColor.withValues(alpha: 0.40)),
+            ),
+            child: Text(
+              item.statusLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: statusColor,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.outputName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      formatSeconds(item.durationSeconds),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${item.candidate.label} · ${item.clipCount} clips · ${item.statusDetail}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

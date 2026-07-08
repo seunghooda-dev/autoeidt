@@ -55,6 +55,15 @@ void main() {
     expect(find.text('H 88'), findsOneWidget);
     expect(find.text('C 74'), findsOneWidget);
     expect(find.text('Cut List'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Export Queue'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
+
+    expect(find.text('Export Queue'), findsOneWidget);
+    expect(find.text('shorts_01.mp4'), findsOneWidget);
     expect(find.text('Hook'), findsWidgets);
     expect(find.text('Evidence'), findsOneWidget);
     expect(find.text('Impact'), findsOneWidget);
