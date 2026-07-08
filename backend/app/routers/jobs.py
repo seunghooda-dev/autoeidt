@@ -456,6 +456,15 @@ def download_render(job_id: str) -> FileResponse:
     )
 
 
+def _download_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        return "application/json"
+    if suffix == ".csv":
+        return "text/csv; charset=utf-8"
+    return "video/mp4"
+
+
 @router.get("/{job_id}/download/{filename}")
 def download_named_render(job_id: str, filename: str) -> FileResponse:
     job = _load_job_or_404(job_id)
@@ -465,6 +474,6 @@ def download_named_render(job_id: str, filename: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="rendered video file not found")
     return FileResponse(
         path,
-        media_type="video/mp4",
+        media_type=_download_media_type(path),
         filename=path.name,
     )

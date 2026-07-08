@@ -1,3 +1,5 @@
+import csv
+import json
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +93,193 @@ def _render_output_warnings(
     if 0 < duration_seconds < 1:
         warnings.append("렌더 길이가 1초 미만입니다. 인/아웃 구간을 확인해 주세요.")
     return warnings
+
+
+def _seconds_to_30p_timecode(seconds: float) -> str:
+    frame_number = max(0, int(round(float(seconds) * TIMECODE_FRAME_RATE)))
+    frames_per_second = int(TIMECODE_FRAME_RATE)
+    frames = frame_number % frames_per_second
+    total_seconds = frame_number // frames_per_second
+    seconds_part = total_seconds % 60
+    minutes = (total_seconds // 60) % 60
+    hours = total_seconds // 3600
+    return f"{hours:02d}:{minutes:02d}:{seconds_part:02d}:{frames:02d}"
+
+
+def _write_batch_render_manifest(
+    job_id: str,
+    job: dict[str, Any],
+    rendered_items: list[dict[str, Any]],
+    options: dict[str, Any],
+) -> list[dict[str, Any]]:
+    output_dir = store.output_dir(job_id)
+    json_path = output_dir / "render_manifest.json"
+    csv_path = output_dir / "render_manifest.csv"
+    generated_at = now_iso()
+    total_duration = round(
+        sum(float(item.get("duration_seconds") or 0) for item in rendered_items),
+        3,
+    )
+    total_size = sum(int(item.get("size_bytes") or 0) for item in rendered_items)
+
+    outputs: list[dict[str, Any]] = []
+    for item_index, item in enumerate(rendered_items, start=1):
+        outputs.append(
+            {
+                "index": item_index,
+                "label": item.get("label") or f"Shorts {item_index:02}",
+                "output_name": item.get("output_name") or "",
+                "path": item.get("path") or "",
+                "url": item.get("url") or "",
+                "duration_seconds": item.get("duration_seconds") or 0.0,
+                "duration_timecode": _seconds_to_30p_timecode(
+                    float(item.get("duration_seconds") or 0)
+                ),
+                "size_bytes": item.get("size_bytes") or 0,
+                "warnings": item.get("warnings") or [],
+                "segments": [
+                    {
+                        "order": segment.get("order", segment_index),
+                        "start": segment.get("start", 0.0),
+                        "end": segment.get("end", 0.0),
+                        "source_in_timecode": _seconds_to_30p_timecode(
+                            float(segment.get("start", 0.0) or 0.0)
+                        ),
+                        "source_out_timecode": _seconds_to_30p_timecode(
+                            float(segment.get("end", 0.0) or 0.0)
+                        ),
+                        "audio_start": segment.get("audio_start"),
+                        "audio_end": segment.get("audio_end"),
+                        "audio_in_timecode": _seconds_to_30p_timecode(
+                            float(
+                                segment.get(
+                                    "audio_start",
+                                    segment.get("start", 0.0),
+                                )
+                                or 0.0
+                            )
+                        ),
+                        "audio_out_timecode": _seconds_to_30p_timecode(
+                            float(
+                                segment.get("audio_end", segment.get("end", 0.0))
+                                or 0.0
+                            )
+                        ),
+                        "playback_speed": segment.get("playback_speed", 1.0),
+                        "reason": segment.get("reason", ""),
+                        "script": segment.get("script", ""),
+                        "tags": segment.get("tags", []),
+                    }
+                    for segment_index, segment in enumerate(
+                        item.get("segments") or [],
+                        start=1,
+                    )
+                    if isinstance(segment, dict)
+                ],
+            }
+        )
+
+    manifest = {
+        "job_id": job_id,
+        "generated_at": generated_at,
+        "original_filename": job.get("original_filename"),
+        "source_video": job.get("video_path"),
+        "timeline_frame_rate": TIMECODE_FRAME_RATE,
+        "timeline_timecode_mode": "non_drop",
+        "timeline_timebase": "30p NDF",
+        "aspect_ratio": str(options.get("aspect_ratio") or "9:16"),
+        "include_captions": bool(options.get("include_captions", True)),
+        "output_count": len(rendered_items),
+        "total_duration_seconds": total_duration,
+        "total_duration_timecode": _seconds_to_30p_timecode(total_duration),
+        "total_size_bytes": total_size,
+        "outputs": outputs,
+    }
+    json_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "item_index",
+                "label",
+                "output_name",
+                "path",
+                "url",
+                "duration_timecode",
+                "duration_seconds",
+                "size_bytes",
+                "warning_count",
+                "clip_order",
+                "source_in_timecode",
+                "source_out_timecode",
+                "source_in_seconds",
+                "source_out_seconds",
+                "audio_in_timecode",
+                "audio_out_timecode",
+                "playback_speed",
+                "reason",
+                "script",
+                "tags",
+            ]
+        )
+        for output in outputs:
+            segments = output["segments"] or [None]
+            for segment in segments:
+                writer.writerow(
+                    [
+                        output["index"],
+                        output["label"],
+                        output["output_name"],
+                        output["path"],
+                        output["url"],
+                        output["duration_timecode"],
+                        output["duration_seconds"],
+                        output["size_bytes"],
+                        len(output["warnings"]),
+                        "" if segment is None else segment["order"],
+                        "" if segment is None else segment["source_in_timecode"],
+                        "" if segment is None else segment["source_out_timecode"],
+                        "" if segment is None else segment["start"],
+                        "" if segment is None else segment["end"],
+                        "" if segment is None else segment["audio_in_timecode"],
+                        "" if segment is None else segment["audio_out_timecode"],
+                        "" if segment is None else segment["playback_speed"],
+                        "" if segment is None else segment["reason"],
+                        "" if segment is None else segment["script"],
+                        ""
+                        if segment is None
+                        else "|".join(str(tag) for tag in segment["tags"]),
+                    ]
+                )
+
+    return [
+        {
+            "label": "Render Manifest JSON",
+            "path": str(json_path),
+            "url": f"/api/jobs/{job_id}/download/{json_path.name}",
+            "output_name": json_path.name,
+            "kind": "manifest",
+            "duration_seconds": 0.0,
+            "size_bytes": _render_file_size_bytes(json_path),
+            "warnings": [],
+            "segments": [],
+        },
+        {
+            "label": "Render Manifest CSV",
+            "path": str(csv_path),
+            "url": f"/api/jobs/{job_id}/download/{csv_path.name}",
+            "output_name": csv_path.name,
+            "kind": "manifest",
+            "duration_seconds": 0.0,
+            "size_bytes": _render_file_size_bytes(csv_path),
+            "warnings": [],
+            "segments": [],
+        },
+    ]
 
 
 def _snap_to_timecode_frame(seconds: float) -> float:
@@ -775,6 +964,7 @@ def render_batch_video_job(
                     "path": str(rendered_path),
                     "url": f"/api/jobs/{job_id}/download/{rendered_path.name}",
                     "output_name": rendered_path.name,
+                    "kind": "video",
                     "duration_seconds": render_duration_seconds,
                     "size_bytes": render_size_bytes,
                     "warnings": render_warnings,
@@ -784,6 +974,12 @@ def render_batch_video_job(
         if not rendered_items:
             raise ValueError("렌더링할 쇼츠 후보가 없습니다.")
 
+        manifest_items = _write_batch_render_manifest(
+            job_id,
+            job,
+            rendered_items,
+            options,
+        )
         _set_task_state(
             task,
             job_id,
@@ -792,6 +988,7 @@ def render_batch_video_job(
             100,
             "쇼츠 일괄 렌더링 완료",
             batch_render_items=rendered_items,
+            render_manifest_items=manifest_items,
             render_path=rendered_items[0]["path"],
             render_url=rendered_items[0]["url"],
             render_duration_seconds=rendered_items[0]["duration_seconds"],

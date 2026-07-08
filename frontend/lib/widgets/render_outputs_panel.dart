@@ -46,9 +46,7 @@ class RenderOutputsPanel extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  outputs.length == 1
-                      ? 'Rendered output'
-                      : 'Rendered outputs (${outputs.length})',
+                  _title,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: colorScheme.primary,
                     fontWeight: FontWeight.w900,
@@ -71,6 +69,18 @@ class RenderOutputsPanel extends StatelessWidget {
       ),
     );
   }
+
+  String get _title {
+    if (outputs.length == 1) {
+      return outputs.single.isManifest ? 'Render manifest' : 'Rendered output';
+    }
+    final videoCount = outputs.where((item) => !item.isManifest).length;
+    final manifestCount = outputs.where((item) => item.isManifest).length;
+    if (manifestCount == 0) {
+      return 'Rendered outputs ($videoCount)';
+    }
+    return 'Rendered outputs ($videoCount + $manifestCount manifests)';
+  }
 }
 
 class _RenderOutputRow extends StatelessWidget {
@@ -90,13 +100,18 @@ class _RenderOutputRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final label = output.outputName.isEmpty ? output.label : output.outputName;
+    final isManifest = output.isManifest;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
-          Icons.movie_creation_outlined,
+          isManifest
+              ? Icons.description_outlined
+              : Icons.movie_creation_outlined,
           size: compact ? 14 : 16,
-          color: colorScheme.onSurfaceVariant,
+          color: isManifest
+              ? colorScheme.tertiary
+              : colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 7),
         Expanded(
@@ -180,10 +195,17 @@ class _RenderOutputRow extends StatelessWidget {
             ),
             if (output.path.isNotEmpty)
               IconButton(
-                tooltip: 'Open rendered file',
+                tooltip: isManifest
+                    ? 'Open render manifest'
+                    : 'Open rendered file',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _openFile(context, output.path, label),
-                icon: const Icon(Icons.play_circle_outline, size: 16),
+                icon: Icon(
+                  isManifest
+                      ? Icons.open_in_new_outlined
+                      : Icons.play_circle_outline,
+                  size: 16,
+                ),
               ),
             if (output.path.isNotEmpty)
               IconButton(

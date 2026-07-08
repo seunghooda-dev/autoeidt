@@ -580,6 +580,15 @@ void main() {
                 sizeBytes: 234567,
                 warnings: ['렌더 파일 크기가 매우 작습니다.'],
               ),
+              BatchRenderItemResult(
+                label: 'Render Manifest CSV',
+                outputName: 'render_manifest.csv',
+                url:
+                    'http://127.0.0.1:8000/api/jobs/job/download/render_manifest.csv',
+                kind: 'manifest',
+                path: r'C:\AutoEdit outputs\render_manifest.csv',
+                sizeBytes: 1024,
+              ),
             ],
             onRevealPath: (path) async {
               revealedPath = path;
@@ -595,16 +604,22 @@ void main() {
     await tester.tap(find.byTooltip('Open rendered file'));
     await tester.pump();
 
+    expect(find.text('Rendered outputs (1 + 1 manifests)'), findsOneWidget);
     expect(find.text('렌더 파일 크기가 매우 작습니다.'), findsOneWidget);
     expect(find.textContaining('229 KB'), findsOneWidget);
     expect(openedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
     expect(find.text('shorts_01.mp4 opened'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
 
-    await tester.tap(find.byTooltip('Show in folder'));
+    await tester.tap(find.byTooltip('Show in folder').first);
     await tester.pump();
 
     expect(revealedPath, r'C:\AutoEdit outputs\shorts_01.mp4');
+
+    await tester.tap(find.byTooltip('Open render manifest'));
+    await tester.pump();
+
+    expect(openedPath, r'C:\AutoEdit outputs\render_manifest.csv');
   });
 }
 

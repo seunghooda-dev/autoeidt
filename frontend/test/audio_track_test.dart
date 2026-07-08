@@ -2016,24 +2016,49 @@ void main() {
                 warnings: ['렌더 파일 크기가 매우 작습니다.'],
               ),
             ],
+            renderManifestItems: [
+              BatchRenderItemResult(
+                label: 'Render Manifest JSON',
+                outputName: 'render_manifest.json',
+                url: '/api/jobs/job-4/download/render_manifest.json',
+                kind: 'manifest',
+                path: 'C:/AutoEdit/outputs/render_manifest.json',
+                sizeBytes: 2048,
+              ),
+              BatchRenderItemResult(
+                label: 'Render Manifest CSV',
+                outputName: 'render_manifest.csv',
+                url: '/api/jobs/job-4/download/render_manifest.csv',
+                kind: 'manifest',
+                path: 'C:/AutoEdit/outputs/render_manifest.csv',
+                sizeBytes: 1024,
+              ),
+            ],
           );
 
     final outputs = controller.renderOutputs;
 
-    expect(outputs, hasLength(2));
+    expect(outputs, hasLength(4));
     expect(outputs.first.outputName, 'shorts_01.mp4');
     expect(
       outputs.first.url,
       'http://127.0.0.1:1/api/jobs/job-4/download/shorts_01.mp4',
     );
     expect(
-      outputs.last.url,
+      outputs[1].url,
       'http://127.0.0.1:1/api/jobs/job-4/download/shorts_02.mp4',
     );
-    expect(outputs.last.path, 'C:/AutoEdit/outputs/shorts_02.mp4');
-    expect(outputs.last.durationSeconds, 61.2);
-    expect(outputs.last.sizeBytes, 234567);
-    expect(outputs.last.warnings.single, contains('파일 크기'));
+    expect(outputs[1].path, 'C:/AutoEdit/outputs/shorts_02.mp4');
+    expect(outputs[1].durationSeconds, 61.2);
+    expect(outputs[1].sizeBytes, 234567);
+    expect(outputs[1].warnings.single, contains('파일 크기'));
+    expect(outputs[2].isManifest, isTrue);
+    expect(outputs[2].outputName, 'render_manifest.json');
+    expect(
+      outputs[2].url,
+      'http://127.0.0.1:1/api/jobs/job-4/download/render_manifest.json',
+    );
+    expect(outputs.last.outputName, 'render_manifest.csv');
   });
 
   test('multi shorts candidates can be built edited and selected', () {

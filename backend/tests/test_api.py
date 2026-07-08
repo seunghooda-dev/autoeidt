@@ -98,6 +98,19 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
                         "segments": [],
                     },
                 ],
+                "render_manifest_items": [
+                    {
+                        "label": "Render Manifest JSON",
+                        "path": "C:/AutoEdit/outputs/render_manifest.json",
+                        "url": "/api/jobs/rendered-job/download/render_manifest.json",
+                        "output_name": "render_manifest.json",
+                        "kind": "manifest",
+                        "duration_seconds": 0,
+                        "size_bytes": 2048,
+                        "warnings": [],
+                        "segments": [],
+                    }
+                ],
             }
 
     monkeypatch.setattr(jobs, "store", FakeStore())
@@ -117,6 +130,47 @@ def test_job_status_includes_render_paths_and_batch_outputs(monkeypatch) -> None
     assert payload["batch_render_items"][1]["warnings"] == [
         "렌더 파일 크기가 매우 작습니다."
     ]
+    assert payload["render_manifest_items"][0]["kind"] == "manifest"
+    assert payload["render_manifest_items"][0]["output_name"] == (
+        "render_manifest.json"
+    )
+
+
+def test_download_named_render_serves_manifest_media_types(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    (output_dir / "render_manifest.json").write_text("{}", encoding="utf-8")
+    (output_dir / "render_manifest.csv").write_text("a,b\n", encoding="utf-8")
+
+    class FakeStore:
+        def load(self, job_id: str) -> dict:
+            assert job_id == "rendered-job"
+            return {
+                "job_id": job_id,
+                "status": "rendered",
+                "stage": "batch_rendered",
+                "progress": 100,
+                "message": "done",
+            }
+
+        def output_dir(self, job_id: str) -> Path:
+            assert job_id == "rendered-job"
+            return output_dir
+
+    monkeypatch.setattr(jobs, "store", FakeStore())
+
+    json_response = client.get(
+        "/api/jobs/rendered-job/download/render_manifest.json"
+    )
+    csv_response = client.get("/api/jobs/rendered-job/download/render_manifest.csv")
+
+    assert json_response.status_code == 200
+    assert json_response.headers["content-type"].startswith("application/json")
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
 
 
 def test_project_endpoints_preserve_render_settings(

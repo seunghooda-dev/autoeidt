@@ -151,6 +151,7 @@ class JobStatusResponse {
     this.styleProfile,
     this.analysisWarnings = const [],
     this.batchRenderItems = const [],
+    this.renderManifestItems = const [],
     this.segments = const [],
   });
 
@@ -170,12 +171,15 @@ class JobStatusResponse {
   final StyleProfile? styleProfile;
   final List<String> analysisWarnings;
   final List<BatchRenderItemResult> batchRenderItems;
+  final List<BatchRenderItemResult> renderManifestItems;
   final List<HighlightSegment> segments;
 
   factory JobStatusResponse.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawBatchItems =
         json['batch_render_items'] as List<dynamic>? ?? const [];
+    final rawManifestItems =
+        json['render_manifest_items'] as List<dynamic>? ?? const [];
     final rawWarnings = json['analysis_warnings'] as List<dynamic>? ?? const [];
     final rawRenderWarnings =
         json['render_warnings'] as List<dynamic>? ?? const [];
@@ -206,6 +210,12 @@ class JobStatusResponse {
                 BatchRenderItemResult.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+      renderManifestItems: rawManifestItems
+          .map(
+            (item) =>
+                BatchRenderItemResult.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
       segments: rawSegments
           .map(
             (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
@@ -220,6 +230,7 @@ class BatchRenderItemResult {
     required this.label,
     required this.outputName,
     required this.url,
+    this.kind = 'video',
     this.path = '',
     this.durationSeconds = 0,
     this.sizeBytes = 0,
@@ -229,10 +240,12 @@ class BatchRenderItemResult {
   final String label;
   final String outputName;
   final String url;
+  final String kind;
   final String path;
   final double durationSeconds;
   final int sizeBytes;
   final List<String> warnings;
+  bool get isManifest => kind == 'manifest';
 
   factory BatchRenderItemResult.fromJson(Map<String, dynamic> json) {
     final rawWarnings = json['warnings'] as List<dynamic>? ?? const [];
@@ -240,6 +253,7 @@ class BatchRenderItemResult {
       label: json['label'] as String? ?? 'Shorts',
       outputName: json['output_name'] as String? ?? '',
       url: json['url'] as String? ?? '',
+      kind: json['kind'] as String? ?? 'video',
       path: json['path'] as String? ?? '',
       durationSeconds: (json['duration_seconds'] as num?)?.toDouble() ?? 0,
       sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,

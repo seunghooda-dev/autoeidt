@@ -221,6 +221,20 @@ class EditorController extends ChangeNotifier {
               sizeBytes: item.sizeBytes,
               warnings: item.warnings,
             ),
+        for (final item in job?.renderManifestItems ?? const [])
+          if (item.url.isNotEmpty)
+            BatchRenderItemResult(
+              label: item.label,
+              outputName: item.outputName.isEmpty
+                  ? _outputNameFromUrl(item.url)
+                  : item.outputName,
+              url: _apiClient.absoluteUrl(item.url),
+              kind: item.kind,
+              path: item.path,
+              durationSeconds: item.durationSeconds,
+              sizeBytes: item.sizeBytes,
+              warnings: item.warnings,
+            ),
       ];
     }
 

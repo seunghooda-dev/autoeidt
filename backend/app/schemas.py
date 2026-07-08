@@ -374,6 +374,7 @@ class BatchRenderItemResult(BaseModel):
     path: str | None = None
     url: str = ""
     output_name: str = ""
+    kind: str = "video"
     duration_seconds: float = 0.0
     size_bytes: int = 0
     warnings: list[str] = Field(default_factory=list)
@@ -395,6 +396,7 @@ class JobStatusResponse(BaseModel):
     render_size_bytes: int | None = None
     render_warnings: list[str] = Field(default_factory=list)
     batch_render_items: list[BatchRenderItemResult] = Field(default_factory=list)
+    render_manifest_items: list[BatchRenderItemResult] = Field(default_factory=list)
     error: str | None = None
     style_profile: StyleProfile | None = None
     analysis_warnings: list[str] = Field(default_factory=list)

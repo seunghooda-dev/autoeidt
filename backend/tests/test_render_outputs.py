@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -182,3 +183,27 @@ def test_batch_render_job_deduplicates_output_names(
     assert result["batch_render_items"][0]["size_bytes"] == len("shorts.mp4")
     assert result["batch_render_items"][0]["warnings"]
     assert result["render_warnings"]
+    assert [item["kind"] for item in result["render_manifest_items"]] == [
+        "manifest",
+        "manifest",
+    ]
+    assert [
+        item["output_name"] for item in result["render_manifest_items"]
+    ] == ["render_manifest.json", "render_manifest.csv"]
+
+    manifest = json.loads(
+        (fake_store.output / "render_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["timeline_frame_rate"] == 30.0
+    assert manifest["timeline_timecode_mode"] == "non_drop"
+    assert manifest["output_count"] == 2
+    assert manifest["total_duration_timecode"] == "00:00:15:00"
+    assert manifest["outputs"][0]["duration_timecode"] == "00:00:10:00"
+    assert manifest["outputs"][0]["segments"][0]["source_out_timecode"] == (
+        "00:00:10:00"
+    )
+    csv_text = (fake_store.output / "render_manifest.csv").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "item_index,label,output_name,path,url,duration_timecode" in csv_text
+    assert "Shorts 02" in csv_text
