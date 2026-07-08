@@ -260,6 +260,20 @@ class RenderRequest(BaseModel):
     output_name: str = "youtube_highlights.mp4"
 
 
+class BatchRenderItem(BaseModel):
+    label: str = "shorts"
+    segments: list[HighlightSegment]
+    output_name: str = "shorts.mp4"
+
+
+class BatchRenderRequest(BaseModel):
+    items: list[BatchRenderItem]
+    captions: list[CaptionSegment] = Field(default_factory=list)
+    caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
+    aspect_ratio: str = "9:16"
+    include_captions: bool = True
+
+
 class RenderResponse(BaseModel):
     job_id: str
     render_task_id: str

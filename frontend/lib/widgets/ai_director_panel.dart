@@ -100,6 +100,8 @@ class AiDirectorPanel extends StatelessWidget {
         const SizedBox(height: 14),
         const _ReferenceStylePanel(),
         const SizedBox(height: 14),
+        const _MultiShortsPanel(),
+        const SizedBox(height: 14),
         const _StyleReportPanel(),
         const SizedBox(height: 14),
         const _ComparisonPanel(),
@@ -191,6 +193,159 @@ class _StyleReportPanel extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _MultiShortsPanel extends StatelessWidget {
+  const _MultiShortsPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final candidates = controller.shortsCandidates;
+    return _DirectorSection(
+      title: 'Multi Shorts',
+      icon: Icons.video_collection_outlined,
+      trailing: candidates.isEmpty
+          ? '0'
+          : '${controller.selectedShortsCount}/${candidates.length}',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.segments.isEmpty
+                      ? null
+                      : context
+                            .read<EditorController>()
+                            .buildMultiShortsCandidates,
+                  icon: const Icon(Icons.auto_awesome_motion, size: 17),
+                  label: const Text('Build'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: candidates.isEmpty
+                      ? null
+                      : context
+                            .read<EditorController>()
+                            .requestSelectedShortsRender,
+                  icon: const Icon(Icons.ios_share, size: 17),
+                  label: const Text('Render'),
+                ),
+              ),
+            ],
+          ),
+          if (candidates.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: context
+                  .read<EditorController>()
+                  .updateSelectedShortsFromTimeline,
+              icon: const Icon(Icons.save_outlined, size: 17),
+              label: const Text('Update selected from timeline'),
+            ),
+            const SizedBox(height: 8),
+            for (final candidate in candidates)
+              _ShortsCandidateTile(candidate: candidate),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortsCandidateTile extends StatelessWidget {
+  const _ShortsCandidateTile({required this.candidate});
+
+  final ShortsCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final isActive = controller.selectedShortsId == candidate.id;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      decoration: BoxDecoration(
+        color: isActive
+            ? colorScheme.primary.withValues(alpha: 0.12)
+            : colorScheme.surface,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(
+          color: isActive ? colorScheme.primary : colorScheme.outline,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(7),
+        onTap: () => context.read<EditorController>().selectShortsCandidate(
+          candidate.id,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Checkbox(
+                    value: candidate.selected,
+                    onChanged: (_) => context
+                        .read<EditorController>()
+                        .toggleShortsCandidate(candidate.id),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  Expanded(
+                    child: Text(
+                      candidate.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatSeconds(candidate.durationSeconds),
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
+              ),
+              Text(
+                candidate.reason,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    tooltip: 'Duplicate shorts candidate',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => context
+                        .read<EditorController>()
+                        .duplicateShortsCandidate(candidate.id),
+                    icon: const Icon(Icons.copy, size: 16),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete shorts candidate',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => context
+                        .read<EditorController>()
+                        .deleteShortsCandidate(candidate.id),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

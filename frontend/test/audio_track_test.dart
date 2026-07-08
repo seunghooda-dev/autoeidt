@@ -397,4 +397,81 @@ void main() {
       isTrue,
     );
   });
+
+  test('multi shorts candidates can be built edited and selected', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 1800
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 10,
+          end: 70,
+          reason: 'hook',
+          score: 9,
+          tags: ['유지율'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 80,
+          end: 135,
+          reason: 'evidence',
+          score: 8,
+          tags: ['근거'],
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 180,
+          end: 240,
+          reason: 'impact',
+          score: 7,
+          tags: ['영향'],
+        ),
+        HighlightSegment(
+          order: 4,
+          start: 360,
+          end: 410,
+          reason: 'weak',
+          score: 3,
+          tags: ['CTA'],
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.buildMultiShortsCandidates(maxCandidates: 3);
+    expect(controller.hasShortsCandidates, isTrue);
+    expect(controller.selectedShortsCandidate, isNotNull);
+    expect(controller.exportAspectRatio, '9:16');
+    expect(controller.captionStylePreset, 'shorts');
+
+    final selectedId = controller.selectedShortsId!;
+    controller.updateSegment(controller.segments.first.copyWith(end: 60));
+    controller.updateSelectedShortsFromTimeline();
+    expect(
+      controller.shortsCandidates
+          .firstWhere((candidate) => candidate.id == selectedId)
+          .segments
+          .first
+          .end,
+      closeTo(60, 0.01),
+    );
+
+    controller.duplicateShortsCandidate(selectedId);
+    expect(controller.shortsCandidates.length, greaterThan(1));
+
+    controller.toggleShortsCandidate(selectedId);
+    expect(
+      controller.shortsCandidates
+          .firstWhere((candidate) => candidate.id == selectedId)
+          .selected,
+      isFalse,
+    );
+
+    controller.deleteShortsCandidate(selectedId);
+    expect(
+      controller.shortsCandidates.any(
+        (candidate) => candidate.id == selectedId,
+      ),
+      isFalse,
+    );
+  });
 }

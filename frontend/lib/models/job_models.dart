@@ -38,6 +38,7 @@ class JobStatusResponse {
     this.renderUrl,
     this.error,
     this.styleProfile,
+    this.batchRenderItems = const [],
     this.segments = const [],
   });
 
@@ -51,10 +52,13 @@ class JobStatusResponse {
   final String? renderUrl;
   final String? error;
   final StyleProfile? styleProfile;
+  final List<BatchRenderItemResult> batchRenderItems;
   final List<HighlightSegment> segments;
 
   factory JobStatusResponse.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
+    final rawBatchItems =
+        json['batch_render_items'] as List<dynamic>? ?? const [];
     return JobStatusResponse(
       jobId: json['job_id'] as String,
       status: json['status'] as String,
@@ -70,11 +74,37 @@ class JobStatusResponse {
           : StyleProfile.fromJson(
               json['style_profile'] as Map<String, dynamic>,
             ),
+      batchRenderItems: rawBatchItems
+          .map(
+            (item) =>
+                BatchRenderItemResult.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
       segments: rawSegments
           .map(
             (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+    );
+  }
+}
+
+class BatchRenderItemResult {
+  const BatchRenderItemResult({
+    required this.label,
+    required this.outputName,
+    required this.url,
+  });
+
+  final String label;
+  final String outputName;
+  final String url;
+
+  factory BatchRenderItemResult.fromJson(Map<String, dynamic> json) {
+    return BatchRenderItemResult(
+      label: json['label'] as String? ?? 'Shorts',
+      outputName: json['output_name'] as String? ?? '',
+      url: json['url'] as String? ?? '',
     );
   }
 }

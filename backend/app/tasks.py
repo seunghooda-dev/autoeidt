@@ -496,6 +496,87 @@ def render_video_job(
         raise
 
 
+def render_batch_video_job(
+    job_id: str,
+    items: list[dict[str, Any]],
+    options: dict[str, Any] | None = None,
+    task: Any | None = None,
+) -> dict[str, Any]:
+    try:
+        options = options or {}
+        job = store.load(job_id)
+        duration = float(job.get("duration") or 0)
+        video_path = Path(job["video_path"])
+        captions = options.get("captions") or []
+        if not options.get("include_captions", True):
+            captions = []
+        caption_style = options.get("caption_style") or {}
+        rendered_items: list[dict[str, Any]] = []
+        total = max(len(items), 1)
+        for index, item in enumerate(items, start=1):
+            normalized = _normalize_highlights(
+                list(item.get("segments") or []),
+                duration or 1_000_000.0,
+                preserve_order=True,
+            )
+            if not normalized:
+                continue
+            output_name = str(item.get("output_name") or f"shorts_{index:02}.mp4")
+            output_path = store.output_dir(job_id) / output_name
+            progress = 10 + int(index / total * 80)
+            _set_task_state(
+                task,
+                job_id,
+                JobStatus.rendering,
+                "batch_rendering",
+                progress,
+                f"쇼츠 {index}/{total} 렌더링 중",
+                batch_render_items=rendered_items,
+            )
+            rendered_path = render_highlights(
+                video_path,
+                normalized,
+                output_path,
+                aspect_ratio=str(options.get("aspect_ratio") or "9:16"),
+                captions=captions,
+                caption_style=caption_style,
+            )
+            rendered_items.append(
+                {
+                    "label": str(item.get("label") or f"Shorts {index:02}"),
+                    "path": str(rendered_path),
+                    "url": f"/api/jobs/{job_id}/download/{rendered_path.name}",
+                    "output_name": rendered_path.name,
+                    "segments": normalized,
+                }
+            )
+        if not rendered_items:
+            raise ValueError("렌더링할 쇼츠 후보가 없습니다.")
+
+        _set_task_state(
+            task,
+            job_id,
+            JobStatus.rendered,
+            "batch_rendered",
+            100,
+            "쇼츠 일괄 렌더링 완료",
+            batch_render_items=rendered_items,
+            render_path=rendered_items[0]["path"],
+            render_url=rendered_items[0]["url"],
+        )
+        return store.load(job_id)
+    except Exception as exc:
+        store.update(
+            job_id,
+            status=JobStatus.failed.value,
+            stage="batch_render_failed",
+            progress=100,
+            message="쇼츠 일괄 렌더링 실패",
+            error=str(exc),
+        )
+        raise
+
+
 @celery_app.task(bind=True, name="app.tasks.render_video")
 def render_video_task(
     self: Any,
@@ -504,3 +585,13 @@ def render_video_task(
     options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return render_video_job(job_id, segments, options, self)
+
+
+@celery_app.task(bind=True, name="app.tasks.render_batch_video")
+def render_batch_video_task(
+    self: Any,
+    job_id: str,
+    items: list[dict[str, Any]],
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return render_batch_video_job(job_id, items, options, self)

@@ -150,6 +150,27 @@ class ApiClient {
     );
   }
 
+  Future<void> requestBatchRender(
+    String jobId,
+    List<Map<String, dynamic>> items, {
+    List<CaptionSegment> captions = const [],
+    CaptionRenderStyle? captionStyle,
+    String aspectRatio = '9:16',
+    bool includeCaptions = true,
+  }) async {
+    await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/$jobId/batch-render',
+      data: {
+        'items': items,
+        'captions': captions.map((item) => item.toJson()).toList(),
+        'caption_style': (captionStyle ?? CaptionRenderStyle.preset('shorts'))
+            .toJson(),
+        'aspect_ratio': aspectRatio,
+        'include_captions': includeCaptions,
+      },
+    );
+  }
+
   Future<ProjectState> getProject(String jobId) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '$baseUrl/api/jobs/$jobId/project',

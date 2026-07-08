@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.schemas import (
+    BatchRenderRequest,
     JobStatus,
     JobStatusResponse,
     LocalImportRequest,
@@ -20,6 +21,8 @@ from app.storage import now_iso, safe_filename, store
 from app.tasks import (
     analyze_video_job,
     analyze_video_task,
+    render_batch_video_job,
+    render_batch_video_task,
     render_video_job,
     render_video_task,
 )
@@ -280,6 +283,54 @@ def render_job(
     )
 
 
+@router.post("/{job_id}/batch-render", response_model=RenderResponse, status_code=status.HTTP_202_ACCEPTED)
+def batch_render_job(
+    job_id: str,
+    payload: BatchRenderRequest,
+    background_tasks: BackgroundTasks,
+) -> RenderResponse:
+    _load_job_or_404(job_id)
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="at least one shorts item is required")
+    settings = get_settings()
+    items = [
+        {
+            "label": item.label,
+            "segments": [segment.model_dump() for segment in item.segments],
+            "output_name": safe_filename(item.output_name or "shorts.mp4"),
+        }
+        for item in payload.items
+    ]
+    render_options = {
+        "captions": [caption.model_dump() for caption in payload.captions],
+        "caption_style": payload.caption_style.model_dump(),
+        "aspect_ratio": payload.aspect_ratio,
+        "include_captions": payload.include_captions,
+    }
+    if settings.task_runner == "inline":
+        task_id = f"inline-batch-render-{job_id}"
+        background_tasks.add_task(render_batch_video_job, job_id, items, render_options)
+    else:
+        task = render_batch_video_task.delay(job_id, items, render_options)
+        task_id = task.id
+    store.update(
+        job_id,
+        status=JobStatus.rendering.value,
+        stage="batch_render_queued",
+        progress=0,
+        message="쇼츠 일괄 렌더링 대기 중",
+        render_task_id=task_id,
+        batch_render_request=items,
+        render_options=render_options,
+    )
+    return RenderResponse(
+        job_id=job_id,
+        render_task_id=task_id,
+        status=JobStatus.rendering,
+        stage="batch_render_queued",
+    )
+
+
 @router.get("/{job_id}/download")
 def download_render(job_id: str) -> FileResponse:
     job = _load_job_or_404(job_id)
@@ -287,6 +338,20 @@ def download_render(job_id: str) -> FileResponse:
     if not render_path:
         raise HTTPException(status_code=404, detail="rendered video not available")
     path = Path(render_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="rendered video file not found")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=path.name,
+    )
+
+
+@router.get("/{job_id}/download/{filename}")
+def download_named_render(job_id: str, filename: str) -> FileResponse:
+    job = _load_job_or_404(job_id)
+    safe_name = safe_filename(filename)
+    path = store.output_dir(job_id) / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="rendered video file not found")
     return FileResponse(

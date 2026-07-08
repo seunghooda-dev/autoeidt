@@ -65,6 +65,8 @@ class EditorController extends ChangeNotifier {
   List<HighlightSegment> comparisonDefaultSegments = [];
   List<HighlightSegment> comparisonReferenceSegments = [];
   String comparisonSelection = 'current';
+  List<ShortsCandidate> shortsCandidates = [];
+  int? selectedShortsId;
   VideoPlayerController? videoController;
   double _lastNotifiedPosition = -1;
   bool? _lastNotifiedPlaying;
@@ -86,6 +88,22 @@ class EditorController extends ChangeNotifier {
   bool get hasComparisonVariants =>
       comparisonDefaultSegments.isNotEmpty &&
       comparisonReferenceSegments.isNotEmpty;
+  bool get hasShortsCandidates => shortsCandidates.isNotEmpty;
+  ShortsCandidate? get selectedShortsCandidate {
+    final id = selectedShortsId;
+    if (id == null) {
+      return null;
+    }
+    for (final candidate in shortsCandidates) {
+      if (candidate.id == id) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  int get selectedShortsCount =>
+      shortsCandidates.where((candidate) => candidate.selected).length;
   CaptionRenderStyle get captionRenderStyle =>
       CaptionRenderStyle.preset(captionStylePreset);
   String get styleStatusText {
@@ -361,6 +379,8 @@ class EditorController extends ChangeNotifier {
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
+    shortsCandidates = [];
+    selectedShortsId = null;
     _clearHistory();
     await _disposeVideoController();
     notifyListeners();
@@ -1539,6 +1559,200 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void buildMultiShortsCandidates({
+    int maxCandidates = 6,
+    double minSeconds = 120,
+    double maxSeconds = 180,
+  }) {
+    if (segments.isEmpty) {
+      return;
+    }
+    final ranked = [...segments]
+      ..sort((a, b) {
+        final scoreCompare = b.score.compareTo(a.score);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.start.compareTo(b.start);
+      });
+    final output = <ShortsCandidate>[];
+    final used = <int>{};
+    var nextId = 1;
+    for (final seed in ranked) {
+      if (output.length >= maxCandidates) {
+        break;
+      }
+      if (used.contains(seed.order) || seed.score > 0 && seed.score < 4.5) {
+        continue;
+      }
+      final group = _buildShortsGroup(
+        seed,
+        used,
+        minSeconds: minSeconds,
+        maxSeconds: maxSeconds,
+      );
+      if (group.isEmpty) {
+        continue;
+      }
+      for (final segment in group) {
+        used.add(segment.order);
+      }
+      final normalized = _reorderSegments([
+        for (final segment in group)
+          _referenceStyleSegment(
+            segment,
+            maxSeconds,
+          ).copyWith(source: _appendSource(segment.source, 'shorts')),
+      ]);
+      output.add(
+        ShortsCandidate(
+          id: nextId,
+          label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
+          reason: _shortsReason(normalized),
+          segments: normalized,
+          selected: true,
+        ),
+      );
+      nextId += 1;
+    }
+    if (output.isEmpty) {
+      output.add(
+        ShortsCandidate(
+          id: 1,
+          label: 'Shorts 01',
+          reason: '현재 타임라인 기반 기본 쇼츠 후보',
+          segments: _reorderSegments(segments.take(4).toList()),
+          selected: true,
+        ),
+      );
+    }
+    shortsCandidates = output;
+    selectedShortsId = output.first.id;
+    _loadShortsCandidateToTimeline(output.first);
+    notifyListeners();
+  }
+
+  void selectShortsCandidate(int id) {
+    final candidate = _shortsCandidateById(id);
+    if (candidate == null) {
+      return;
+    }
+    selectedShortsId = id;
+    _loadShortsCandidateToTimeline(candidate);
+    notifyListeners();
+  }
+
+  void updateSelectedShortsFromTimeline() {
+    final id = selectedShortsId;
+    if (id == null || segments.isEmpty) {
+      return;
+    }
+    shortsCandidates = [
+      for (final candidate in shortsCandidates)
+        if (candidate.id == id)
+          candidate.copyWith(
+            segments: _reorderSegments(List<HighlightSegment>.of(segments)),
+            reason: _shortsReason(segments),
+          )
+        else
+          candidate,
+    ];
+    notifyListeners();
+  }
+
+  void toggleShortsCandidate(int id) {
+    shortsCandidates = [
+      for (final candidate in shortsCandidates)
+        if (candidate.id == id)
+          candidate.copyWith(selected: !candidate.selected)
+        else
+          candidate,
+    ];
+    notifyListeners();
+  }
+
+  void deleteShortsCandidate(int id) {
+    shortsCandidates = [
+      for (final candidate in shortsCandidates)
+        if (candidate.id != id) candidate,
+    ];
+    if (selectedShortsId == id) {
+      selectedShortsId = shortsCandidates.isEmpty
+          ? null
+          : shortsCandidates.first.id;
+      if (shortsCandidates.isNotEmpty) {
+        _loadShortsCandidateToTimeline(shortsCandidates.first);
+      }
+    }
+    notifyListeners();
+  }
+
+  void duplicateShortsCandidate(int id) {
+    final source = _shortsCandidateById(id);
+    if (source == null) {
+      return;
+    }
+    final nextId =
+        shortsCandidates.fold<int>(
+          0,
+          (maxId, candidate) => candidate.id > maxId ? candidate.id : maxId,
+        ) +
+        1;
+    shortsCandidates = [
+      ...shortsCandidates,
+      source.copyWith(
+        id: nextId,
+        label: 'Shorts ${nextId.toString().padLeft(2, '0')}',
+      ),
+    ];
+    notifyListeners();
+  }
+
+  Future<void> requestSelectedShortsRender() async {
+    final id = jobId;
+    if (id == null) {
+      return;
+    }
+    final selected = shortsCandidates
+        .where(
+          (candidate) => candidate.selected && candidate.segments.isNotEmpty,
+        )
+        .toList();
+    if (selected.isEmpty) {
+      errorMessage = '렌더링할 쇼츠 후보를 선택해 주세요';
+      notifyListeners();
+      return;
+    }
+    isRendering = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      await _apiClient.requestBatchRender(
+        id,
+        [
+          for (var index = 0; index < selected.length; index++)
+            {
+              'label': selected[index].label,
+              'output_name':
+                  'shorts_${(index + 1).toString().padLeft(2, '0')}.mp4',
+              'segments': selected[index].segments
+                  .map((segment) => segment.toJson())
+                  .toList(),
+            },
+        ],
+        captions: captions,
+        captionStyle: CaptionRenderStyle.preset('shorts'),
+        aspectRatio: '9:16',
+        includeCaptions: true,
+      );
+      _startPolling();
+    } catch (error) {
+      isRendering = false;
+      errorMessage = '쇼츠 일괄 렌더링 요청 실패: $error';
+      notifyListeners();
+    }
+  }
+
   void updateCaption(CaptionSegment updated) {
     _commitHistory();
     captions = [
@@ -1669,6 +1883,8 @@ class EditorController extends ChangeNotifier {
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
+    shortsCandidates = [];
+    selectedShortsId = null;
     if (segments.isNotEmpty &&
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.first.order;
@@ -1922,6 +2138,78 @@ class EditorController extends ChangeNotifier {
     return source.contains(suffix) ? source : '$source+$suffix';
   }
 
+  ShortsCandidate? _shortsCandidateById(int id) {
+    for (final candidate in shortsCandidates) {
+      if (candidate.id == id) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  List<HighlightSegment> _buildShortsGroup(
+    HighlightSegment seed,
+    Set<int> used, {
+    required double minSeconds,
+    required double maxSeconds,
+  }) {
+    final neighbors =
+        segments.where((segment) => !used.contains(segment.order)).toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+    final seedIndex = neighbors.indexWhere(
+      (segment) => segment.order == seed.order,
+    );
+    if (seedIndex < 0) {
+      return const [];
+    }
+    final group = <HighlightSegment>[seed];
+    var total = seed.outputDuration;
+    var left = seedIndex - 1;
+    var right = seedIndex + 1;
+    while (total < minSeconds && (left >= 0 || right < neighbors.length)) {
+      HighlightSegment? next;
+      if (right < neighbors.length) {
+        next = neighbors[right++];
+      } else if (left >= 0) {
+        next = neighbors[left--];
+      }
+      if (next == null || used.contains(next.order)) {
+        continue;
+      }
+      if (group.isNotEmpty && total + next.outputDuration > maxSeconds) {
+        continue;
+      }
+      group.add(next);
+      total += next.outputDuration;
+    }
+    group.sort((a, b) => a.start.compareTo(b.start));
+    return group;
+  }
+
+  String _shortsReason(List<HighlightSegment> input) {
+    final tags = <String>{};
+    for (final segment in input) {
+      tags.addAll(segment.tags.take(3));
+    }
+    final tagText = tags.take(3).join(', ');
+    final durationText = input
+        .fold<double>(0, (total, segment) => total + segment.outputDuration)
+        .round();
+    return tagText.isEmpty
+        ? '${durationText}s 쇼츠 후보'
+        : '${durationText}s · $tagText';
+  }
+
+  void _loadShortsCandidateToTimeline(ShortsCandidate candidate) {
+    _commitHistory();
+    segments = _reorderSegments(List<HighlightSegment>.of(candidate.segments));
+    selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    exportAspectRatio = '9:16';
+    includeCaptions = true;
+    captionStylePreset = 'shorts';
+    renderUrl = null;
+  }
+
   HighlightSegment? _segmentForEditAt(
     double seconds, {
     bool requireInside = true,
@@ -1977,6 +2265,8 @@ class EditorController extends ChangeNotifier {
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
+    shortsCandidates = [];
+    selectedShortsId = null;
     selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
     renderUrl = null;
     if (resetHistory) {
@@ -2170,6 +2460,43 @@ class EditorialCheckItem {
   final String label;
   final String detail;
   final EditorialCheckStatus status;
+}
+
+class ShortsCandidate {
+  const ShortsCandidate({
+    required this.id,
+    required this.label,
+    required this.reason,
+    required this.segments,
+    this.selected = true,
+  });
+
+  final int id;
+  final String label;
+  final String reason;
+  final List<HighlightSegment> segments;
+  final bool selected;
+
+  double get durationSeconds => segments.fold<double>(
+    0,
+    (total, segment) => total + segment.outputDuration,
+  );
+
+  ShortsCandidate copyWith({
+    int? id,
+    String? label,
+    String? reason,
+    List<HighlightSegment>? segments,
+    bool? selected,
+  }) {
+    return ShortsCandidate(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      reason: reason ?? this.reason,
+      segments: segments ?? this.segments,
+      selected: selected ?? this.selected,
+    );
+  }
 }
 
 class _EditorSnapshot {
