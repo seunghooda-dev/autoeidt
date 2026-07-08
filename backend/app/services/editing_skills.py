@@ -8,7 +8,16 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-NEWS_STRUCTURE_TAGS = ["뉴스핵심", "근거", "영향", "대응", "출처확인", "시간축", "발언"]
+NEWS_STRUCTURE_TAGS = [
+    "뉴스핵심",
+    "근거",
+    "영향",
+    "대응",
+    "검증팩트",
+    "출처확인",
+    "시간축",
+    "발언",
+]
 STORY_PHASES = [
     {
         "role": "hook",
@@ -28,8 +37,8 @@ STORY_PHASES = [
         "role": "evidence",
         "label": "Evidence",
         "tag": "Story:Evidence",
-        "tags": {"근거", "출처확인", "발언", "구체성", "뉴스핵심"},
-        "keywords": {"근거", "자료", "통계", "공식", "발표", "확인", "보고서", "said", "reported"},
+        "tags": {"근거", "검증팩트", "출처확인", "발언", "구체성", "뉴스핵심"},
+        "keywords": {"근거", "자료", "통계", "공식", "발표", "확인", "보고서", "검증", "said", "reported"},
     },
     {
         "role": "impact",
@@ -325,6 +334,47 @@ class QuoteSkill:
         return SkillSignal(score=1.9, tag="발언", reason="직접 발언이나 인터뷰성 맥락이 포함됨")
 
 
+class VerifiedFactSkill:
+    name = "verified_fact"
+
+    agency_pattern = re.compile(
+        r"(정부|대통령실|국회|법원|검찰|경찰|소방|당국|위원회|부처|장관|"
+        r"국토교통부|환경부|보건복지부|질병관리청|금융감독원|한국은행|통계청|"
+        r"서울시|시청|구청|회사\s*측|기업|은행|병원|학교|군|대사관|"
+        r"officials?|ministry|agency|court|police|fire department|central bank)",
+        re.I,
+    )
+    source_pattern = re.compile(
+        r"(공식|보고서|자료|통계|브리핑|발표|입장문|공시|고시|문서|조사\s*결과|"
+        r"집계|확인|분석|according to|official|report|data|briefing|filing)",
+        re.I,
+    )
+    number_pattern = re.compile(
+        r"(\d+(?:\.\d+)?\s*(?:%|퍼센트|명|건|억|조|원|달러|km|킬로미터|"
+        r"시간|분|초|개|곳|차례|배|건수)?)",
+        re.I,
+    )
+    quote_pattern = re.compile(
+        r"(밝혔|말했|발표했|설명했|전했|확인했|집계됐|인용|said|announced|reported|confirmed)",
+        re.I,
+    )
+
+    def analyze(self, window: TranscriptWindow) -> SkillSignal | None:
+        text = window.text
+        if not self.agency_pattern.search(text) or not self.source_pattern.search(text):
+            return None
+        has_number = bool(self.number_pattern.search(text))
+        has_quote = bool(self.quote_pattern.search(text))
+        if not has_number and not has_quote:
+            return None
+        score = 3.8 + (0.6 if has_number else 0.0) + (0.4 if has_quote else 0.0)
+        return SkillSignal(
+            score=score,
+            tag="검증팩트",
+            reason="기관·공식 출처와 수치 또는 발언이 함께 있어 검증 가능한 뉴스 핵심",
+        )
+
+
 class TransitionSkill:
     name = "transition"
 
@@ -419,6 +469,7 @@ BUILT_IN_SKILLS: list[EditingSkill] = [
     ResponseSkill(),
     ChronologySkill(),
     QuoteSkill(),
+    VerifiedFactSkill(),
     TransitionSkill(),
     FillerWordSkill(),
     CallToActionSkill(),
@@ -611,7 +662,7 @@ def _apply_style_profile_score(
             window.tags.append("레퍼런스훅")
         window.reasons.append("레퍼런스 스타일의 초반 후킹 구간에 해당")
 
-    if any(tag in window.tags for tag in ["고밀도", "정보밀도", "구체성", "근거"]):
+    if any(tag in window.tags for tag in ["고밀도", "정보밀도", "구체성", "근거", "검증팩트"]):
         window.score += 0.45 * info_weight
 
     if bool(style_profile.get("prefer_news_structure", False)) and any(
@@ -756,7 +807,7 @@ def _story_phase_rank(
     duration_fit = min(window.duration / 36.0, 1.0)
     hook_length_penalty = max(0.0, (window.duration - 32.0) * 1.1) if phase["role"] == "hook" else 0.0
     hook_purity_penalty = (
-        len(set(window.tags) & {"근거", "출처확인", "영향", "대응", "발언"}) * 2.4
+        len(set(window.tags) & {"근거", "검증팩트", "출처확인", "영향", "대응", "발언"}) * 2.4
         if phase["role"] == "hook"
         else 0.0
     )

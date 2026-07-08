@@ -1,4 +1,8 @@
-from app.services.editing_skills import select_highlights_with_skills
+from app.services.editing_skills import (
+    TranscriptWindow,
+    score_window,
+    select_highlights_with_skills,
+)
 
 
 def test_skill_engine_prioritizes_hook_and_problem_solution() -> None:
@@ -141,6 +145,63 @@ def test_news_engine_builds_editorial_sequence_and_avoids_rumor() -> None:
     assert "루머" not in joined_text
     assert {"뉴스핵심", "근거", "영향", "대응"} <= joined_tags
     assert all(item["source"] == "editorial-engine" for item in highlights)
+
+
+def test_verified_fact_skill_rewards_official_sourced_numbers() -> None:
+    window = score_window(
+        TranscriptWindow(
+            start=20.0,
+            end=42.0,
+            items=[],
+            text=(
+                "국토교통부 공식 보고서에 따르면 지난달 사고 피해액은 "
+                "120억 원으로 집계됐고 장관은 재발 방지 대책을 발표했습니다"
+            ),
+            source_duration=120.0,
+        )
+    )
+
+    assert "검증팩트" in window.tags
+    assert "근거" in window.tags
+    assert "출처확인" in window.tags
+    assert any("검증 가능한 뉴스 핵심" in reason for reason in window.reasons)
+
+
+def test_news_engine_prioritizes_verified_fact_packet() -> None:
+    transcript = [
+        {
+            "start": 0.0,
+            "end": 18.0,
+            "text": "충격적인 소문이 빠르게 퍼지고 있다는 자극적인 이야기입니다",
+        },
+        {
+            "start": 18.0,
+            "end": 38.0,
+            "text": "국토교통부 공식 보고서에 따르면 사고 피해액은 120억 원으로 집계됐습니다",
+        },
+        {
+            "start": 38.0,
+            "end": 58.0,
+            "text": "인근 주민들은 안전 우려와 영업 손실 피해가 크다고 말했습니다",
+        },
+        {
+            "start": 58.0,
+            "end": 78.0,
+            "text": "정부는 추가 조사와 재발 방지 대책을 발표했습니다",
+        },
+    ]
+
+    highlights = select_highlights_with_skills(
+        transcript,
+        duration=78.0,
+        target_min_seconds=40.0,
+        target_max_seconds=70.0,
+    )
+
+    joined_text = " ".join(item["script"] for item in highlights)
+    joined_tags = {tag for item in highlights for tag in item["tags"]}
+    assert "검증팩트" in joined_tags
+    assert "공식 보고서" in joined_text
 
 
 def test_story_arc_engine_tags_complete_shorts_flow() -> None:

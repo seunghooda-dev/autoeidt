@@ -316,9 +316,12 @@ News/editorial rules:
   people, official response or opposing view, and consequence/next step.
 - Prefer attributed claims: "according to", "said", "announced", "reported",
   "에 따르면", "밝혔습니다", "말했습니다".
+- Strongly prefer verification packets where an official institution/source,
+  a concrete number or record, and a quote/announcement appear in the same
+  segment.
 - Avoid unverified rumors, speculation, sensational wording, or claims without
   context. Do not make a clip imply certainty when the transcript does not.
-- Use Korean tags such as "뉴스핵심", "근거", "영향", "대응", "출처확인", "시간축".
+- Use Korean tags such as "뉴스핵심", "근거", "검증팩트", "영향", "대응", "출처확인", "시간축".
 {style_block}
 
 Transcript JSON:

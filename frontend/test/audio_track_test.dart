@@ -1597,6 +1597,51 @@ void main() {
     expect(storyCandidate.storyScore, 100);
     expect(storyCandidate.strengths, contains('Story'));
   });
+
+  test('verified fact tag drives news shorts signal scoring', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 300
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 30,
+          reason: '정부 공식 보고서에 따른 검증 팩트',
+          script: '국토교통부 공식 보고서에 따르면 피해액은 120억 원입니다',
+          score: 8,
+          tags: ['뉴스핵심', '검증팩트', '근거'],
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 35,
+          end: 65,
+          reason: '주민 피해 영향',
+          score: 7,
+          tags: ['영향'],
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 70,
+          end: 100,
+          reason: '정부 대응',
+          score: 7,
+          tags: ['대응'],
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 4,
+      minSeconds: 90,
+      maxSeconds: 120,
+    );
+
+    final verifiedCandidate = controller.shortsCandidates.firstWhere(
+      (candidate) =>
+          candidate.segments.any((segment) => segment.tags.contains('검증팩트')),
+    );
+    expect(verifiedCandidate.strengths, contains('Signals'));
+    expect(verifiedCandidate.qualityScore, greaterThanOrEqualTo(70));
+  });
 }
 
 class _RecordingApiClient extends ApiClient {

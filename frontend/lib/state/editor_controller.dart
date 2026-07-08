@@ -331,12 +331,21 @@ class EditorController extends ChangeNotifier {
   List<EditorialCheckItem> get editorialChecklist {
     final hasNewsSignals = segments.any(
       (segment) => segment.tags.any(
-        (tag) => {'뉴스핵심', '근거', '영향', '대응', '출처확인', '시간축', '발언'}.contains(tag),
+        (tag) => {
+          '뉴스핵심',
+          '근거',
+          '검증팩트',
+          '영향',
+          '대응',
+          '출처확인',
+          '시간축',
+          '발언',
+        }.contains(tag),
       ),
     );
     final hasAttribution = segments.any(
       (segment) =>
-          segment.tags.any((tag) => {'근거', '출처확인', '발언'}.contains(tag)),
+          segment.tags.any((tag) => {'근거', '검증팩트', '출처확인', '발언'}.contains(tag)),
     );
     final enabledCaptionCount = captions
         .where((caption) => caption.enabled)
@@ -2666,6 +2675,7 @@ class EditorController extends ChangeNotifier {
       return !_segmentHasAnyTag(seed, const {
             '뉴스핵심',
             '근거',
+            '검증팩트',
             '영향',
             '대응',
             '출처확인',
@@ -2675,7 +2685,13 @@ class EditorController extends ChangeNotifier {
           !_containsAny(seed.reason, const ['뉴스', '속보', '단독', '발언', '확인']);
     }
     if (strategyKind == 'info') {
-      return !_segmentHasAnyTag(seed, const {'문제해결', '구체성', '비교', '근거'}) &&
+      return !_segmentHasAnyTag(seed, const {
+            '문제해결',
+            '구체성',
+            '비교',
+            '근거',
+            '검증팩트',
+          }) &&
           !_containsAny(seed.script, const ['방법', '이유', '차이', '원인', '비교']);
     }
     return false;
@@ -2706,6 +2722,7 @@ class EditorController extends ChangeNotifier {
             _tagMatchCount(segment, const {
                   '뉴스핵심',
                   '근거',
+                  '검증팩트',
                   '영향',
                   '대응',
                   '출처확인',
@@ -2716,7 +2733,8 @@ class EditorController extends ChangeNotifier {
             (_containsAny(text, const ['속보', '단독', '공식', '발표', '확인']) ? 16 : 0),
       'info' =>
         base +
-            _tagMatchCount(segment, const {'문제해결', '구체성', '비교', '근거'}) * 12 +
+            _tagMatchCount(segment, const {'문제해결', '구체성', '비교', '근거', '검증팩트'}) *
+                12 +
             (_containsAny(text, const ['방법', '이유', '차이', '원인', '비교', '수치'])
                 ? 14
                 : 0),
@@ -2840,8 +2858,14 @@ class EditorController extends ChangeNotifier {
     if (_containsAny(text, const ['결과', '핵심', '충격', '문제', '후킹', '유지율'])) {
       return 'hook';
     }
-    if (_segmentHasAnyTag(segment, const {'근거', '출처확인', '발언', '뉴스핵심'}) ||
-        _containsAny(text, const ['근거', '공식', '발표', '확인', '발언'])) {
+    if (_segmentHasAnyTag(segment, const {
+          '근거',
+          '검증팩트',
+          '출처확인',
+          '발언',
+          '뉴스핵심',
+        }) ||
+        _containsAny(text, const ['근거', '공식', '발표', '확인', '발언', '검증'])) {
       return 'evidence';
     }
     if (_segmentHasAnyTag(segment, const {'문제해결', '구체성', '비교'}) ||
@@ -3117,6 +3141,7 @@ class EditorController extends ChangeNotifier {
     final strongSignals = {
       '뉴스핵심',
       '근거',
+      '검증팩트',
       '영향',
       '문제해결',
       '구체성',
