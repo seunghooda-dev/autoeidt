@@ -1285,7 +1285,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.playlist_remove,
         'Extract selected clip',
         _TimelineMenuAction.extractSelected,
-        shortcut: "Ctrl+'",
+        shortcut: "Ctrl+' / Shift+Delete",
         enabled:
             canLiftOrExtractSelected && widget.onExtractSelectedSegment != null,
       ),

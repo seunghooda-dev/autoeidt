@@ -437,6 +437,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyW) {
       editor.rippleTrimSelectedEndToPlayhead();
+    } else if (!isCtrl &&
+        !isAlt &&
+        isShift &&
+        key == LogicalKeyboardKey.delete) {
+      editor.extractSelectedSegment();
     } else if (key == LogicalKeyboardKey.delete) {
       editor.deleteSelectedSegment();
     } else if (!isCtrl &&

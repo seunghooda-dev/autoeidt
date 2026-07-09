@@ -469,6 +469,13 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.quote, control: true);
     expect(controller.segments.length, 2);
     expect(controller.selectedSegment!.reason, 'three');
+
+    controller.undo();
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.delete, shift: true);
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegment!.reason, 'three');
   });
 
   testWidgets('selected clip move shortcuts reorder timeline', (tester) async {
@@ -834,7 +841,7 @@ void main() {
     expect(find.text('Lift selected clip'), findsOneWidget);
     expect(find.text('Ctrl+;'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);
-    expect(find.text("Ctrl+'"), findsOneWidget);
+    expect(find.text("Ctrl+' / Shift+Delete"), findsOneWidget);
     expect(find.text('Move earlier'), findsOneWidget);
     expect(find.text('Ctrl+Up'), findsOneWidget);
     expect(find.text('Move later'), findsOneWidget);
