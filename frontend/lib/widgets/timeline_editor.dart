@@ -1295,7 +1295,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.delete_outline,
         selectedGap ? 'Delete gap' : 'Delete clip',
         _TimelineMenuAction.delete,
-        shortcut: 'Delete',
+        shortcut: 'Delete / Backspace',
         enabled: clipEditable,
       ),
       if (selectedGap)
@@ -1323,7 +1323,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.playlist_remove,
         'Extract selected clip',
         _TimelineMenuAction.extractSelected,
-        shortcut: "Ctrl+' / Shift+Delete",
+        shortcut: "Ctrl+' / Shift+Delete / Shift+Backspace",
         enabled:
             canLiftOrExtractSelected && widget.onExtractSelectedSegment != null,
       ),

@@ -292,6 +292,12 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyZ, control: true);
     expect(controller.segments.length, 1);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.backspace);
+    expect(controller.segments, isEmpty);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyZ, control: true);
+    expect(controller.segments.length, 1);
+
     await _pressShortcut(
       tester,
       LogicalKeyboardKey.keyZ,
@@ -501,6 +507,13 @@ void main() {
     await tester.pump();
 
     await _pressShortcut(tester, LogicalKeyboardKey.delete, shift: true);
+    expect(controller.segments.length, 2);
+    expect(controller.selectedSegment!.reason, 'three');
+
+    controller.undo();
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.backspace, shift: true);
     expect(controller.segments.length, 2);
     expect(controller.selectedSegment!.reason, 'three');
   });
@@ -874,8 +887,13 @@ void main() {
     expect(find.text('R'), findsOneWidget);
     expect(find.text('Lift selected clip'), findsOneWidget);
     expect(find.text('Ctrl+;'), findsOneWidget);
+    expect(find.text('Delete clip'), findsOneWidget);
+    expect(find.text('Delete / Backspace'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);
-    expect(find.text("Ctrl+' / Shift+Delete"), findsOneWidget);
+    expect(
+      find.text("Ctrl+' / Shift+Delete / Shift+Backspace"),
+      findsOneWidget,
+    );
     expect(find.text('Move earlier'), findsOneWidget);
     expect(find.text('Ctrl+Up'), findsOneWidget);
     expect(find.text('Move later'), findsOneWidget);

@@ -440,9 +440,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         isShift &&
-        key == LogicalKeyboardKey.delete) {
+        (key == LogicalKeyboardKey.delete ||
+            key == LogicalKeyboardKey.backspace)) {
       editor.extractSelectedSegment();
-    } else if (key == LogicalKeyboardKey.delete) {
+    } else if (key == LogicalKeyboardKey.delete ||
+        key == LogicalKeyboardKey.backspace) {
       editor.deleteSelectedSegment();
     } else if (!isCtrl &&
         !isAlt &&
