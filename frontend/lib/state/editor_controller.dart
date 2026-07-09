@@ -1595,6 +1595,22 @@ class EditorController extends ChangeNotifier {
     await seekTo(point, autoplay: false);
   }
 
+  Future<void> jumpToSelectedClipStart() async {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    await seekTo(selected.start, autoplay: false);
+  }
+
+  Future<void> jumpToSelectedClipEnd() async {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    await seekTo(selected.end, autoplay: false);
+  }
+
   Future<void> jumpToNextEditPoint() async {
     final current = currentPositionSeconds;
     final threshold = current + timecodeFrameDurationSeconds / 2;

@@ -214,6 +214,10 @@ class _EditorDashboardState extends State<EditorDashboard> {
       unawaited(editor.jumpToMarkIn());
     } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyO) {
       unawaited(editor.jumpToMarkOut());
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.home) {
+      unawaited(editor.jumpToSelectedClipStart());
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.end) {
+      unawaited(editor.jumpToSelectedClipEnd());
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1472,6 +1476,10 @@ class _TimelineEditorBody extends StatelessWidget {
           unawaited(context.read<EditorController>().jumpToMarkIn()),
       onJumpToMarkOut: () =>
           unawaited(context.read<EditorController>().jumpToMarkOut()),
+      onJumpToSelectedClipStart: () =>
+          unawaited(context.read<EditorController>().jumpToSelectedClipStart()),
+      onJumpToSelectedClipEnd: () =>
+          unawaited(context.read<EditorController>().jumpToSelectedClipEnd()),
       onSlipSelectedSegmentFrames: context
           .read<EditorController>()
           .slipSelectedSegmentFrames,

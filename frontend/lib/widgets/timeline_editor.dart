@@ -45,6 +45,8 @@ enum _TimelineMenuAction {
   nextEdit,
   jumpToMarkIn,
   jumpToMarkOut,
+  jumpToSelectedClipStart,
+  jumpToSelectedClipEnd,
   addMarker,
   previousMarker,
   nextMarker,
@@ -139,6 +141,8 @@ class TimelineEditor extends StatefulWidget {
     this.onJumpToNextEdit,
     this.onJumpToMarkIn,
     this.onJumpToMarkOut,
+    this.onJumpToSelectedClipStart,
+    this.onJumpToSelectedClipEnd,
     this.onSlipSelectedSegmentFrames,
     this.onNudgeSelectedAudioFrames,
     this.onAddMarkerAt,
@@ -228,6 +232,8 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onJumpToNextEdit;
   final VoidCallback? onJumpToMarkIn;
   final VoidCallback? onJumpToMarkOut;
+  final VoidCallback? onJumpToSelectedClipStart;
+  final VoidCallback? onJumpToSelectedClipEnd;
   final ValueChanged<int>? onSlipSelectedSegmentFrames;
   final ValueChanged<int>? onNudgeSelectedAudioFrames;
   final ValueChanged<double>? onAddMarkerAt;
@@ -538,6 +544,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onJumpToMarkIn?.call();
       case _TimelineMenuAction.jumpToMarkOut:
         widget.onJumpToMarkOut?.call();
+      case _TimelineMenuAction.jumpToSelectedClipStart:
+        widget.onJumpToSelectedClipStart?.call();
+      case _TimelineMenuAction.jumpToSelectedClipEnd:
+        widget.onJumpToSelectedClipEnd?.call();
       case _TimelineMenuAction.addMarker:
         widget.onAddMarkerAt?.call(seconds);
       case _TimelineMenuAction.previousMarker:
@@ -967,6 +977,20 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.jumpToMarkOut,
         shortcut: 'Shift+O',
         enabled: widget.markOut != null && widget.onJumpToMarkOut != null,
+      ),
+      _menuItem(
+        Icons.first_page,
+        'Go to clip start',
+        _TimelineMenuAction.jumpToSelectedClipStart,
+        shortcut: 'Shift+Home',
+        enabled: segment != null && widget.onJumpToSelectedClipStart != null,
+      ),
+      _menuItem(
+        Icons.last_page,
+        'Go to clip end',
+        _TimelineMenuAction.jumpToSelectedClipEnd,
+        shortcut: 'Shift+End',
+        enabled: segment != null && widget.onJumpToSelectedClipEnd != null,
       ),
       const PopupMenuDivider(),
       _menuHeader('Timeline Markers'),
