@@ -1423,6 +1423,14 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  void clearSegmentSelection() {
+    if (selectedSegmentOrder == null) {
+      return;
+    }
+    selectedSegmentOrder = null;
+    notifyListeners();
+  }
+
   void setMarkInFromPlayhead() {
     setMarkInAt(currentPositionSeconds);
   }

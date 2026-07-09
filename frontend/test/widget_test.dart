@@ -548,6 +548,42 @@ void main() {
     expect(controller.selectedSegment!.audioMuted, isFalse);
   });
 
+  testWidgets('deselect shortcuts clear selected clip without history', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 12, end: 18, reason: 'two'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.keyA,
+      control: true,
+      shift: true,
+    );
+    expect(controller.selectedSegmentOrder, isNull);
+
+    await controller.seekTo(13, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyD);
+    expect(controller.selectedSegmentOrder, 2);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.escape);
+    expect(controller.selectedSegmentOrder, isNull);
+  });
+
   testWidgets('clip clipboard shortcuts copy paste and cut selected clips', (
     tester,
   ) async {
@@ -781,6 +817,8 @@ void main() {
     expect(find.text('Alt+Shift+,'), findsOneWidget);
     expect(find.text('Select clip at cursor'), findsOneWidget);
     expect(find.text('D'), findsOneWidget);
+    expect(find.text('Deselect clip'), findsOneWidget);
+    expect(find.text('Ctrl+Shift+A'), findsOneWidget);
     expect(find.text('Select previous clip'), findsOneWidget);
     expect(find.text('Ctrl+Left'), findsOneWidget);
     expect(find.text('Select next clip'), findsOneWidget);

@@ -53,6 +53,7 @@ enum _TimelineMenuAction {
   deleteMarker,
   clearTimelineMarkers,
   selectClipAtCursor,
+  deselectClip,
   selectPreviousClip,
   selectNextClip,
   addEdit,
@@ -155,6 +156,7 @@ class TimelineEditor extends StatefulWidget {
     this.onClearTimelineMarkers,
     this.onMarkClip,
     this.onSelectClipAt,
+    this.onDeselectClip,
     this.onSelectPreviousClip,
     this.onSelectNextClip,
     this.onAddEditAt,
@@ -249,6 +251,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearTimelineMarkers;
   final VoidCallback? onMarkClip;
   final ValueChanged<double>? onSelectClipAt;
+  final VoidCallback? onDeselectClip;
   final VoidCallback? onSelectPreviousClip;
   final VoidCallback? onSelectNextClip;
   final ValueChanged<double>? onAddEditAt;
@@ -571,6 +574,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onClearTimelineMarkers?.call();
       case _TimelineMenuAction.selectClipAtCursor:
         widget.onSelectClipAt?.call(seconds);
+      case _TimelineMenuAction.deselectClip:
+        widget.onDeselectClip?.call();
       case _TimelineMenuAction.selectPreviousClip:
         widget.onSelectPreviousClip?.call();
       case _TimelineMenuAction.selectNextClip:
@@ -1052,6 +1057,15 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.selectClipAtCursor,
         shortcut: 'D',
         enabled: segment != null && widget.onSelectClipAt != null,
+      ),
+      _menuItem(
+        Icons.deselect,
+        'Deselect clip',
+        _TimelineMenuAction.deselectClip,
+        shortcut: 'Ctrl+Shift+A',
+        enabled:
+            widget.selectedSegmentOrder != null &&
+            widget.onDeselectClip != null,
       ),
       _menuItem(
         Icons.skip_previous,
