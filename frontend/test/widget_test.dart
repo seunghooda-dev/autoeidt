@@ -315,6 +315,68 @@ void main() {
     expect(secondsToTimecodeFrame(controller.segments[2].start), 1199);
   });
 
+  testWidgets('Premiere playhead shortcuts select and add edit under cursor', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'first'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'second'),
+        HighlightSegment(order: 3, start: 40, end: 50, reason: 'third'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await controller.seekTo(22, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyD);
+    expect(controller.selectedSegmentOrder, 2);
+
+    await controller.seekTo(25, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyK, control: true);
+    expect(controller.segments.length, 4);
+    expect(secondsToTimecodeFrame(controller.segments[1].end), 750);
+    expect(secondsToTimecodeFrame(controller.segments[2].start), 750);
+    expect(controller.selectedSegmentOrder, 3);
+
+    controller.undo();
+    await tester.pump();
+    expect(controller.segments.length, 3);
+    controller.selectedSegmentOrder = 1;
+    await controller.seekTo(45, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.keyK,
+      control: true,
+      shift: true,
+    );
+    expect(controller.segments.length, 4);
+    expect(secondsToTimecodeFrame(controller.segments[2].end), 1350);
+    expect(secondsToTimecodeFrame(controller.segments[3].start), 1350);
+
+    controller.undo();
+    controller.toggleVideoTrackLock();
+    await controller.seekTo(45, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(
+      tester,
+      LogicalKeyboardKey.keyK,
+      control: true,
+      shift: true,
+    );
+    expect(controller.segments.length, 3);
+  });
+
   testWidgets('selected clip lift and extract shortcuts edit timeline', (
     tester,
   ) async {
@@ -578,6 +640,10 @@ void main() {
     expect(find.text('Alt+.'), findsOneWidget);
     expect(find.text('Roll outgoing earlier 1f'), findsOneWidget);
     expect(find.text('Alt+Shift+,'), findsOneWidget);
+    expect(find.text('Select clip at cursor'), findsOneWidget);
+    expect(find.text('D'), findsOneWidget);
+    expect(find.text('Add Edit to all tracks'), findsOneWidget);
+    expect(find.text('Ctrl+Shift+K'), findsOneWidget);
     expect(find.text('Lift selected clip'), findsOneWidget);
     expect(find.text('Ctrl+;'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);

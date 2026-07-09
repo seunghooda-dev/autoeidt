@@ -50,7 +50,9 @@ enum _TimelineMenuAction {
   nextMarker,
   deleteMarker,
   clearTimelineMarkers,
+  selectClipAtCursor,
   addEdit,
+  addEditAllTracks,
   rippleTrimStart,
   rippleTrimEnd,
   extendStart,
@@ -144,7 +146,9 @@ class TimelineEditor extends StatefulWidget {
     this.onDeleteMarker,
     this.onClearTimelineMarkers,
     this.onMarkClip,
+    this.onSelectClipAt,
     this.onAddEditAt,
+    this.onAddEditAllTracksAt,
     this.onRippleTrimStartTo,
     this.onRippleTrimEndTo,
     this.onExtendStartTo,
@@ -230,7 +234,9 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onDeleteMarker;
   final VoidCallback? onClearTimelineMarkers;
   final VoidCallback? onMarkClip;
+  final ValueChanged<double>? onSelectClipAt;
   final ValueChanged<double>? onAddEditAt;
+  final ValueChanged<double>? onAddEditAllTracksAt;
   final ValueChanged<double>? onRippleTrimStartTo;
   final ValueChanged<double>? onRippleTrimEndTo;
   final ValueChanged<double>? onExtendStartTo;
@@ -541,8 +547,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         }
       case _TimelineMenuAction.clearTimelineMarkers:
         widget.onClearTimelineMarkers?.call();
+      case _TimelineMenuAction.selectClipAtCursor:
+        widget.onSelectClipAt?.call(seconds);
       case _TimelineMenuAction.addEdit:
         widget.onAddEditAt?.call(seconds);
+      case _TimelineMenuAction.addEditAllTracks:
+        widget.onAddEditAllTracksAt?.call(seconds);
       case _TimelineMenuAction.rippleTrimStart:
         widget.onRippleTrimStartTo?.call(seconds);
       case _TimelineMenuAction.rippleTrimEnd:
@@ -987,11 +997,29 @@ class _TimelineEditorState extends State<TimelineEditor> {
       ),
       const PopupMenuDivider(),
       _menuItem(
+        Icons.ads_click,
+        'Select clip at cursor',
+        _TimelineMenuAction.selectClipAtCursor,
+        shortcut: 'D',
+        enabled: segment != null && widget.onSelectClipAt != null,
+      ),
+      _menuItem(
         Icons.add,
         'Add Edit at cursor',
         _TimelineMenuAction.addEdit,
         shortcut: 'Ctrl+K',
-        enabled: segment != null,
+        enabled: segment != null && markedTargetsUnlocked,
+      ),
+      _menuItem(
+        Icons.splitscreen_outlined,
+        'Add Edit to all tracks',
+        _TimelineMenuAction.addEditAllTracks,
+        shortcut: 'Ctrl+Shift+K',
+        enabled:
+            segment != null &&
+            !videoLocked &&
+            !anyAudioLocked &&
+            widget.onAddEditAllTracksAt != null,
       ),
       _menuItem(
         Icons.call_split,

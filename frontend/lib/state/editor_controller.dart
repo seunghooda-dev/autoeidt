@@ -452,6 +452,14 @@ class EditorController extends ChangeNotifier {
       selectedSegment != null &&
       hasAnyTrackTarget &&
       targetedTracksUnlocked;
+  bool get canAddEditAtPlayhead =>
+      hasAnyTrackTarget &&
+      targetedTracksUnlocked &&
+      _segmentAtTimelinePoint(currentPositionSeconds) != null;
+  bool get canAddEditToAllTracksAtPlayhead =>
+      !videoTrackLocked &&
+      !anyAudioTrackEditLocked &&
+      _segmentAtTimelinePoint(currentPositionSeconds) != null;
   double get currentPositionSeconds {
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -1686,6 +1694,19 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectSegmentAtPlayhead() {
+    selectSegmentAt(currentPositionSeconds);
+  }
+
+  void selectSegmentAt(double seconds) {
+    final segment = _segmentAtTimelinePoint(seconds);
+    if (segment == null || selectedSegmentOrder == segment.order) {
+      return;
+    }
+    selectedSegmentOrder = segment.order;
+    notifyListeners();
+  }
+
   void setSelectionTool() {
     if (timelineTool == 'selection') {
       return;
@@ -1993,7 +2014,31 @@ class EditorController extends ChangeNotifier {
   }
 
   void addEditAt(double seconds) {
-    splitSelectedAt(seconds);
+    if (!hasAnyTrackTarget || !targetedTracksUnlocked) {
+      return;
+    }
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final target = _segmentForEditAt(point);
+    if (target == null) {
+      return;
+    }
+    _splitSegmentAt(target, point);
+  }
+
+  void addEditToAllTracksAtPlayhead() {
+    addEditToAllTracksAt(currentPositionSeconds);
+  }
+
+  void addEditToAllTracksAt(double seconds) {
+    if (videoTrackLocked || anyAudioTrackEditLocked) {
+      return;
+    }
+    final point = _snapToFrame(_clampProjectTime(seconds));
+    final target = _segmentAtTimelinePoint(point);
+    if (target == null) {
+      return;
+    }
+    _splitSegmentAt(target, point);
   }
 
   void rippleTrimSelectedStartToPlayhead() {
@@ -2857,6 +2902,10 @@ class EditorController extends ChangeNotifier {
     if (selected == null) {
       return;
     }
+    _splitSegmentAt(selected, seconds);
+  }
+
+  void _splitSegmentAt(HighlightSegment selected, double seconds) {
     final splitAt = _snapToFrame(_clampTime(seconds));
     if (splitAt <= selected.start + timecodeFrameDurationSeconds ||
         splitAt >= selected.end - timecodeFrameDurationSeconds) {
@@ -7192,6 +7241,27 @@ class EditorController extends ChangeNotifier {
       }
     }
     return requireInside ? null : selected;
+  }
+
+  HighlightSegment? _segmentAtTimelinePoint(double seconds) {
+    final frame = secondsToTimecodeFrame(
+      _snapToFrame(_clampProjectTime(seconds)),
+    );
+    for (final segment in segments) {
+      final startFrame = secondsToTimecodeFrame(segment.start);
+      final endFrame = secondsToTimecodeFrame(segment.end);
+      if (frame >= startFrame && frame < endFrame) {
+        return segment;
+      }
+    }
+    for (final segment in segments) {
+      final startFrame = secondsToTimecodeFrame(segment.start);
+      final endFrame = secondsToTimecodeFrame(segment.end);
+      if (frame > startFrame && frame <= endFrame) {
+        return segment;
+      }
+    }
+    return null;
   }
 
   bool _sameCaptionEnabledState(

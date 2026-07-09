@@ -159,7 +159,9 @@ class _EditorDashboardState extends State<EditorDashboard> {
       editor.toggleAudioTrack2Lock();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyZ) {
       editor.undo();
-    } else if (isCtrl && key == LogicalKeyboardKey.keyK) {
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyK) {
+      editor.addEditToAllTracksAtPlayhead();
+    } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyK) {
       editor.addEditAtPlayhead();
     } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyL) {
       editor.toggleSelectedAudioLink();
@@ -311,6 +313,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyC) {
       editor.setRazorTool();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.keyD) {
+      editor.selectSegmentAtPlayhead();
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1457,7 +1464,11 @@ class _TimelineEditorBody extends StatelessWidget {
           .read<EditorController>()
           .clearTimelineMarkers,
       onMarkClip: context.read<EditorController>().markSelectedClip,
+      onSelectClipAt: context.read<EditorController>().selectSegmentAt,
       onAddEditAt: context.read<EditorController>().addEditAt,
+      onAddEditAllTracksAt: context
+          .read<EditorController>()
+          .addEditToAllTracksAt,
       onRippleTrimStartTo: context
           .read<EditorController>()
           .rippleTrimSelectedStartTo,
