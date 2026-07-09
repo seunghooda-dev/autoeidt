@@ -814,6 +814,13 @@ void main() {
     expect(find.text('Track Targets'), findsOneWidget);
     expect(find.text('Untarget V1 video'), findsOneWidget);
     expect(find.text('Ctrl+1'), findsOneWidget);
+    expect(find.text('Track Locks'), findsOneWidget);
+    expect(find.text('Lock V1 video'), findsOneWidget);
+    expect(find.text('Ctrl+Alt+1'), findsOneWidget);
+    expect(find.text('Lock A1 audio'), findsOneWidget);
+    expect(find.text('Ctrl+Alt+2'), findsOneWidget);
+    expect(find.text('Lock A2 audio'), findsOneWidget);
+    expect(find.text('Ctrl+Alt+3'), findsOneWidget);
     expect(find.text('Move detached audio earlier 1f'), findsOneWidget);
     expect(find.text('Ctrl+Alt+Left'), findsOneWidget);
     expect(find.text('Move detached audio later 10f'), findsOneWidget);

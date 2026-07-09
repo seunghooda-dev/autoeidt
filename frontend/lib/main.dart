@@ -1622,6 +1622,13 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudio2Target: context
           .read<EditorController>()
           .toggleAudioTrack2Target,
+      onToggleVideoLock: context.read<EditorController>().toggleVideoTrackLock,
+      onToggleAudio1Lock: context
+          .read<EditorController>()
+          .toggleAudioTrack1Lock,
+      onToggleAudio2Lock: context
+          .read<EditorController>()
+          .toggleAudioTrack2Lock,
       onToggleClipEnabled: context
           .read<EditorController>()
           .toggleSelectedClipEnabled,

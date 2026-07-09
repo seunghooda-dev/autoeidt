@@ -100,6 +100,9 @@ enum _TimelineMenuAction {
   toggleVideoTarget,
   toggleAudio1Target,
   toggleAudio2Target,
+  toggleVideoLock,
+  toggleAudio1Lock,
+  toggleAudio2Lock,
   toggleClipEnabled,
   toggleVideoEnabled,
   resetAudioPan,
@@ -197,6 +200,9 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleVideoTarget,
     this.onToggleAudio1Target,
     this.onToggleAudio2Target,
+    this.onToggleVideoLock,
+    this.onToggleAudio1Lock,
+    this.onToggleAudio2Lock,
     this.onToggleClipEnabled,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
@@ -292,6 +298,9 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
+  final VoidCallback? onToggleVideoLock;
+  final VoidCallback? onToggleAudio1Lock;
+  final VoidCallback? onToggleAudio2Lock;
   final VoidCallback? onToggleClipEnabled;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
@@ -668,6 +677,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onToggleAudio1Target?.call();
       case _TimelineMenuAction.toggleAudio2Target:
         widget.onToggleAudio2Target?.call();
+      case _TimelineMenuAction.toggleVideoLock:
+        widget.onToggleVideoLock?.call();
+      case _TimelineMenuAction.toggleAudio1Lock:
+        widget.onToggleAudio1Lock?.call();
+      case _TimelineMenuAction.toggleAudio2Lock:
+        widget.onToggleAudio2Lock?.call();
       case _TimelineMenuAction.toggleClipEnabled:
         widget.onToggleClipEnabled?.call();
       case _TimelineMenuAction.toggleVideoEnabled:
@@ -866,6 +881,29 @@ class _TimelineEditorState extends State<TimelineEditor> {
         enabled:
             widget.onToggleAudio2Target != null &&
             (!widget.audioTrack2Targeted || canDisableAudio2Target),
+      ),
+      const PopupMenuDivider(),
+      _menuHeader('Track Locks'),
+      _menuItem(
+        widget.videoTrackLocked ? Icons.lock_open : Icons.lock_outline,
+        widget.videoTrackLocked ? 'Unlock V1 video' : 'Lock V1 video',
+        _TimelineMenuAction.toggleVideoLock,
+        shortcut: 'Ctrl+Alt+1',
+        enabled: widget.onToggleVideoLock != null,
+      ),
+      _menuItem(
+        audio1Locked ? Icons.lock_open : Icons.lock_outline,
+        audio1Locked ? 'Unlock A1 audio' : 'Lock A1 audio',
+        _TimelineMenuAction.toggleAudio1Lock,
+        shortcut: 'Ctrl+Alt+2',
+        enabled: widget.onToggleAudio1Lock != null,
+      ),
+      _menuItem(
+        audio2Locked ? Icons.lock_open : Icons.lock_outline,
+        audio2Locked ? 'Unlock A2 audio' : 'Lock A2 audio',
+        _TimelineMenuAction.toggleAudio2Lock,
+        shortcut: 'Ctrl+Alt+3',
+        enabled: widget.onToggleAudio2Lock != null,
       ),
       const PopupMenuDivider(),
       _menuHeader('Premiere Cut Shortcuts'),
