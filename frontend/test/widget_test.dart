@@ -515,6 +515,39 @@ void main() {
     expect(controller.selectedSegmentOrder, 3);
   });
 
+  testWidgets('selected clip enable shortcut toggles linked media', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyE, shift: true);
+    expect(controller.selectedSegment!.videoEnabled, isFalse);
+    expect(controller.selectedSegment!.audioMuted, isTrue);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyE, shift: true);
+    expect(controller.selectedSegment!.videoEnabled, isTrue);
+    expect(controller.selectedSegment!.audioMuted, isFalse);
+
+    controller.toggleVideoTrackLock();
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyE, shift: true);
+    expect(controller.selectedSegment!.videoEnabled, isTrue);
+    expect(controller.selectedSegment!.audioMuted, isFalse);
+  });
+
   testWidgets('clip clipboard shortcuts copy paste and cut selected clips', (
     tester,
   ) async {
@@ -768,6 +801,8 @@ void main() {
     expect(find.text('Ctrl+Up'), findsOneWidget);
     expect(find.text('Move later'), findsOneWidget);
     expect(find.text('Ctrl+Down'), findsOneWidget);
+    expect(find.text('Disable clip'), findsOneWidget);
+    expect(find.text('Shift+E'), findsOneWidget);
     expect(find.text('Insert In/Out before clip'), findsOneWidget);
     expect(find.text(','), findsOneWidget);
     expect(find.text('Overwrite selected with In/Out'), findsOneWidget);

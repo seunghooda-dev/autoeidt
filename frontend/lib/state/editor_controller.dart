@@ -2310,6 +2310,21 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void toggleSelectedClipEnabled() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked || anyAudioTrackEditLocked) {
+      return;
+    }
+    final enabled = selected.videoEnabled || !selected.audioMuted;
+    updateSegment(
+      selected.copyWith(
+        videoEnabled: !enabled,
+        audioMuted: enabled,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void setSelectedVideoFadeIn(double value) {
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked) {

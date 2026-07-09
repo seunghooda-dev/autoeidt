@@ -372,6 +372,8 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.keyS) {
       editor.toggleTimelineSnapping();
+    } else if (!isCtrl && !isAlt && isShift && key == LogicalKeyboardKey.keyE) {
+      editor.toggleSelectedClipEnabled();
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1607,6 +1609,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudio2Target: context
           .read<EditorController>()
           .toggleAudioTrack2Target,
+      onToggleClipEnabled: context
+          .read<EditorController>()
+          .toggleSelectedClipEnabled,
       onToggleVideoEnabled: context
           .read<EditorController>()
           .toggleSelectedVideoEnabled,

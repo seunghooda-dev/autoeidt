@@ -99,6 +99,7 @@ enum _TimelineMenuAction {
   toggleVideoTarget,
   toggleAudio1Target,
   toggleAudio2Target,
+  toggleClipEnabled,
   toggleVideoEnabled,
   resetAudioPan,
 }
@@ -194,6 +195,7 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleVideoTarget,
     this.onToggleAudio1Target,
     this.onToggleAudio2Target,
+    this.onToggleClipEnabled,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onZoomDelta,
@@ -287,6 +289,7 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
+  final VoidCallback? onToggleClipEnabled;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final ValueChanged<double>? onZoomDelta;
@@ -660,6 +663,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onToggleAudio1Target?.call();
       case _TimelineMenuAction.toggleAudio2Target:
         widget.onToggleAudio2Target?.call();
+      case _TimelineMenuAction.toggleClipEnabled:
+        widget.onToggleClipEnabled?.call();
       case _TimelineMenuAction.toggleVideoEnabled:
         widget.onToggleVideoEnabled?.call();
       case _TimelineMenuAction.resetAudioPan:
@@ -1285,6 +1290,21 @@ class _TimelineEditorState extends State<TimelineEditor> {
         enabled: segment != null,
       ),
       const PopupMenuDivider(),
+      _menuItem(
+        segment != null && (segment.videoEnabled || !segment.audioMuted)
+            ? Icons.block
+            : Icons.check_circle_outline,
+        segment != null && (segment.videoEnabled || !segment.audioMuted)
+            ? 'Disable clip'
+            : 'Enable clip',
+        _TimelineMenuAction.toggleClipEnabled,
+        shortcut: 'Shift+E',
+        enabled:
+            segment != null &&
+            !videoLocked &&
+            !anyAudioLocked &&
+            widget.onToggleClipEnabled != null,
+      ),
       _menuItem(
         segment?.videoEnabled ?? true
             ? Icons.visibility_off_outlined
