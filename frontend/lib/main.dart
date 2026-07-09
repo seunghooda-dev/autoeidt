@@ -235,12 +235,14 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
-        key == LogicalKeyboardKey.arrowUp) {
+        (key == LogicalKeyboardKey.arrowUp ||
+            key == LogicalKeyboardKey.pageUp)) {
       unawaited(editor.jumpToPreviousEditPoint());
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
-        key == LogicalKeyboardKey.arrowDown) {
+        (key == LogicalKeyboardKey.arrowDown ||
+            key == LogicalKeyboardKey.pageDown)) {
       unawaited(editor.jumpToNextEditPoint());
     } else if (!isCtrl &&
         !isAlt &&

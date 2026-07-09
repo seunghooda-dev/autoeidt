@@ -76,6 +76,12 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.arrowUp);
     expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.pageDown);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 390);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.pageUp);
+    expect(secondsToTimecodeFrame(controller.currentPositionSeconds), 150);
+
     controller.setMarkInAt(6);
     controller.setMarkOutAt(8);
     await _pressShortcut(tester, LogicalKeyboardKey.keyO, shift: true);
@@ -879,6 +885,10 @@ void main() {
     expect(find.text('Ctrl+Right'), findsOneWidget);
     expect(find.text('Add Edit to all tracks'), findsOneWidget);
     expect(find.text('Ctrl+Shift+K'), findsOneWidget);
+    expect(find.text('Previous edit point'), findsOneWidget);
+    expect(find.text('Up / PageUp'), findsOneWidget);
+    expect(find.text('Next edit point'), findsOneWidget);
+    expect(find.text('Down / PageDown'), findsOneWidget);
     expect(find.text('Go to clip start'), findsOneWidget);
     expect(find.text('Shift+Home'), findsOneWidget);
     expect(find.text('Go to clip end'), findsOneWidget);

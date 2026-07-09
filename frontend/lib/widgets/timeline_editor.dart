@@ -1012,14 +1012,14 @@ class _TimelineEditorState extends State<TimelineEditor> {
         Icons.vertical_align_top,
         'Previous edit point',
         _TimelineMenuAction.previousEdit,
-        shortcut: 'Up',
+        shortcut: 'Up / PageUp',
         enabled: widget.onJumpToPreviousEdit != null,
       ),
       _menuItem(
         Icons.vertical_align_bottom,
         'Next edit point',
         _TimelineMenuAction.nextEdit,
-        shortcut: 'Down',
+        shortcut: 'Down / PageDown',
         enabled: widget.onJumpToNextEdit != null,
       ),
       _menuItem(
