@@ -131,6 +131,16 @@ class ClipInspector extends StatelessWidget {
               ? null
               : editor.setSelectedPlaybackSpeed,
         ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: controller.canRateStretchSelectedToMarks
+                ? editor.rateStretchSelectedToMarks
+                : null,
+            icon: const Icon(Icons.speed, size: 18),
+            label: const Text('Fit In/Out'),
+          ),
+        ),
         const SizedBox(height: 8),
         _PropertySlider(
           icon: Icons.gradient_outlined,

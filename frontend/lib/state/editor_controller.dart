@@ -452,6 +452,11 @@ class EditorController extends ChangeNotifier {
       selectedSegment != null &&
       hasAnyTrackTarget &&
       targetedTracksUnlocked;
+  bool get canRateStretchSelectedToMarks =>
+      selectedSegment != null &&
+      hasValidMarks &&
+      !videoTrackLocked &&
+      !anyAudioTrackEditLocked;
   bool get canAddEditAtPlayhead =>
       hasAnyTrackTarget &&
       targetedTracksUnlocked &&
@@ -2710,6 +2715,33 @@ class EditorController extends ChangeNotifier {
       selected.copyWith(
         playbackSpeed: value.clamp(0.25, 4.0).toDouble(),
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void rateStretchSelectedToMarks() {
+    final selected = selectedSegment;
+    if (selected == null ||
+        !hasValidMarks ||
+        videoTrackLocked ||
+        anyAudioTrackEditLocked) {
+      return;
+    }
+    final targetOutputDuration = markOut! - markIn!;
+    if (targetOutputDuration < timecodeFrameDurationSeconds ||
+        selected.duration < timecodeFrameDurationSeconds) {
+      return;
+    }
+    final nextSpeed = (selected.duration / targetOutputDuration)
+        .clamp(0.25, 4.0)
+        .toDouble();
+    if ((selected.playbackSpeed - nextSpeed).abs() < 0.001) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        playbackSpeed: nextSpeed,
+        source: _appendSource(selected.source, 'rate-stretch'),
       ),
     );
   }

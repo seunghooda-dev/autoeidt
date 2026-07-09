@@ -377,6 +377,33 @@ void main() {
     expect(controller.segments.length, 3);
   });
 
+  testWidgets('rate stretch shortcut fits selected clip to marked duration', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 22, reason: 'rate'),
+      ]
+      ..selectedSegmentOrder = 1;
+    controller.setMarkInAt(40);
+    controller.setMarkOutAt(46);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.keyR);
+
+    expect(controller.selectedSegment!.playbackSpeed, 2);
+    expect(controller.selectedSegment!.source, contains('rate-stretch'));
+    expect(controller.selectedSegment!.outputDuration, closeTo(6, 0.01));
+  });
+
   testWidgets('selected clip lift and extract shortcuts edit timeline', (
     tester,
   ) async {
@@ -644,6 +671,8 @@ void main() {
     expect(find.text('D'), findsOneWidget);
     expect(find.text('Add Edit to all tracks'), findsOneWidget);
     expect(find.text('Ctrl+Shift+K'), findsOneWidget);
+    expect(find.text('Rate stretch to In/Out'), findsOneWidget);
+    expect(find.text('R'), findsOneWidget);
     expect(find.text('Lift selected clip'), findsOneWidget);
     expect(find.text('Ctrl+;'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);

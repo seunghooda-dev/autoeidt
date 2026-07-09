@@ -71,6 +71,7 @@ enum _TimelineMenuAction {
   nudgeAudioLaterTenFrames,
   applyVideoTransition,
   applyAudioTransition,
+  rateStretchToMarks,
   split,
   duplicate,
   copySelected,
@@ -157,6 +158,7 @@ class TimelineEditor extends StatefulWidget {
     this.onRollOutgoingEditFrames,
     this.onApplyVideoTransition,
     this.onApplyAudioTransition,
+    this.onRateStretchToMarks,
     this.onSetSelectionTool,
     this.onSetRazorTool,
     this.onToggleSnapping,
@@ -245,6 +247,7 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onRollOutgoingEditFrames;
   final VoidCallback? onApplyVideoTransition;
   final VoidCallback? onApplyAudioTransition;
+  final VoidCallback? onRateStretchToMarks;
   final VoidCallback? onSetSelectionTool;
   final VoidCallback? onSetRazorTool;
   final VoidCallback? onToggleSnapping;
@@ -589,6 +592,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onApplyVideoTransition?.call();
       case _TimelineMenuAction.applyAudioTransition:
         widget.onApplyAudioTransition?.call();
+      case _TimelineMenuAction.rateStretchToMarks:
+        widget.onRateStretchToMarks?.call();
       case _TimelineMenuAction.split:
         widget.onSplitAt?.call(seconds);
       case _TimelineMenuAction.duplicate:
@@ -718,6 +723,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         (!widget.videoTrackTargeted || !videoLocked) &&
         (!widget.audioTrack1Targeted || !audio1Locked) &&
         (!widget.audioTrack2Targeted || !audio2Locked);
+    final canRateStretch =
+        segment != null &&
+        hasMarkedRange &&
+        !videoLocked &&
+        !anyAudioLocked &&
+        widget.onRateStretchToMarks != null;
     final trackLabel = _isAudioTrack(track)
         ? '${_audioTrackLabel(track!)} Audio'
         : track == _DragTrack.video
@@ -1138,6 +1149,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.applyAudioTransition,
         shortcut: 'Ctrl+Shift+D',
         enabled: segment != null && !anyAudioLocked,
+      ),
+      _menuItem(
+        Icons.speed,
+        'Rate stretch to In/Out',
+        _TimelineMenuAction.rateStretchToMarks,
+        shortcut: 'R',
+        enabled: canRateStretch,
       ),
       const PopupMenuDivider(),
       _menuItem(

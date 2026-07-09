@@ -321,6 +321,11 @@ class _EditorDashboardState extends State<EditorDashboard> {
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
+        key == LogicalKeyboardKey.keyR) {
+      editor.rateStretchSelectedToMarks();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
         key == LogicalKeyboardKey.keyV) {
       editor.setSelectionTool();
     } else if (!isCtrl &&
@@ -1489,6 +1494,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onApplyAudioTransition: context
           .read<EditorController>()
           .applyDefaultAudioTransition,
+      onRateStretchToMarks: context
+          .read<EditorController>()
+          .rateStretchSelectedToMarks,
       onSetSelectionTool: context.read<EditorController>().setSelectionTool,
       onSetRazorTool: context.read<EditorController>().setRazorTool,
       onToggleSnapping: context.read<EditorController>().toggleTimelineSnapping,
