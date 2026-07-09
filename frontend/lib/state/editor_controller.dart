@@ -1713,13 +1713,15 @@ class EditorController extends ChangeNotifier {
   }
 
   void markSelectedClip() {
-    final selected = selectedSegment;
+    final selected =
+        selectedSegment ?? _segmentAtTimelinePoint(currentPositionSeconds);
     if (selected == null) {
       return;
     }
     _commitHistory();
     markIn = selected.start;
     markOut = selected.end;
+    selectedSegmentOrder = selected.order;
     notifyListeners();
   }
 

@@ -412,6 +412,33 @@ void main() {
     expect(controller.segments.length, 3);
   });
 
+  testWidgets('mark clip shortcut falls back to clip under playhead', (
+    tester,
+  ) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'first'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'second'),
+      ];
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await controller.seekTo(22, autoplay: false);
+    await tester.pump();
+    await _pressShortcut(tester, LogicalKeyboardKey.keyX);
+
+    expect(controller.selectedSegmentOrder, 2);
+    expect(secondsToTimecodeFrame(controller.markIn!), 600);
+    expect(secondsToTimecodeFrame(controller.markOut!), 900);
+  });
+
   testWidgets('rate stretch shortcut fits selected clip to marked duration', (
     tester,
   ) async {
