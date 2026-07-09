@@ -285,6 +285,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
         !isShift &&
         key == LogicalKeyboardKey.arrowRight) {
       editor.selectNextSegment();
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowUp) {
+      editor.moveSelectedSegment(-1);
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowDown) {
+      editor.moveSelectedSegment(1);
     } else if (!isCtrl &&
         isAlt &&
         !isShift &&

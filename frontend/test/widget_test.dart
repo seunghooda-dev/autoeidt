@@ -471,6 +471,50 @@ void main() {
     expect(controller.selectedSegment!.reason, 'three');
   });
 
+  testWidgets('selected clip move shortcuts reorder timeline', (tester) async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'one'),
+        HighlightSegment(order: 2, start: 20, end: 40, reason: 'two'),
+        HighlightSegment(order: 3, start: 50, end: 60, reason: 'three'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowUp, control: true);
+    expect(controller.segments.map((segment) => segment.reason), [
+      'two',
+      'one',
+      'three',
+    ]);
+    expect(controller.selectedSegmentOrder, 1);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowUp, control: true);
+    expect(controller.segments.map((segment) => segment.reason), [
+      'two',
+      'one',
+      'three',
+    ]);
+    expect(controller.selectedSegmentOrder, 1);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowDown, control: true);
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowDown, control: true);
+    expect(controller.segments.map((segment) => segment.reason), [
+      'one',
+      'three',
+      'two',
+    ]);
+    expect(controller.selectedSegmentOrder, 3);
+  });
+
   testWidgets('clip clipboard shortcuts copy paste and cut selected clips', (
     tester,
   ) async {
@@ -720,6 +764,10 @@ void main() {
     expect(find.text('Ctrl+;'), findsOneWidget);
     expect(find.text('Extract selected clip'), findsOneWidget);
     expect(find.text("Ctrl+'"), findsOneWidget);
+    expect(find.text('Move earlier'), findsOneWidget);
+    expect(find.text('Ctrl+Up'), findsOneWidget);
+    expect(find.text('Move later'), findsOneWidget);
+    expect(find.text('Ctrl+Down'), findsOneWidget);
     expect(find.text('Insert In/Out before clip'), findsOneWidget);
     expect(find.text(','), findsOneWidget);
     expect(find.text('Overwrite selected with In/Out'), findsOneWidget);
