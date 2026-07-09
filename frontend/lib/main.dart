@@ -117,6 +117,21 @@ class _EditorDashboardState extends State<EditorDashboard> {
     bool handled = true;
     if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
       editor.redo();
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.minus) {
+      editor.zoomTimeline(-0.5);
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.equal) {
+      editor.zoomTimeline(0.5);
+    } else if (!isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.backslash) {
+      editor.fitTimelineZoom();
     } else if (isAlt &&
         !isCtrl &&
         !isShift &&
@@ -728,7 +743,7 @@ class _CommandBar extends StatelessWidget {
             ),
             const _ToolbarDivider(),
             IconButton.outlined(
-              tooltip: '타임라인 축소',
+              tooltip: '타임라인 축소 (-)',
               onPressed: controller.hasTimeline
                   ? () => editor.zoomTimeline(-0.5)
                   : null,
@@ -736,11 +751,17 @@ class _CommandBar extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             IconButton.outlined(
-              tooltip: '타임라인 확대',
+              tooltip: '타임라인 확대 (=)',
               onPressed: controller.hasTimeline
                   ? () => editor.zoomTimeline(0.5)
                   : null,
               icon: const Icon(Icons.zoom_in),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '타임라인 전체 보기 (\\)',
+              onPressed: controller.hasTimeline ? editor.fitTimelineZoom : null,
+              icon: const Icon(Icons.zoom_out_map),
             ),
             const SizedBox(width: 6),
             FilterChip(

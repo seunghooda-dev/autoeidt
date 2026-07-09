@@ -5197,6 +5197,14 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void fitTimelineZoom() {
+    if (timelineZoom == 1.0) {
+      return;
+    }
+    timelineZoom = 1.0;
+    notifyListeners();
+  }
+
   bool _proxyContainsSourceTime(double seconds) {
     if (!_previewUsesProxy) {
       return true;

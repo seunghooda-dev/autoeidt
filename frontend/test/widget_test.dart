@@ -108,6 +108,17 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.minus, alt: true);
     expect(controller.timelineTrackHeightLabel, 'Tracks Compact');
 
+    expect(controller.timelineZoom, 1.0);
+    await _pressShortcut(tester, LogicalKeyboardKey.equal);
+    expect(controller.timelineZoom, 1.5);
+    await _pressShortcut(tester, LogicalKeyboardKey.minus);
+    expect(controller.timelineZoom, 1.0);
+    controller.zoomTimeline(2.0);
+    await tester.pump();
+    expect(controller.timelineZoom, 3.0);
+    await _pressShortcut(tester, LogicalKeyboardKey.backslash);
+    expect(controller.timelineZoom, 1.0);
+
     await _pressShortcut(tester, LogicalKeyboardKey.digit1, control: true);
     expect(controller.videoTrackTargeted, isFalse);
     await _pressShortcut(tester, LogicalKeyboardKey.digit2, control: true);
