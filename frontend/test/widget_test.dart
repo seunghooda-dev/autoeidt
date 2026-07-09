@@ -360,6 +360,21 @@ void main() {
     await _pressShortcut(tester, LogicalKeyboardKey.keyD);
     expect(controller.selectedSegmentOrder, 2);
 
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight, control: true);
+    expect(controller.selectedSegmentOrder, 3);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight, control: true);
+    expect(controller.selectedSegmentOrder, 3);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowLeft, control: true);
+    expect(controller.selectedSegmentOrder, 2);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowLeft, control: true);
+    expect(controller.selectedSegmentOrder, 1);
+
+    await _pressShortcut(tester, LogicalKeyboardKey.arrowRight, control: true);
+    expect(controller.selectedSegmentOrder, 2);
+
     await controller.seekTo(25, autoplay: false);
     await tester.pump();
     await _pressShortcut(tester, LogicalKeyboardKey.keyK, control: true);
@@ -689,6 +704,10 @@ void main() {
     expect(find.text('Alt+Shift+,'), findsOneWidget);
     expect(find.text('Select clip at cursor'), findsOneWidget);
     expect(find.text('D'), findsOneWidget);
+    expect(find.text('Select previous clip'), findsOneWidget);
+    expect(find.text('Ctrl+Left'), findsOneWidget);
+    expect(find.text('Select next clip'), findsOneWidget);
+    expect(find.text('Ctrl+Right'), findsOneWidget);
     expect(find.text('Add Edit to all tracks'), findsOneWidget);
     expect(find.text('Ctrl+Shift+K'), findsOneWidget);
     expect(find.text('Go to clip start'), findsOneWidget);

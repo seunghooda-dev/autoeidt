@@ -275,6 +275,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
         isShift &&
         key == LogicalKeyboardKey.arrowRight) {
       editor.slipSelectedSegmentFrames(10);
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowLeft) {
+      editor.selectPreviousSegment();
+    } else if (isCtrl &&
+        !isAlt &&
+        !isShift &&
+        key == LogicalKeyboardKey.arrowRight) {
+      editor.selectNextSegment();
     } else if (!isCtrl &&
         isAlt &&
         !isShift &&
@@ -1499,6 +1509,10 @@ class _TimelineEditorBody extends StatelessWidget {
           .clearTimelineMarkers,
       onMarkClip: context.read<EditorController>().markSelectedClip,
       onSelectClipAt: context.read<EditorController>().selectSegmentAt,
+      onSelectPreviousClip: context
+          .read<EditorController>()
+          .selectPreviousSegment,
+      onSelectNextClip: context.read<EditorController>().selectNextSegment,
       onAddEditAt: context.read<EditorController>().addEditAt,
       onAddEditAllTracksAt: context
           .read<EditorController>()

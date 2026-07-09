@@ -1728,6 +1728,34 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectPreviousSegment() {
+    _selectAdjacentSegment(-1);
+  }
+
+  void selectNextSegment() {
+    _selectAdjacentSegment(1);
+  }
+
+  void _selectAdjacentSegment(int direction) {
+    if (segments.isEmpty || direction == 0) {
+      return;
+    }
+    final currentOrder = selectedSegmentOrder;
+    final currentIndex = currentOrder == null
+        ? -1
+        : segments.indexWhere((segment) => segment.order == currentOrder);
+    final fallbackIndex = direction > 0 ? 0 : segments.length - 1;
+    final targetIndex = currentIndex < 0
+        ? fallbackIndex
+        : (currentIndex + direction).clamp(0, segments.length - 1).toInt();
+    final targetOrder = segments[targetIndex].order;
+    if (selectedSegmentOrder == targetOrder) {
+      return;
+    }
+    selectedSegmentOrder = targetOrder;
+    notifyListeners();
+  }
+
   void setSelectionTool() {
     if (timelineTool == 'selection') {
       return;

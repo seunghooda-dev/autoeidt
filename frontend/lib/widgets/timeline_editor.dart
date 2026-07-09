@@ -53,6 +53,8 @@ enum _TimelineMenuAction {
   deleteMarker,
   clearTimelineMarkers,
   selectClipAtCursor,
+  selectPreviousClip,
+  selectNextClip,
   addEdit,
   addEditAllTracks,
   rippleTrimStart,
@@ -152,6 +154,8 @@ class TimelineEditor extends StatefulWidget {
     this.onClearTimelineMarkers,
     this.onMarkClip,
     this.onSelectClipAt,
+    this.onSelectPreviousClip,
+    this.onSelectNextClip,
     this.onAddEditAt,
     this.onAddEditAllTracksAt,
     this.onRippleTrimStartTo,
@@ -243,6 +247,8 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onClearTimelineMarkers;
   final VoidCallback? onMarkClip;
   final ValueChanged<double>? onSelectClipAt;
+  final VoidCallback? onSelectPreviousClip;
+  final VoidCallback? onSelectNextClip;
   final ValueChanged<double>? onAddEditAt;
   final ValueChanged<double>? onAddEditAllTracksAt;
   final ValueChanged<double>? onRippleTrimStartTo;
@@ -562,6 +568,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
         widget.onClearTimelineMarkers?.call();
       case _TimelineMenuAction.selectClipAtCursor:
         widget.onSelectClipAt?.call(seconds);
+      case _TimelineMenuAction.selectPreviousClip:
+        widget.onSelectPreviousClip?.call();
+      case _TimelineMenuAction.selectNextClip:
+        widget.onSelectNextClip?.call();
       case _TimelineMenuAction.addEdit:
         widget.onAddEditAt?.call(seconds);
       case _TimelineMenuAction.addEditAllTracks:
@@ -1037,6 +1047,21 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _TimelineMenuAction.selectClipAtCursor,
         shortcut: 'D',
         enabled: segment != null && widget.onSelectClipAt != null,
+      ),
+      _menuItem(
+        Icons.skip_previous,
+        'Select previous clip',
+        _TimelineMenuAction.selectPreviousClip,
+        shortcut: 'Ctrl+Left',
+        enabled:
+            widget.segments.length > 1 && widget.onSelectPreviousClip != null,
+      ),
+      _menuItem(
+        Icons.skip_next,
+        'Select next clip',
+        _TimelineMenuAction.selectNextClip,
+        shortcut: 'Ctrl+Right',
+        enabled: widget.segments.length > 1 && widget.onSelectNextClip != null,
       ),
       _menuItem(
         Icons.add,
