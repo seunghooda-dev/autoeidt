@@ -13,7 +13,11 @@ def test_health_endpoint() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["timeline_frame_rate"] == "30"
+    assert "preview_audio_mix_v1" in payload["features"]
+    assert "timeline_30p_ndf" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:

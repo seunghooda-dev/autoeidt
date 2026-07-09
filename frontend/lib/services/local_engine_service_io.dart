@@ -131,6 +131,16 @@ class LocalEngineService {
   Future<bool> _hasRequiredApi(int port) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
     try {
+      final healthRequest = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$port/health'),
+      );
+      final healthResponse = await healthRequest.close();
+      final healthBody = await healthResponse.transform(utf8.decoder).join();
+      if (healthResponse.statusCode != 200 ||
+          !_healthHasRequiredFeatures(healthBody)) {
+        return false;
+      }
+
       final request = await client.getUrl(
         Uri.parse('http://127.0.0.1:$port/openapi.json'),
       );
@@ -142,6 +152,24 @@ class LocalEngineService {
       return false;
     } finally {
       client.close(force: true);
+    }
+  }
+
+  bool _healthHasRequiredFeatures(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) {
+        return false;
+      }
+      final features = decoded['features'];
+      if (features is! List) {
+        return false;
+      }
+      final featureSet = features.map((item) => '$item').toSet();
+      return featureSet.contains('preview_audio_mix_v1') &&
+          featureSet.contains('timeline_30p_ndf');
+    } catch (_) {
+      return false;
     }
   }
 

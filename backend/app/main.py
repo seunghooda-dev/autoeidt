@@ -23,5 +23,17 @@ app.include_router(styles_router, prefix=settings.api_prefix)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "engine_version": "2026.07.09-preview-audio-mix",
+        "timeline_frame_rate": "30",
+        "features": [
+            "local_import",
+            "local_probe",
+            "local_preview_proxy",
+            "preview_audio_mix_v1",
+            "timeline_30p_ndf",
+        ],
+    }
