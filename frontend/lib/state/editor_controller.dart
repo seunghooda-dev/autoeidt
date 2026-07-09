@@ -105,6 +105,8 @@ class EditorController extends ChangeNotifier {
   int _previewRevision = 0;
   int playbackShuttleDirection = 0;
   double playbackShuttleRate = 1.0;
+  double previewVolume = 1.0;
+  bool previewMuted = false;
   bool isPreparingPreview = false;
   bool isProbingMedia = false;
   bool _previewUsesProxy = false;
@@ -486,6 +488,37 @@ class EditorController extends ChangeNotifier {
   bool segmentIsTimelineGap(HighlightSegment segment) {
     return _segmentIsTimelineGap(segment);
   }
+
+  String get previewSourceLabel {
+    if (isPreparingPreview) {
+      return 'Preparing Proxy';
+    }
+    if (videoController == null) {
+      return 'No Preview';
+    }
+    return _previewUsesProxy ? 'Proxy Preview' : 'Source Preview';
+  }
+
+  String get previewAudioLabel {
+    if (previewMuted || previewVolume <= 0) {
+      return 'Muted';
+    }
+    final audioStreams = selectedMediaProbe?.audioStreamCount;
+    if (audioStreams == null) {
+      return 'Audio ${previewVolumePercent.round()}%';
+    }
+    if (audioStreams <= 0) {
+      return 'No source audio';
+    }
+    if (_previewUsesProxy) {
+      return audioStreams == 1
+          ? 'A1 Preview'
+          : 'Mix ${math.min(audioStreams, 8)}ch';
+    }
+    return audioStreams == 1 ? 'A1 Source' : '$audioStreams audio streams';
+  }
+
+  double get previewVolumePercent => previewMuted ? 0 : previewVolume * 100;
 
   double get outputDurationSeconds {
     return segments.fold<double>(
@@ -5155,6 +5188,19 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> togglePreviewMute() async {
+    previewMuted = !previewMuted;
+    await _applyPreviewAudioSettings();
+    notifyListeners();
+  }
+
+  Future<void> setPreviewVolume(double value) async {
+    previewVolume = value.clamp(0.0, 1.0).toDouble();
+    previewMuted = previewVolume <= 0;
+    await _applyPreviewAudioSettings();
+    notifyListeners();
+  }
+
   Future<void> shuttleForward() async {
     _stopReverseShuttleTimer();
     final nextRate = _nextShuttleRate(1);
@@ -5324,6 +5370,7 @@ class EditorController extends ChangeNotifier {
       Uri.parse(_apiClient.sourceUrl(id)),
     );
     await controller.initialize();
+    await _applyPreviewAudioSettings(controller);
     if (revision != _previewRevision) {
       await controller.dispose();
       return;
@@ -5348,6 +5395,7 @@ class EditorController extends ChangeNotifier {
       }
       final controller = VideoPlayerController.file(file);
       await controller.initialize();
+      await _applyPreviewAudioSettings(controller);
       if (revision != _previewRevision || selectedFile?.path != path) {
         await controller.dispose();
         return;
@@ -5398,6 +5446,7 @@ class EditorController extends ChangeNotifier {
         Uri.parse(preview.url),
       );
       await controller.initialize();
+      await _applyPreviewAudioSettings(controller);
       if (revision != _previewRevision || selectedFile?.path != path) {
         await controller.dispose();
         return;
@@ -5447,6 +5496,16 @@ class EditorController extends ChangeNotifier {
       current.removeListener(_handleVideoTick);
       await current.dispose();
     }
+  }
+
+  Future<void> _applyPreviewAudioSettings([
+    VideoPlayerController? target,
+  ]) async {
+    final controller = target ?? videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    await controller.setVolume(previewMuted ? 0.0 : previewVolume);
   }
 
   void _handleVideoTick() {

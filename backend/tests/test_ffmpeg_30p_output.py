@@ -98,6 +98,7 @@ def test_preview_proxy_forces_30p_non_drop_output(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
     monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
 
     output_path, cached, _, _ = ffmpeg_service.create_preview_proxy(source_path)
@@ -110,6 +111,41 @@ def test_preview_proxy_forces_30p_non_drop_output(
     assert "fps=30" in vf_filter
     assert _command_value(command, "-r") == "30"
     assert _command_value(command, "-write_tmcd") == "0"
+
+
+def test_preview_proxy_mixes_multistream_audio_for_preview(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "broadcast_source.mxf"
+    source_path.write_bytes(b"source")
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"proxy")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 4)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.create_preview_proxy(source_path)
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+
+    assert "0:a:0" in filter_complex
+    assert "0:a:1" in filter_complex
+    assert "0:a:2" in filter_complex
+    assert "0:a:3" in filter_complex
+    assert "amix=inputs=4" in filter_complex
+    assert _command_value(command, "-map") == "0:v:0"
+    assert command[command.index("-filter_complex") + 2] == "-map"
+    assert command[command.index("-filter_complex") + 3] == "[previewa]"
 
 
 def test_square_render_profile_outputs_30p_square_frame(

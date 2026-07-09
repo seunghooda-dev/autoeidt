@@ -4,9 +4,18 @@ import 'package:video_player/video_player.dart';
 import 'time_format.dart';
 
 class VideoPreview extends StatelessWidget {
-  const VideoPreview({super.key, required this.controller});
+  const VideoPreview({
+    super.key,
+    required this.controller,
+    required this.volume,
+    required this.muted,
+    this.onToggleMute,
+  });
 
   final VideoPlayerController? controller;
+  final double volume;
+  final bool muted;
+  final VoidCallback? onToggleMute;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +62,12 @@ class VideoPreview extends StatelessWidget {
                     left: 12,
                     right: 12,
                     bottom: 12,
-                    child: _VideoControls(controller: player),
+                    child: _VideoControls(
+                      controller: player,
+                      volume: volume,
+                      muted: muted,
+                      onToggleMute: onToggleMute,
+                    ),
                   ),
                 ],
               ),
@@ -98,9 +112,17 @@ class _PausedOverlay extends StatelessWidget {
 }
 
 class _VideoControls extends StatelessWidget {
-  const _VideoControls({required this.controller});
+  const _VideoControls({
+    required this.controller,
+    required this.volume,
+    required this.muted,
+    required this.onToggleMute,
+  });
 
   final VideoPlayerController controller;
+  final double volume;
+  final bool muted;
+  final VoidCallback? onToggleMute;
 
   @override
   Widget build(BuildContext context) {
@@ -144,10 +166,21 @@ class _VideoControls extends StatelessWidget {
                     },
                   ),
                 ),
+                IconButton(
+                  tooltip: '프리뷰 음소거 전환',
+                  color: Colors.white,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onToggleMute,
+                  icon: Icon(
+                    muted
+                        ? Icons.volume_off_outlined
+                        : Icons.volume_up_outlined,
+                  ),
+                ),
                 SizedBox(
-                  width: 194,
+                  width: 236,
                   child: Text(
-                    '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)}',
+                    '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)} · ${(muted ? 0 : volume * 100).round()}%',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,

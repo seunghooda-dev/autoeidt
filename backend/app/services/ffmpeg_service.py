@@ -285,8 +285,9 @@ def create_preview_proxy(
         else float(settings.preview_proxy_seconds)
     )
     proxy_seconds = max(30.0, min(requested_duration, 600.0))
+    audio_stream_count = _audio_stream_count(resolved)
     cache_key = sha1(
-        f"preview-v4|{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
+        f"preview-v5|audio-mix-{min(audio_stream_count, 8)}|{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
             "utf-8"
         )
     ).hexdigest()
@@ -299,6 +300,7 @@ def create_preview_proxy(
     temp_path = output_path.with_suffix(".tmp.mp4")
     if temp_path.exists():
         temp_path.unlink()
+    audio_args = _preview_audio_output_args(audio_stream_count)
     _run(
         [
             "ffmpeg",
@@ -309,8 +311,7 @@ def create_preview_proxy(
             str(resolved),
             "-map",
             "0:v:0",
-            "-map",
-            "0:a:0?",
+            *audio_args,
             "-sn",
             "-dn",
             "-t",
@@ -340,6 +341,39 @@ def create_preview_proxy(
     )
     temp_path.replace(output_path)
     return output_path, False, source_start, proxy_seconds
+
+
+def _preview_audio_output_args(audio_stream_count: int) -> list[str]:
+    stream_count = max(0, min(audio_stream_count, 8))
+    if stream_count == 0:
+        return []
+
+    mono_filters: list[str] = []
+    mono_labels: list[str] = []
+    for index in range(stream_count):
+        label = f"preview_a{index}"
+        mono_filters.append(
+            f"[0:a:{index}]aresample=48000,"
+            f"aformat=sample_rates=48000:channel_layouts=mono[{label}]"
+        )
+        mono_labels.append(f"[{label}]")
+
+    if stream_count == 1:
+        filter_complex = (
+            f"{mono_filters[0]};"
+            f"{mono_labels[0]}pan=stereo|c0=c0|c1=c0[previewa]"
+        )
+    else:
+        filter_complex = (
+            ";".join(mono_filters)
+            + ";"
+            + "".join(mono_labels)
+            + f"amix=inputs={stream_count}:duration=first:"
+            "dropout_transition=0:normalize=1,"
+            "pan=stereo|c0=c0|c1=c0[previewa]"
+        )
+
+    return ["-filter_complex", filter_complex, "-map", "[previewa]"]
 
 
 def extract_audio(video_path: Path, audio_path: Path) -> Path:

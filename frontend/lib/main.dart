@@ -418,12 +418,12 @@ class _DesktopEditorShell extends StatelessWidget {
                           _VerticalRule(),
                           Expanded(child: _PreviewStage()),
                           _VerticalRule(),
-                          SizedBox(width: 384, child: _InspectorPanel()),
+                          SizedBox(width: 372, child: _InspectorPanel()),
                         ],
                       ),
                     ),
                     _HorizontalRule(),
-                    SizedBox(height: 330, child: _TimelinePanel()),
+                    SizedBox(height: 342, child: _TimelinePanel()),
                   ],
                 ),
               ),
@@ -964,7 +964,7 @@ class _PreviewStage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: _SurfacePanel(
         padding: EdgeInsets.zero,
         child: Column(
@@ -972,10 +972,12 @@ class _PreviewStage extends StatelessWidget {
             _PreviewHeader(
               timecode: formatSeconds(controller.currentPositionSeconds),
               duration: formatSeconds(controller.duration),
+              sourceLabel: controller.previewSourceLabel,
+              audioLabel: controller.previewAudioLabel,
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                padding: const EdgeInsets.all(12),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     const aspect = 16 / 9;
@@ -989,8 +991,11 @@ class _PreviewStage extends StatelessWidget {
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: Colors.black,
+                          borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                            color: Theme.of(context).colorScheme.outline,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.75),
                           ),
                         ),
                         child: SizedBox(
@@ -998,6 +1003,11 @@ class _PreviewStage extends StatelessWidget {
                           height: height,
                           child: VideoPreview(
                             controller: controller.videoController,
+                            volume: controller.previewVolume,
+                            muted: controller.previewMuted,
+                            onToggleMute: context
+                                .read<EditorController>()
+                                .togglePreviewMute,
                           ),
                         ),
                       ),
@@ -1674,10 +1684,17 @@ class _WorkspaceTab extends StatelessWidget {
 }
 
 class _PreviewHeader extends StatelessWidget {
-  const _PreviewHeader({required this.timecode, required this.duration});
+  const _PreviewHeader({
+    required this.timecode,
+    required this.duration,
+    required this.sourceLabel,
+    required this.audioLabel,
+  });
 
   final String timecode;
   final String duration;
+  final String sourceLabel;
+  final String audioLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1693,13 +1710,27 @@ class _PreviewHeader extends StatelessWidget {
       child: Row(
         children: [
           const _PanelHeader(title: 'Program', icon: Icons.live_tv_outlined),
-          const Spacer(),
-          _SmallPill(label: timecode),
-          const SizedBox(width: 8),
-          Text(
-            duration,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+          const SizedBox(width: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: Row(
+                children: [
+                  _SmallPill(label: sourceLabel),
+                  const SizedBox(width: 8),
+                  _SmallPill(label: audioLabel),
+                  const SizedBox(width: 8),
+                  _SmallPill(label: timecode),
+                  const SizedBox(width: 8),
+                  Text(
+                    duration,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
