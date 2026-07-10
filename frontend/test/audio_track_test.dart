@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:file_picker/file_picker.dart';
@@ -140,6 +141,9 @@ void main() {
       name: 'Shorts Project',
       duration: 120,
       segments: [],
+      transcript: [
+        TranscriptSegment(start: 10.5, end: 14.2, text: '보존되어야 하는 전체 STT 원문'),
+      ],
       captions: [],
       waveform: [],
       timelineMarkers: [
@@ -155,6 +159,7 @@ void main() {
       includeCaptions: false,
       captionStylePreset: 'shorts',
       exportAspectRatio: '9:16',
+      selectedExportProfiles: ['16:9', '9:16'],
       markIn: 10.5,
       markOut: 88.0,
       originalFilename: 'source.mxf',
@@ -200,6 +205,9 @@ void main() {
     expect(restored.includeCaptions, isFalse);
     expect(restored.captionStylePreset, 'shorts');
     expect(restored.exportAspectRatio, '9:16');
+    expect(restored.selectedExportProfiles, ['16:9', '9:16']);
+    expect(restored.transcript.single.text, '보존되어야 하는 전체 STT 원문');
+    expect(restored.transcript.single.start, 10.5);
     expect(restored.markIn, 10.5);
     expect(restored.markOut, 88.0);
     expect(restored.originalFilename, 'source.mxf');
@@ -213,6 +221,70 @@ void main() {
     expect(restored.shortsCandidates.single['hook_score'], 91.0);
     expect(restored.shortsCandidates.single['completion_score'], 76.0);
     expect(restored.selectedShortsId, 3);
+  });
+
+  test('project file saves and reopens without losing editor data', () async {
+    final directory = await io.Directory.systemTemp.createTemp(
+      'autoedit_project_file_test',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+    final projectPath =
+        '${directory.path}${io.Platform.pathSeparator}news.autoedit.json';
+    final controller = EditorController(autoStartEngine: false)
+      ..projectName = 'Evening News'
+      ..duration = 120
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 30, reason: 'lead'),
+      ]
+      ..selectedSegmentOrder = 1
+      ..transcript = const [
+        TranscriptSegment(start: 10, end: 15, text: '뉴스 리드 원문'),
+        TranscriptSegment(start: 15, end: 22, text: '취재 근거 원문'),
+      ]
+      ..selectedExportProfiles = const ['16:9', '9:16']
+      ..exportAspectRatio = '16:9';
+
+    controller.updateSegment(
+      controller.segments.single.copyWith(reason: 'verified lead'),
+    );
+    expect(controller.hasUnsavedProjectChanges, isTrue);
+
+    await controller.saveProjectToPath(projectPath);
+    expect(controller.projectFilePath, projectPath);
+    expect(controller.projectFileLabel, 'news.autoedit.json');
+    expect(controller.hasUnsavedProjectChanges, isFalse);
+
+    final firstPayload =
+        jsonDecode(await io.File(projectPath).readAsString())
+            as Map<String, dynamic>;
+    expect(firstPayload['version'], 2);
+    expect(firstPayload['transcript'], hasLength(2));
+    expect(firstPayload['selected_export_profiles'], ['16:9', '9:16']);
+
+    controller.setExportProfiles({'9:16', '1:1'});
+    expect(controller.hasUnsavedProjectChanges, isTrue);
+    await controller.saveProjectFile();
+    expect(controller.hasUnsavedProjectChanges, isFalse);
+
+    final reopened = EditorController(autoStartEngine: false);
+    await reopened.openProjectPath(projectPath, initializePreview: false);
+    expect(reopened.projectName, 'Evening News');
+    expect(reopened.projectFilePath, projectPath);
+    expect(reopened.hasUnsavedProjectChanges, isFalse);
+    expect(reopened.transcript.map((item) => item.text), [
+      '뉴스 리드 원문',
+      '취재 근거 원문',
+    ]);
+    expect(reopened.selectedExportProfiles, ['9:16', '1:1']);
+    expect(reopened.exportAspectRatio, '9:16');
+    expect(reopened.segments.single.reason, 'verified lead');
+
+    controller.dispose();
+    reopened.dispose();
   });
 
   test(

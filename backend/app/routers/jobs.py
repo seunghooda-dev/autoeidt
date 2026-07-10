@@ -275,6 +275,7 @@ def get_project(job_id: str) -> ProjectResponse:
         original_path=job.get("video_path"),
         duration=float(job.get("duration") or 0),
         segments=job.get("segments") or [],
+        transcript=job.get("transcript") or [],
         captions=job.get("captions") or [],
         waveform=job.get("waveform") or [],
         timeline_markers=job.get("timeline_markers") or [],
@@ -283,6 +284,7 @@ def get_project(job_id: str) -> ProjectResponse:
         include_captions=bool(job.get("include_captions", True)),
         caption_style_preset=str(job.get("caption_style_preset") or "news"),
         export_aspect_ratio=str(job.get("export_aspect_ratio") or "16:9"),
+        selected_export_profiles=job.get("selected_export_profiles") or [],
         mark_in=job.get("mark_in"),
         mark_out=job.get("mark_out"),
     )
@@ -309,6 +311,11 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         ),
         duration=payload.duration,
         segments=[segment.model_dump() for segment in payload.segments],
+        transcript=(
+            [item.model_dump() for item in payload.transcript]
+            if payload.transcript
+            else job.get("transcript") or []
+        ),
         captions=[caption.model_dump() for caption in payload.captions],
         waveform=payload.waveform,
         timeline_markers=[
@@ -319,6 +326,7 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         include_captions=payload.include_captions,
         caption_style_preset=payload.caption_style_preset,
         export_aspect_ratio=payload.export_aspect_ratio,
+        selected_export_profiles=payload.selected_export_profiles,
         mark_in=payload.mark_in,
         mark_out=payload.mark_out,
     )
@@ -329,6 +337,7 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         original_path=updated.get("video_path"),
         duration=float(updated.get("duration") or 0),
         segments=updated.get("segments") or [],
+        transcript=updated.get("transcript") or [],
         captions=updated.get("captions") or [],
         waveform=updated.get("waveform") or [],
         timeline_markers=updated.get("timeline_markers") or [],
@@ -337,6 +346,7 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         include_captions=bool(updated.get("include_captions", True)),
         caption_style_preset=str(updated.get("caption_style_preset") or "news"),
         export_aspect_ratio=str(updated.get("export_aspect_ratio") or "16:9"),
+        selected_export_profiles=updated.get("selected_export_profiles") or [],
         mark_in=updated.get("mark_in"),
         mark_out=updated.get("mark_out"),
     )

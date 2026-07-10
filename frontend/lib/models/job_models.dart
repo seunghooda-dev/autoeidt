@@ -659,6 +659,7 @@ class ProjectState {
     required this.name,
     required this.duration,
     required this.segments,
+    this.transcript = const [],
     required this.captions,
     required this.waveform,
     this.timelineMarkers = const [],
@@ -667,6 +668,7 @@ class ProjectState {
     this.includeCaptions = true,
     this.captionStylePreset = 'news',
     this.exportAspectRatio = '16:9',
+    this.selectedExportProfiles = const ['16:9'],
     this.markIn,
     this.markOut,
     this.jobId,
@@ -683,6 +685,7 @@ class ProjectState {
   final double timelineFrameRate;
   final String timelineTimecodeMode;
   final List<HighlightSegment> segments;
+  final List<TranscriptSegment> transcript;
   final List<CaptionSegment> captions;
   final List<double> waveform;
   final List<TimelineMarker> timelineMarkers;
@@ -691,17 +694,20 @@ class ProjectState {
   final bool includeCaptions;
   final String captionStylePreset;
   final String exportAspectRatio;
+  final List<String> selectedExportProfiles;
   final double? markIn;
   final double? markOut;
 
   factory ProjectState.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
+    final rawTranscript = json['transcript'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
     final rawTimelineMarkers =
         json['timeline_markers'] as List<dynamic>? ?? const [];
     final rawShortsCandidates =
         json['shorts_candidates'] as List<dynamic>? ?? const [];
+    final exportAspectRatio = json['export_aspect_ratio'] as String? ?? '16:9';
     return ProjectState(
       name: json['name'] as String? ?? 'AutoEdit Project',
       jobId: json['job_id'] as String?,
@@ -711,6 +717,13 @@ class ProjectState {
       segments: rawSegments
           .map(
             (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+      transcript: rawTranscript
+          .whereType<Map>()
+          .map(
+            (item) =>
+                TranscriptSegment.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList(),
       captions: rawCaptions
@@ -731,7 +744,11 @@ class ProjectState {
       selectedShortsId: (json['selected_shorts_id'] as num?)?.toInt(),
       includeCaptions: json['include_captions'] as bool? ?? true,
       captionStylePreset: json['caption_style_preset'] as String? ?? 'news',
-      exportAspectRatio: json['export_aspect_ratio'] as String? ?? '16:9',
+      exportAspectRatio: exportAspectRatio,
+      selectedExportProfiles: _normalizedExportProfiles(
+        json['selected_export_profiles'],
+        exportAspectRatio,
+      ),
       markIn: _optionalTimelineSecondsFromJson(json['mark_in']),
       markOut: _optionalTimelineSecondsFromJson(json['mark_out']),
     );
@@ -747,6 +764,7 @@ class ProjectState {
       'timeline_frame_rate': timecodeFrameRate,
       'timeline_timecode_mode': 'non_drop',
       'segments': segments.map((item) => item.toJson()).toList(),
+      'transcript': transcript.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
       'timeline_markers': timelineMarkers.map((item) => item.toJson()).toList(),
@@ -755,10 +773,26 @@ class ProjectState {
       'include_captions': includeCaptions,
       'caption_style_preset': captionStylePreset,
       'export_aspect_ratio': exportAspectRatio,
+      'selected_export_profiles': selectedExportProfiles,
       if (markIn != null) 'mark_in': snapSecondsToFrame(markIn!),
       if (markOut != null) 'mark_out': snapSecondsToFrame(markOut!),
     };
   }
+}
+
+List<String> _normalizedExportProfiles(Object? value, String fallback) {
+  const supported = ['16:9', '9:16', '1:1'];
+  final requested = value is List
+      ? value.map((item) => item.toString()).toSet()
+      : <String>{fallback};
+  final normalized = [
+    for (final profile in supported)
+      if (requested.contains(profile)) profile,
+  ];
+  if (normalized.isNotEmpty) {
+    return normalized;
+  }
+  return supported.contains(fallback) ? [fallback] : const ['16:9'];
 }
 
 List<Map<String, dynamic>> _timelineSafeShortsCandidateMaps(

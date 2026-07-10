@@ -377,6 +377,14 @@ class TranscriptSegment {
       text: json['text'] as String? ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'start': snapSecondsToFrame(start),
+      'end': snapSecondsToFrame(end),
+      'text': text,
+    };
+  }
 }
 
 class CaptionSegment {

@@ -49,6 +49,8 @@ class EditorController extends ChangeNotifier {
   final List<_EditorSnapshot> _undoStack = [];
   final List<_EditorSnapshot> _redoStack = [];
   String? _lastRecoveryPayload;
+  int _projectRevision = 0;
+  int _savedProjectRevision = 0;
   bool _isDisposed = false;
 
   LocalEngineState engineState = LocalEngineState.idle();
@@ -94,6 +96,7 @@ class EditorController extends ChangeNotifier {
   bool audioTrack1Locked = false;
   bool audioTrack2Locked = false;
   String projectName = 'AutoEdit Project';
+  String? projectFilePath;
   HighlightSegment? _clipClipboard;
   List<HighlightSegment> comparisonDefaultSegments = [];
   List<HighlightSegment> comparisonReferenceSegments = [];
@@ -182,6 +185,19 @@ class EditorController extends ChangeNotifier {
 
   bool get hasTimeline => duration > 0 && segments.isNotEmpty;
   bool get hasTimelineSource => hasTimeline || hasFile;
+  bool get canSaveProjectFile => hasFile || hasRecoverableProject;
+  bool get hasUnsavedProjectChanges =>
+      canSaveProjectFile && _projectRevision != _savedProjectRevision;
+  String get projectTitleLabel =>
+      '$projectName${hasUnsavedProjectChanges ? ' *' : ''}';
+  String get projectFileLabel {
+    final path = projectFilePath;
+    if (path == null || path.isEmpty) {
+      return hasUnsavedProjectChanges ? 'Unsaved project' : 'Project not saved';
+    }
+    return io.File(path).uri.pathSegments.last;
+  }
+
   double get timelineSourceDuration {
     if (duration > 0) {
       return duration;
@@ -795,6 +811,7 @@ class EditorController extends ChangeNotifier {
       originalPath: selectedFile?.path,
       duration: duration,
       segments: segments,
+      transcript: transcript,
       captions: captions,
       waveform: waveform,
       timelineMarkers: timelineMarkers,
@@ -803,6 +820,7 @@ class EditorController extends ChangeNotifier {
       includeCaptions: includeCaptions,
       captionStylePreset: captionStylePreset,
       exportAspectRatio: exportAspectRatio,
+      selectedExportProfiles: selectedExportProfiles,
       markIn: markIn,
       markOut: markOut,
     );
@@ -879,6 +897,7 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> openMediaFile(PlatformFile file) async {
+    projectFilePath = null;
     selectedFile = file;
     selectedMediaProbe = null;
     isProbingMedia = false;
@@ -915,6 +934,7 @@ class EditorController extends ChangeNotifier {
     shortsCandidates = [];
     selectedShortsId = null;
     _clearHistory();
+    _markProjectDirty();
     await _disposeVideoController();
     notifyListeners();
     if (!kIsWeb && file.path != null) {
@@ -941,6 +961,7 @@ class EditorController extends ChangeNotifier {
     selectedFile = file;
     selectedMediaProbe = null;
     renderUrl = null;
+    _markProjectDirty();
     notifyListeners();
 
     if (!kIsWeb && file.path != null) {
@@ -1285,7 +1306,12 @@ class EditorController extends ChangeNotifier {
     }
     try {
       final project = await _apiClient.saveProject(id, projectState);
-      _applyProject(project, keepJob: true, resetHistory: false);
+      _applyProject(
+        project,
+        keepJob: true,
+        resetHistory: false,
+        markProjectDirty: false,
+      );
     } catch (error) {
       if (!silent) {
         errorMessage = '프로젝트 저장 실패: $error';
@@ -1296,26 +1322,55 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  Future<void> saveProjectFile() async {
+    final path = projectFilePath;
+    if (!kIsWeb && path != null && path.isNotEmpty) {
+      await saveProjectToPath(path);
+      return;
+    }
+    await exportProjectFile();
+  }
+
   Future<void> exportProjectFile() async {
-    final bytes = Uint8List.fromList(
-      utf8.encode(
-        const JsonEncoder.withIndent(
-          '  ',
-        ).convert({'version': 1, ...projectState.toJson()}),
-      ),
-    );
+    final bytes = _projectFileBytes();
     try {
-      await FilePicker.platform.saveFile(
+      final path = await FilePicker.platform.saveFile(
         dialogTitle: '프로젝트 저장',
         fileName: '${_safeProjectFileName()}.autoedit.json',
         type: FileType.custom,
         allowedExtensions: ['json'],
-        bytes: bytes,
+        bytes: kIsWeb ? bytes : null,
       );
+      if (path == null || path.isEmpty) {
+        return;
+      }
+      if (kIsWeb) {
+        _markProjectSaved();
+        notifyListeners();
+        return;
+      }
+      await saveProjectToPath(path);
     } catch (error) {
       errorMessage = '프로젝트 파일 저장 실패: $error';
       notifyListeners();
     }
+  }
+
+  Future<void> saveProjectToPath(String path) async {
+    if (kIsWeb) {
+      throw UnsupportedError('로컬 경로 저장은 데스크톱에서만 지원합니다.');
+    }
+    try {
+      final target = io.File(path);
+      await target.parent.create(recursive: true);
+      await _writeProjectFileAtomically(target, _projectFileBytes());
+      projectFilePath = target.path;
+      _markProjectSaved();
+      errorMessage = null;
+    } catch (error) {
+      errorMessage = '프로젝트 파일 저장 실패: $error';
+    }
+    notifyListeners();
   }
 
   String buildSelectedShortsCutListCsv() {
@@ -1360,27 +1415,113 @@ class EditorController extends ChangeNotifier {
       if (result == null || result.files.isEmpty) {
         return;
       }
-      final bytes = result.files.single.bytes;
+      final file = result.files.single;
+      final path = file.path;
+      if (!kIsWeb && path != null && path.isNotEmpty) {
+        await openProjectPath(path);
+        return;
+      }
+      final bytes = file.bytes;
       if (bytes == null) {
         throw StateError('프로젝트 파일을 읽을 수 없습니다.');
       }
-      final payload = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-      final project = ProjectState.fromJson(payload);
-      _applyProject(project, keepJob: false);
-      if (!kIsWeb && sourceMediaIsLinked) {
-        unawaited(_initializeLocalPreview(sourceMediaPath!));
-        unawaited(probeSelectedMedia());
-      } else if (jobId != null) {
-        try {
-          await _initializePreview(jobId!);
-        } catch (_) {
-          await _disposeVideoController();
-        }
-      }
+      await _openProjectBytes(bytes, initializePreview: true);
     } catch (error) {
       errorMessage = '프로젝트 불러오기 실패: $error';
+      notifyListeners();
     }
+  }
+
+  Future<void> openProjectPath(
+    String path, {
+    bool initializePreview = true,
+  }) async {
+    try {
+      final file = io.File(path);
+      if (!await file.exists()) {
+        throw StateError('프로젝트 파일을 찾을 수 없습니다: $path');
+      }
+      await _openProjectBytes(
+        await file.readAsBytes(),
+        sourcePath: file.path,
+        initializePreview: initializePreview,
+      );
+    } catch (error) {
+      errorMessage = '프로젝트 불러오기 실패: $error';
+      notifyListeners();
+    }
+  }
+
+  Uint8List _projectFileBytes() {
+    return Uint8List.fromList(
+      utf8.encode(
+        const JsonEncoder.withIndent(
+          '  ',
+        ).convert({'version': 2, ...projectState.toJson()}),
+      ),
+    );
+  }
+
+  Future<void> _openProjectBytes(
+    Uint8List bytes, {
+    String? sourcePath,
+    required bool initializePreview,
+  }) async {
+    final decoded = utf8.decode(bytes).replaceFirst('\uFEFF', '');
+    final raw = jsonDecode(decoded);
+    if (raw is! Map) {
+      throw const FormatException('프로젝트 JSON 형식이 올바르지 않습니다.');
+    }
+    final project = ProjectState.fromJson(Map<String, dynamic>.from(raw));
+    await _disposeVideoController();
+    _applyProject(project, keepJob: false, markProjectDirty: false);
+    projectFilePath = sourcePath;
+    _markProjectSaved();
+    errorMessage = null;
     notifyListeners();
+
+    if (!initializePreview) {
+      return;
+    }
+    if (!kIsWeb && sourceMediaIsLinked) {
+      unawaited(_initializeLocalPreview(sourceMediaPath!));
+      unawaited(probeSelectedMedia());
+    } else if (jobId != null) {
+      try {
+        await _initializePreview(jobId!);
+      } catch (_) {
+        await _disposeVideoController();
+      }
+    }
+  }
+
+  Future<void> _writeProjectFileAtomically(
+    io.File target,
+    Uint8List bytes,
+  ) async {
+    final nonce = '${io.pid}.${DateTime.now().microsecondsSinceEpoch}';
+    final temporary = io.File('${target.path}.$nonce.tmp');
+    final backup = io.File('${target.path}.$nonce.bak');
+    var originalMoved = false;
+    try {
+      await temporary.writeAsBytes(bytes, flush: true);
+      if (await target.exists()) {
+        await target.rename(backup.path);
+        originalMoved = true;
+      }
+      await temporary.rename(target.path);
+      if (await backup.exists()) {
+        await backup.delete();
+      }
+    } catch (_) {
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+      if (originalMoved && !await target.exists() && await backup.exists()) {
+        await backup.rename(target.path);
+      }
+      rethrow;
+    }
   }
 
   Future<void> refreshProjectRecoveryStatus() async {
@@ -3142,6 +3283,7 @@ class EditorController extends ChangeNotifier {
     final previous = _undoStack.removeLast();
     _redoStack.add(current);
     _restoreSnapshot(previous);
+    _markProjectDirty();
     renderUrl = null;
     notifyListeners();
   }
@@ -3154,6 +3296,7 @@ class EditorController extends ChangeNotifier {
     final next = _redoStack.removeLast();
     _undoStack.add(current);
     _restoreSnapshot(next);
+    _markProjectDirty();
     renderUrl = null;
     notifyListeners();
   }
@@ -3169,6 +3312,7 @@ class EditorController extends ChangeNotifier {
       _redoStack.add(current);
       _restoreSnapshot(previous);
     }
+    _markProjectDirty();
     renderUrl = null;
     notifyListeners();
   }
@@ -3713,6 +3857,7 @@ class EditorController extends ChangeNotifier {
 
     final remainingBlock = _firstSelectedShortsRenderBlock();
     if (applied) {
+      _markProjectDirty();
       renderUrl = null;
       final active = selectedShortsId == null
           ? null
@@ -5297,6 +5442,7 @@ class EditorController extends ChangeNotifier {
         else
           candidate,
     ];
+    _markProjectDirty();
     notifyListeners();
   }
 
@@ -5308,6 +5454,7 @@ class EditorController extends ChangeNotifier {
         else
           candidate,
     ];
+    _markProjectDirty();
     notifyListeners();
   }
 
@@ -5316,6 +5463,7 @@ class EditorController extends ChangeNotifier {
       for (final candidate in shortsCandidates)
         if (candidate.id != id) candidate,
     ];
+    _markProjectDirty();
     if (selectedShortsId == id) {
       selectedShortsId = shortsCandidates.isEmpty
           ? null
@@ -5347,6 +5495,7 @@ class EditorController extends ChangeNotifier {
         ),
       ),
     ];
+    _markProjectDirty();
     notifyListeners();
   }
 
@@ -5379,6 +5528,7 @@ class EditorController extends ChangeNotifier {
           candidate,
     ];
     if (repairedCandidates) {
+      _markProjectDirty();
       renderUrl = null;
       final active = selectedShortsId == null
           ? null
@@ -5753,6 +5903,7 @@ class EditorController extends ChangeNotifier {
       selectedSegmentOrder = segments.first.order;
     }
     _clearHistory();
+    _markProjectDirty();
   }
 
   Future<void> _initializePreview(String id) async {
@@ -7651,6 +7802,7 @@ class EditorController extends ChangeNotifier {
     ProjectState project, {
     required bool keepJob,
     bool resetHistory = true,
+    bool markProjectDirty = true,
   }) {
     projectName = project.name;
     if (!keepJob) {
@@ -7671,6 +7823,7 @@ class EditorController extends ChangeNotifier {
     duration = project.duration;
     _manualPlayheadSeconds = 0;
     segments = _reorderSegments(project.segments);
+    transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
       for (var index = 0; index < project.captions.length; index++)
         project.captions[index].copyWith(order: index + 1),
@@ -7692,12 +7845,16 @@ class EditorController extends ChangeNotifier {
     includeCaptions = project.includeCaptions;
     captionStylePreset = project.captionStylePreset;
     exportAspectRatio = project.exportAspectRatio;
+    selectedExportProfiles = List<String>.of(project.selectedExportProfiles);
     markIn = project.markIn;
     markOut = project.markOut;
     selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
     renderUrl = null;
     if (resetHistory) {
       _clearHistory();
+    }
+    if (markProjectDirty) {
+      _markProjectDirty();
     }
   }
 
@@ -7749,6 +7906,7 @@ class EditorController extends ChangeNotifier {
       includeCaptions: includeCaptions,
       captionStylePreset: captionStylePreset,
       exportAspectRatio: exportAspectRatio,
+      selectedExportProfiles: List<String>.of(selectedExportProfiles),
     );
   }
 
@@ -7769,6 +7927,7 @@ class EditorController extends ChangeNotifier {
     includeCaptions = snapshot.includeCaptions;
     captionStylePreset = snapshot.captionStylePreset;
     exportAspectRatio = snapshot.exportAspectRatio;
+    selectedExportProfiles = List<String>.of(snapshot.selectedExportProfiles);
   }
 
   void _commitHistory() {
@@ -7777,6 +7936,15 @@ class EditorController extends ChangeNotifier {
       _undoStack.removeAt(0);
     }
     _redoStack.clear();
+    _markProjectDirty();
+  }
+
+  void _markProjectDirty() {
+    _projectRevision += 1;
+  }
+
+  void _markProjectSaved() {
+    _savedProjectRevision = _projectRevision;
   }
 
   void _clearHistory() {
@@ -7920,6 +8088,7 @@ class EditorController extends ChangeNotifier {
       ),
     ];
     selectedSegmentOrder = 1;
+    _markProjectDirty();
   }
 
   String _safeProjectFileName() {
@@ -8204,6 +8373,7 @@ class _EditorSnapshot {
     required this.includeCaptions,
     required this.captionStylePreset,
     required this.exportAspectRatio,
+    required this.selectedExportProfiles,
   });
 
   final DateTime createdAt;
@@ -8216,6 +8386,7 @@ class _EditorSnapshot {
   final bool includeCaptions;
   final String captionStylePreset;
   final String exportAspectRatio;
+  final List<String> selectedExportProfiles;
 }
 
 class EditorHistoryPoint {

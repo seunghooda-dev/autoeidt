@@ -31,19 +31,38 @@ function Assert-VisualStudioTools {
     }
 }
 
+function Invoke-Flutter {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Step,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    & flutter @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Step 실패 (exit code: $LASTEXITCODE)"
+    }
+}
+
 Assert-Command "flutter" "Flutter SDK가 PATH에 있어야 합니다."
 Assert-Command "ffmpeg" "winget install Gyan.FFmpeg 로 FFmpeg를 설치해 주세요."
 Assert-VisualStudioTools
 
 Push-Location $Frontend
 try {
-    flutter config --enable-windows-desktop
-    flutter pub get
+    Invoke-Flutter -Step "Flutter Windows 설정" -Arguments @("config", "--enable-windows-desktop")
+    Invoke-Flutter -Step "Flutter 패키지 설치" -Arguments @("pub", "get")
     if (-not $SkipTests) {
-        flutter analyze
-        flutter test
+        Invoke-Flutter -Step "Flutter 정적 분석" -Arguments @("analyze")
+        Invoke-Flutter -Step "Flutter 테스트" -Arguments @("test")
     }
-    flutter build windows --release --dart-define=API_BASE_URL=$ApiBaseUrl
+    Invoke-Flutter -Step "Windows Release 빌드" -Arguments @(
+        "build",
+        "windows",
+        "--release",
+        "--dart-define=API_BASE_URL=$ApiBaseUrl"
+    )
 } finally {
     Pop-Location
 }

@@ -116,6 +116,9 @@ class WorkspaceController extends ChangeNotifier {
   final bool _persist;
   final String? _storagePath;
   Timer? _saveTimer;
+  Future<void> _saveQueue = Future<void>.value();
+  int _changeRevision = 0;
+  int _savedRevision = 0;
   bool _disposed = false;
 
   double mediaWidth = 320;
@@ -418,33 +421,40 @@ class WorkspaceController extends ChangeNotifier {
     if (!_persist) {
       return;
     }
-    try {
-      final file = io.File(_resolvedStoragePath);
-      await file.parent.create(recursive: true);
-      final temp = io.File('${file.path}.${io.pid}.tmp');
-      await temp.writeAsString(
-        const JsonEncoder.withIndent('  ').convert({
-          'media_width': mediaWidth,
-          'inspector_width': inspectorWidth,
-          'timeline_height': timelineHeight,
-          'media_on_left': mediaOnLeft,
-          'layout_locked': layoutLocked,
-          'active_preset': activePreset,
-          'custom_presets': customPresets
-              .map((preset) => preset.toJson())
-              .toList(),
-          'assets': assets.map((asset) => asset.toJson()).toList(),
-          'snapshots': snapshots.map((snapshot) => snapshot.toJson()).toList(),
-        }),
-        flush: true,
-      );
-      if (await file.exists()) {
-        await file.delete();
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    final revision = _changeRevision;
+    final payload = const JsonEncoder.withIndent('  ').convert({
+      'media_width': mediaWidth,
+      'inspector_width': inspectorWidth,
+      'timeline_height': timelineHeight,
+      'media_on_left': mediaOnLeft,
+      'layout_locked': layoutLocked,
+      'active_preset': activePreset,
+      'custom_presets': customPresets.map((preset) => preset.toJson()).toList(),
+      'assets': assets.map((asset) => asset.toJson()).toList(),
+      'snapshots': snapshots.map((snapshot) => snapshot.toJson()).toList(),
+    });
+    _saveQueue = _saveQueue.then((_) async {
+      try {
+        final file = io.File(_resolvedStoragePath);
+        await file.parent.create(recursive: true);
+        final temp = io.File(
+          '${file.path}.${io.pid}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+        );
+        await temp.writeAsString(payload, flush: true);
+        if (await file.exists()) {
+          await file.delete();
+        }
+        await temp.rename(file.path);
+        if (revision > _savedRevision) {
+          _savedRevision = revision;
+        }
+      } catch (_) {
+        // Workspace persistence is best effort and must not interrupt editing.
       }
-      await temp.rename(file.path);
-    } catch (_) {
-      // Workspace persistence is best effort and must not interrupt editing.
-    }
+    });
+    await _saveQueue;
   }
 
   String get _resolvedStoragePath {
@@ -457,6 +467,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void _changed() {
+    _changeRevision += 1;
     _notify();
     if (!_persist) {
       return;
@@ -477,7 +488,9 @@ class WorkspaceController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _saveTimer?.cancel();
-    unawaited(save());
+    if (_persist && _savedRevision < _changeRevision) {
+      unawaited(save());
+    }
     super.dispose();
   }
 }

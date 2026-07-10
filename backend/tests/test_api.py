@@ -216,6 +216,13 @@ def test_project_endpoints_preserve_render_settings(
             "timeline_frame_rate": 29.97,
             "timeline_timecode_mode": "drop",
             "segments": [],
+            "transcript": [
+                {
+                    "start": 12.5,
+                    "end": 15.0,
+                    "text": "보존할 STT 원문",
+                }
+            ],
             "captions": [],
             "waveform": [],
             "timeline_markers": [
@@ -231,6 +238,7 @@ def test_project_endpoints_preserve_render_settings(
             "include_captions": False,
             "caption_style_preset": "shorts",
             "export_aspect_ratio": "9:16",
+            "selected_export_profiles": ["16:9", "9:16"],
             "mark_in": 12.5,
             "mark_out": 58.0,
             "shorts_candidates": [
@@ -256,6 +264,8 @@ def test_project_endpoints_preserve_render_settings(
     assert payload["include_captions"] is False
     assert payload["caption_style_preset"] == "shorts"
     assert payload["export_aspect_ratio"] == "9:16"
+    assert payload["selected_export_profiles"] == ["16:9", "9:16"]
+    assert payload["transcript"][0]["text"] == "보존할 STT 원문"
     assert payload["mark_in"] == 12.5
     assert payload["mark_out"] == 58.0
     assert payload["timeline_markers"][0]["label"] == "Hook"
@@ -274,7 +284,26 @@ def test_project_endpoints_preserve_render_settings(
     assert get_payload["include_captions"] is False
     assert get_payload["caption_style_preset"] == "shorts"
     assert get_payload["export_aspect_ratio"] == "9:16"
+    assert get_payload["selected_export_profiles"] == ["16:9", "9:16"]
+    assert get_payload["transcript"][0]["start"] == 12.5
     assert get_payload["timeline_markers"][0]["note"] == "opening marker"
     assert get_payload["timeline_markers"][0]["enabled"] is False
     assert get_payload["shorts_candidates"][0]["quality_score"] == 82.5
     assert get_payload["selected_shorts_id"] == 2
+
+    legacy_response = client.post(
+        "/api/jobs/job-1/project",
+        json={
+            "name": "Legacy Project Save",
+            "duration": 120,
+            "segments": [],
+            "captions": [],
+            "waveform": [],
+            "export_aspect_ratio": "1:1",
+        },
+    )
+
+    assert legacy_response.status_code == 200
+    legacy_payload = legacy_response.json()
+    assert legacy_payload["transcript"][0]["text"] == "보존할 STT 원문"
+    assert legacy_payload["selected_export_profiles"] == ["1:1"]

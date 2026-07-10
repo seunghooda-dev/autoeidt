@@ -149,6 +149,10 @@ class _EditorDashboardState extends State<EditorDashboard> {
     bool handled = true;
     if (isCtrl && isShift && !isAlt && key == LogicalKeyboardKey.keyP) {
       unawaited(_showCommandPalette());
+    } else if (isCtrl && isShift && !isAlt && key == LogicalKeyboardKey.keyS) {
+      unawaited(editor.exportProjectFile());
+    } else if (isCtrl && !isShift && !isAlt && key == LogicalKeyboardKey.keyS) {
+      unawaited(editor.saveProjectFile());
     } else if (!isCtrl &&
         !isShift &&
         !isAlt &&
@@ -525,6 +529,31 @@ List<EditorCommand> _buildEditorCommands(
       icon: Icons.video_file_outlined,
       action: editor.pickVideo,
       keywords: const ['open', 'mxf', 'video'],
+    ),
+    EditorCommand(
+      label: 'Save project',
+      category: 'File',
+      icon: Icons.save_outlined,
+      action: editor.saveProjectFile,
+      shortcut: 'Ctrl+S',
+      enabled: editor.canSaveProjectFile,
+      keywords: const ['project', 'save'],
+    ),
+    EditorCommand(
+      label: 'Save project as',
+      category: 'File',
+      icon: Icons.save_as_outlined,
+      action: editor.exportProjectFile,
+      shortcut: 'Ctrl+Shift+S',
+      enabled: editor.canSaveProjectFile,
+      keywords: const ['project', 'save as'],
+    ),
+    EditorCommand(
+      label: 'Open project',
+      category: 'File',
+      icon: Icons.folder_open,
+      action: editor.importProjectFile,
+      keywords: const ['project', 'open'],
     ),
     EditorCommand(
       label: 'Analyze selected media',
@@ -971,12 +1000,19 @@ class _TopBar extends StatelessWidget {
                     letterSpacing: 0,
                   ),
                 ),
-                Text(
-                  controller.projectName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                Tooltip(
+                  message:
+                      controller.projectFilePath ?? controller.projectFileLabel,
+                  child: Text(
+                    controller.projectTitleLabel,
+                    key: const Key('project-title-label'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: controller.hasUnsavedProjectChanges
+                          ? Theme.of(context).colorScheme.tertiary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -1085,14 +1121,14 @@ class _CommandBar extends StatelessWidget {
             _ToolbarButton(
               icon: Icons.save_outlined,
               label: 'Save',
-              onPressed: controller.hasTimeline
-                  ? () => editor.saveProjectToBackend()
+              onPressed: controller.canSaveProjectFile
+                  ? editor.saveProjectFile
                   : null,
             ),
             _ToolbarButton(
-              icon: Icons.file_download_outlined,
-              label: 'Project',
-              onPressed: controller.hasTimeline
+              icon: Icons.save_as_outlined,
+              label: 'Save As',
+              onPressed: controller.canSaveProjectFile
                   ? editor.exportProjectFile
                   : null,
             ),

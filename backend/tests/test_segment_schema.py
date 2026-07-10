@@ -125,6 +125,7 @@ def test_project_state_accepts_render_settings() -> None:
         include_captions=False,
         caption_style_preset="shorts",
         export_aspect_ratio="9:16",
+        transcript=[{"start": 1.01, "end": 2.04, "text": "full transcript"}],
         mark_in=12.5,
         mark_out=58.0,
         timeline_markers=[
@@ -154,6 +155,9 @@ def test_project_state_accepts_render_settings() -> None:
     assert project.timeline_timecode_mode == "non_drop"
     assert project.caption_style_preset == "shorts"
     assert project.export_aspect_ratio == "9:16"
+    assert project.selected_export_profiles == ["9:16"]
+    assert project.transcript[0].text == "full transcript"
+    assert project.transcript[0].start == 1.0
     assert project.mark_in == 12.5
     assert project.mark_out == 58.0
     assert project.timeline_markers[0].seconds == 0.0

@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 TIMELINE_FRAME_RATE = 30.0
 TIMELINE_TIMECODE_MODE = "non_drop"
@@ -503,6 +503,7 @@ class ProjectState(BaseModel):
     timeline_frame_rate: float = TIMELINE_FRAME_RATE
     timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     segments: list[HighlightSegment] = Field(default_factory=list)
+    transcript: list[TranscriptSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
     timeline_markers: list[TimelineMarker] = Field(default_factory=list)
@@ -511,6 +512,7 @@ class ProjectState(BaseModel):
     include_captions: bool = True
     caption_style_preset: str = "news"
     export_aspect_ratio: str = "16:9"
+    selected_export_profiles: list[str] = Field(default_factory=list)
     mark_in: float | None = None
     mark_out: float | None = None
 
@@ -533,6 +535,19 @@ class ProjectState(BaseModel):
     @classmethod
     def shorts_candidates_are_30p(cls, value: Any) -> list[dict[str, Any]]:
         return _normalize_shorts_candidate_payloads(value)
+
+    @model_validator(mode="after")
+    def export_profiles_are_supported(self) -> "ProjectState":
+        supported = ("16:9", "9:16", "1:1")
+        requested = self.selected_export_profiles
+        normalized = [profile for profile in supported if profile in requested]
+        fallback = (
+            self.export_aspect_ratio
+            if self.export_aspect_ratio in supported
+            else "16:9"
+        )
+        self.selected_export_profiles = normalized or [fallback]
+        return self
 
 
 class ProjectResponse(ProjectState):

@@ -25,6 +25,42 @@ void main() {
     expect(find.text('Import'), findsWidgets);
   });
 
+  testWidgets('Ctrl+S invokes project save and shows dirty project title', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = _ShortcutSaveEditorController()
+      ..projectName = 'Shortcut Project'
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 20, reason: 'first'),
+      ]
+      ..selectedSegmentOrder = 1;
+    controller.updateSegment(
+      controller.segments.single.copyWith(end: 24, reason: 'saved by shortcut'),
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.hasUnsavedProjectChanges, isTrue);
+    expect(find.text('Shortcut Project *'), findsOneWidget);
+    await _pressShortcut(tester, LogicalKeyboardKey.keyS, control: true);
+    await tester.pump();
+
+    expect(controller.saveInvocations, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets(
     'timeline keeps professional track headers fixed and interactive',
     (tester) async {
@@ -1105,6 +1141,17 @@ void main() {
 
     expect(openedPath, r'C:\AutoEdit outputs\render_manifest.csv');
   });
+}
+
+class _ShortcutSaveEditorController extends EditorController {
+  _ShortcutSaveEditorController() : super(autoStartEngine: false);
+
+  int saveInvocations = 0;
+
+  @override
+  Future<void> saveProjectFile() async {
+    saveInvocations += 1;
+  }
 }
 
 Future<void> _pressShortcut(
