@@ -17,12 +17,14 @@ class _TimelinePlacement {
     required this.index,
     required this.sequenceStart,
     required this.sequenceEnd,
+    required this.transitionOverlap,
   });
 
   final HighlightSegment segment;
   final int index;
   final double sequenceStart;
   final double sequenceEnd;
+  final double transitionOverlap;
 
   double get speed => math.max(0.1, segment.playbackSpeed);
   double get audioStart =>
@@ -35,18 +37,24 @@ List<_TimelinePlacement> _buildTimelinePlacements(
   List<HighlightSegment> segments,
 ) {
   var cursor = 0.0;
+  HighlightSegment? previous;
   return [
     for (var index = 0; index < segments.length; index++)
       (() {
         final segment = segments[index];
-        final start = cursor;
+        final overlap = previous == null
+            ? 0.0
+            : effectiveTransitionOverlap(previous!, segment);
+        final start = math.max(0.0, cursor - overlap);
         final end = start + math.max(0.0, segment.outputDuration);
         cursor = end;
+        previous = segment;
         return _TimelinePlacement(
           segment: segment,
           index: index,
           sequenceStart: start,
           sequenceEnd: end,
+          transitionOverlap: overlap,
         );
       })(),
   ];
@@ -589,8 +597,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                       width: math.max(0, width - 12),
                                       child: Text(
                                         widget.sequenceMode
-                                            ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Detached A/V ${_detachedAudioCount()}'
-                                            : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Detached A/V ${_detachedAudioCount()}',
+                                            ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}'
+                                            : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(
@@ -1446,18 +1454,26 @@ class _TimelineEditorState extends State<TimelineEditor> {
       ),
       const PopupMenuDivider(),
       _menuItem(
-        Icons.gradient,
-        'Apply video transition',
+        Icons.compare,
+        'Cross Dissolve (A/V)',
         _TimelineMenuAction.applyVideoTransition,
         shortcut: 'Ctrl+D',
-        enabled: segment != null && !videoLocked,
+        enabled:
+            segment != null &&
+            segment.order > 1 &&
+            !videoLocked &&
+            !anyAudioLocked,
       ),
       _menuItem(
         Icons.graphic_eq,
-        'Apply audio transition',
+        'Constant Power + Dissolve',
         _TimelineMenuAction.applyAudioTransition,
         shortcut: 'Ctrl+Shift+D',
-        enabled: segment != null && !anyAudioLocked,
+        enabled:
+            segment != null &&
+            segment.order > 1 &&
+            !videoLocked &&
+            !anyAudioLocked,
       ),
       _menuItem(
         Icons.speed,
@@ -1921,11 +1937,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
     if (hitIndex != null && hitIndex >= 0 && hitIndex < placements.length) {
       placement = placements[hitIndex];
     } else {
-      for (var index = 0; index < placements.length; index++) {
+      for (var index = placements.length - 1; index >= 0; index--) {
         final candidate = placements[index];
-        if (displaySeconds <
-                candidate.sequenceEnd - timecodeFrameDurationSeconds / 2 ||
-            index == placements.length - 1) {
+        if (displaySeconds >=
+                candidate.sequenceStart - timecodeFrameDurationSeconds / 2 &&
+            (displaySeconds <
+                    candidate.sequenceEnd - timecodeFrameDurationSeconds / 2 ||
+                index == placements.length - 1)) {
           placement = candidate;
           break;
         }
@@ -1995,14 +2013,25 @@ class _TimelineEditorState extends State<TimelineEditor> {
   }
 
   double _totalOutputSeconds() {
-    return widget.segments.fold<double>(
-      0,
-      (total, segment) => total + math.max(0, segment.outputDuration),
-    );
+    return sequenceOutputDuration(widget.segments);
   }
 
   int _detachedAudioCount() {
     return widget.segments.where((segment) => !segment.audioLinked).length;
+  }
+
+  int _transitionCount() {
+    var count = 0;
+    for (var index = 1; index < widget.segments.length; index++) {
+      if (effectiveTransitionOverlap(
+            widget.segments[index - 1],
+            widget.segments[index],
+          ) >
+          0) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   double _secondsToX(double seconds, double width) {
@@ -2747,6 +2776,9 @@ class _TimelinePainter extends CustomPainter {
       if (segment.audioPan.abs() > 0.001) {
         _drawPanIndicator(canvas, size, segment, placement);
       }
+      if (placement != null) {
+        _drawTransitionOverlay(canvas, size, placement);
+      }
     }
   }
 
@@ -3083,6 +3115,79 @@ class _TimelinePainter extends CustomPainter {
         canvas.drawPath(path, fadePaint);
       }
     }
+  }
+
+  void _drawTransitionOverlay(
+    Canvas canvas,
+    Size size,
+    _TimelinePlacement placement,
+  ) {
+    final overlap = placement.transitionOverlap;
+    if (overlap <= 0) {
+      return;
+    }
+    final left = _secondsToX(placement.sequenceStart, size.width);
+    final right = _secondsToX(placement.sequenceStart + overlap, size.width);
+    if (right - left < 1) {
+      return;
+    }
+    final transitionColor = placement.segment.transitionType == 'dip_black'
+        ? colorScheme.onSurface
+        : colorScheme.primary;
+    final fill = Paint()
+      ..color = transitionColor.withValues(alpha: 0.22)
+      ..style = PaintingStyle.fill;
+    final stroke = Paint()
+      ..color = transitionColor.withValues(alpha: 0.9)
+      ..strokeWidth = 1;
+    final videoRect = Rect.fromLTRB(
+      left,
+      layout.videoTop + 2,
+      right,
+      layout.videoTop + layout.laneHeight - 2,
+    );
+    canvas.drawRect(videoRect, fill);
+    canvas.drawLine(videoRect.topLeft, videoRect.bottomRight, stroke);
+    canvas.drawLine(videoRect.bottomLeft, videoRect.topRight, stroke);
+
+    for (final top in [layout.audio1Top, layout.audio2Top]) {
+      final audioRect = Rect.fromLTRB(
+        left,
+        top + 2,
+        right,
+        top + layout.laneHeight - 2,
+      );
+      canvas.drawRect(audioRect, fill);
+      canvas.drawLine(audioRect.topLeft, audioRect.bottomRight, stroke);
+      canvas.drawLine(audioRect.bottomLeft, audioRect.topRight, stroke);
+    }
+
+    if (videoRect.width < 42) {
+      return;
+    }
+    final label = placement.segment.transitionType == 'dip_black'
+        ? 'Dip ${overlap.toStringAsFixed(1)}s'
+        : 'Dissolve ${overlap.toStringAsFixed(1)}s';
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: colorScheme.onSurface,
+          fontSize: 8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: videoRect.width - 6);
+    painter.paint(
+      canvas,
+      Offset(
+        videoRect.center.dx - painter.width / 2,
+        videoRect.center.dy - painter.height / 2,
+      ),
+    );
   }
 
   void _drawMarkers(Canvas canvas, Size size) {

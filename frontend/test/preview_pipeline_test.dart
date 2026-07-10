@@ -8,6 +8,7 @@ import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/services/api_client.dart';
 import 'package:highlight_editor_app/services/local_engine_service.dart';
+import 'package:highlight_editor_app/services/reusable_media_kit_video_player.dart';
 import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/widgets/video_preview.dart';
 import 'package:video_player/video_player.dart';
@@ -69,6 +70,36 @@ void main() {
     },
   );
 
+  test('program time accounts for incoming clip transitions', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 4, reason: 'opener'),
+        HighlightSegment(
+          order: 2,
+          start: 10,
+          end: 14,
+          reason: 'answer',
+          transitionType: 'cross_dissolve',
+          transitionDuration: 0.5,
+        ),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    expect(controller.outputDurationSeconds, 7.5);
+    expect(controller.programStartForSegment(2), 3.5);
+    expect(controller.programSegmentOrderAt(3.5), 2);
+    expect(controller.sourceTimeForProgramPosition(3.75), 10.25);
+    expect(controller.programPositionForSourceTime(11, preferredOrder: 2), 4.5);
+
+    await controller.setPreviewMonitorMode('program');
+    expect(controller.monitorDurationSeconds, 7.5);
+    await controller.jumpToTimelineStart();
+    await controller.jumpToNextEditPoint();
+    expect(controller.monitorPositionSeconds, closeTo(3.75, 0.001));
+    controller.dispose();
+  });
+
   test('program playback advances across a discontinuous source cut', () async {
     final originalPlatform = VideoPlayerPlatform.instance;
     final platform = _FakeVideoPlayerPlatform();
@@ -88,7 +119,10 @@ void main() {
         ),
       );
       await _waitUntil(
-        () => controller.videoController?.value.isInitialized ?? false,
+        () =>
+            (controller.videoController?.value.isInitialized ?? false) &&
+            !controller.isPreparingPreview &&
+            controller.duration == 120,
       );
       controller
         ..segments = const [
@@ -132,7 +166,7 @@ void main() {
     'MXF preview starts quickly and continues in the next proxy window',
     () async {
       final originalPlatform = VideoPlayerPlatform.instance;
-      final platform = _FakeVideoPlayerPlatform();
+      final platform = _FakeVideoPlayerPlatform(rejectConcurrentPlayers: true);
       VideoPlayerPlatform.instance = platform;
       final api = _ProxyApiClient();
       final controller = EditorController(
@@ -190,9 +224,9 @@ void main() {
         );
         final continuedController = controller.videoController!;
 
-        expect(api.requestedDurations, [8, 30]);
-        expect(api.requestedStarts[1], closeTo(0, 0.001));
-        expect(continuedController.value.position.inMilliseconds, 8000);
+        expect(api.requestedDurations, [8, 10]);
+        expect(api.requestedStarts[1], closeTo(6, 0.001));
+        expect(continuedController.value.position.inMilliseconds, 2000);
         expect(continuedController.value.isPlaying, isTrue);
         expect(controller.currentPositionSeconds, closeTo(8, 0.001));
       } finally {
@@ -203,6 +237,71 @@ void main() {
       }
     },
   );
+
+  test('Windows proxy replaces media on the active player', () async {
+    final originalPlatform = VideoPlayerPlatform.instance;
+    final platform = _ReusableFakeVideoPlayerPlatform();
+    VideoPlayerPlatform.instance = platform;
+    final api = _ProxyApiClient();
+    final controller = EditorController(
+      apiClient: api,
+      engineService: _ReadyEngineService(),
+      autoStartEngine: false,
+    );
+
+    try {
+      await controller.openMediaFile(
+        PlatformFile(
+          name: 'broadcast.mxf',
+          size: 1024,
+          path: r'C:\media\broadcast.mxf',
+        ),
+      );
+      await _waitUntil(
+        () =>
+            (controller.videoController?.value.isInitialized ?? false) &&
+            !controller.isPreparingPreview &&
+            controller.duration == 120,
+        describe: () =>
+            'initial requests=${api.requestedDurations} '
+            'created=${platform.createdUris} '
+            'error=${controller.errorMessage}',
+      );
+      final activeController = controller.videoController!;
+
+      await controller.togglePlayback();
+      platform.positions[activeController.playerId] =
+          activeController.value.duration;
+      activeController.value = activeController.value.copyWith(
+        position: activeController.value.duration,
+        isPlaying: false,
+        isCompleted: true,
+      );
+
+      await _waitUntil(
+        () =>
+            api.requestedDurations.length == 2 &&
+            platform.replacedResources.length == 1,
+        describe: () =>
+            'requests=${api.requestedDurations} '
+            'replacements=${platform.replacedResources} '
+            'position=${activeController.value.position} '
+            'duration=${activeController.value.duration} '
+            'error=${controller.errorMessage}',
+      );
+
+      expect(controller.videoController, same(activeController));
+      expect(platform.createdUris, hasLength(1));
+      expect(platform.replacedResources.single, contains('proxy-2.mp4'));
+      expect(activeController.value.duration, const Duration(seconds: 10));
+      expect(activeController.value.isPlaying, isTrue);
+    } finally {
+      await controller.videoController?.dispose();
+      controller.dispose();
+      await platform.close();
+      VideoPlayerPlatform.instance = originalPlatform;
+    }
+  });
 
   test('proxy preview falls back to HTTP when local playback fails', () async {
     final originalPlatform = VideoPlayerPlatform.instance;
@@ -240,6 +339,58 @@ void main() {
       expect(platform.createdUris.last, startsWith('https://'));
       expect(controller.isPreparingPreview, isFalse);
       expect(controller.errorMessage, isNull);
+    } finally {
+      await controller.videoController?.dispose();
+      controller.dispose();
+      await platform.close();
+      await temporaryDirectory.delete(recursive: true);
+      VideoPlayerPlatform.instance = originalPlatform;
+    }
+  });
+
+  test('stalled local proxy player is recreated before HTTP fallback', () async {
+    final originalPlatform = VideoPlayerPlatform.instance;
+    final platform = _FakeVideoPlayerPlatform(stallFirstProxyFileSource: true);
+    VideoPlayerPlatform.instance = platform;
+    final temporaryDirectory = await io.Directory.systemTemp.createTemp(
+      'autoedit-preview-recovery-test-',
+    );
+    final localPreview = io.File(
+      '${temporaryDirectory.path}${io.Platform.pathSeparator}proxy.mp4',
+    );
+    await localPreview.writeAsBytes(const [0, 0, 0, 0]);
+    final controller = EditorController(
+      apiClient: _ProxyApiClient(localPreviewPath: localPreview.path),
+      engineService: _ReadyEngineService(),
+      autoStartEngine: false,
+      proxyPreviewInitializationTimeout: const Duration(milliseconds: 30),
+      proxyPreviewRecoveryTimeout: const Duration(milliseconds: 200),
+    );
+
+    try {
+      await controller.openMediaFile(
+        PlatformFile(
+          name: 'broadcast.mxf',
+          size: 1024,
+          path: r'C:\media\broadcast.mxf',
+        ),
+      );
+      await _waitUntil(
+        () => controller.videoController?.value.isInitialized ?? false,
+        describe: () =>
+            'sources=${platform.createdUris} error=${controller.errorMessage}',
+      );
+
+      final proxyFileSources = platform.createdUris.where(
+        (uri) => uri.startsWith('file:') && uri.contains('proxy.mp4'),
+      );
+      expect(proxyFileSources, hasLength(2));
+      expect(
+        platform.createdUris.where((uri) => uri.startsWith('http')),
+        isEmpty,
+      );
+      expect(controller.errorMessage, isNull);
+      expect(controller.isPreparingPreview, isFalse);
     } finally {
       await controller.videoController?.dispose();
       controller.dispose();
@@ -365,13 +516,20 @@ class _ReadyEngineService extends LocalEngineService {
 }
 
 class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
-  _FakeVideoPlayerPlatform({this.failFileSources = false});
+  _FakeVideoPlayerPlatform({
+    this.failFileSources = false,
+    this.stallFirstProxyFileSource = false,
+    this.rejectConcurrentPlayers = false,
+  });
 
   final bool failFileSources;
+  final bool stallFirstProxyFileSource;
+  final bool rejectConcurrentPlayers;
   final Map<int, StreamController<VideoEvent>> _events = {};
   final Map<int, Duration> positions = {};
   final List<String> createdUris = [];
   int _nextPlayerId = 1;
+  bool _stalledProxyFile = false;
 
   @override
   Future<void> init() async {}
@@ -383,6 +541,17 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
     if (failFileSources && uri.startsWith('file:')) {
       throw StateError('local file playback failed');
     }
+    if (rejectConcurrentPlayers && _events.isNotEmpty) {
+      throw StateError('concurrent player creation is not supported');
+    }
+    final shouldStall =
+        stallFirstProxyFileSource &&
+        !_stalledProxyFile &&
+        uri.startsWith('file:') &&
+        uri.contains('proxy.mp4');
+    if (shouldStall) {
+      _stalledProxyFile = true;
+    }
     final id = _nextPlayerId++;
     final duration = uri.contains('proxy-1')
         ? const Duration(seconds: 8)
@@ -390,6 +559,9 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
     late final StreamController<VideoEvent> events;
     events = StreamController<VideoEvent>.broadcast(
       onListen: () {
+        if (shouldStall) {
+          return;
+        }
         scheduleMicrotask(
           () => events.add(
             VideoEvent(
@@ -449,5 +621,24 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
     }
     _events.clear();
     positions.clear();
+  }
+}
+
+class _ReusableFakeVideoPlayerPlatform extends _FakeVideoPlayerPlatform
+    implements ReusableVideoPlayerPlatform {
+  final List<String> replacedResources = [];
+
+  @override
+  Future<ReusableMediaInfo> replaceActiveSource(
+    String resource, {
+    Map<String, String> httpHeaders = const {},
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    replacedResources.add(resource);
+    positions.updateAll((key, value) => Duration.zero);
+    return const ReusableMediaInfo(
+      duration: Duration(seconds: 10),
+      size: Size(960, 540),
+    );
   }
 }

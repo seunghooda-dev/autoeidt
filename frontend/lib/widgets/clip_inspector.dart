@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/highlight_segment.dart';
 import '../state/editor_controller.dart';
 import 'time_format.dart';
 
@@ -140,6 +141,22 @@ class ClipInspector extends StatelessWidget {
             icon: const Icon(Icons.speed, size: 18),
             label: const Text('Fit In/Out'),
           ),
+        ),
+        const SizedBox(height: 8),
+        _TransitionControl(
+          type: selected.transitionType,
+          duration: selected.transitionDuration,
+          maxDuration: controller.selectedTransitionMaxDuration,
+          enabled: controller.canApplySelectedTransition,
+          firstClip: selected.order == 1,
+          onTypeChanged: controller.canApplySelectedTransition
+              ? editor.setSelectedTransitionType
+              : null,
+          onDurationChanged:
+              controller.canApplySelectedTransition &&
+                  selected.transitionType != 'cut'
+              ? editor.setSelectedTransitionDuration
+              : null,
         ),
         const SizedBox(height: 8),
         _FocusStatus(
@@ -403,6 +420,123 @@ class ClipInspector extends StatelessWidget {
   }
 }
 
+class _TransitionControl extends StatelessWidget {
+  const _TransitionControl({
+    required this.type,
+    required this.duration,
+    required this.maxDuration,
+    required this.enabled,
+    required this.firstClip,
+    required this.onTypeChanged,
+    required this.onDurationChanged,
+  });
+
+  final String type;
+  final double duration;
+  final double maxDuration;
+  final bool enabled;
+  final bool firstClip;
+  final ValueChanged<String>? onTypeChanged;
+  final ValueChanged<double>? onDurationChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final safeType = supportedClipTransitionTypes.contains(type) ? type : 'cut';
+    final active = safeType != 'cut';
+    final sliderMax = maxDuration.clamp(0.1, 3.0).toDouble();
+    final sliderDivisions = ((sliderMax - 0.1) * 10)
+        .round()
+        .clamp(1, 29)
+        .toInt();
+    return Container(
+      key: const Key('clip-transition-control'),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 6),
+      decoration: BoxDecoration(
+        color: active
+            ? colorScheme.primaryContainer.withValues(alpha: 0.25)
+            : colorScheme.surfaceContainerHighest,
+        border: Border.all(
+          color: active
+              ? colorScheme.primary.withValues(alpha: 0.65)
+              : colorScheme.outline,
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                active ? Icons.compare : Icons.vertical_align_center,
+                size: 17,
+                color: active
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Transition In',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              if (active)
+                Text(
+                  '${duration.toStringAsFixed(1)}s',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          DropdownButton<String>(
+            key: const Key('clip-transition-type'),
+            isExpanded: true,
+            value: safeType,
+            onChanged: onTypeChanged == null
+                ? null
+                : (value) {
+                    if (value != null) {
+                      onTypeChanged!(value);
+                    }
+                  },
+            items: const [
+              DropdownMenuItem(value: 'cut', child: Text('Cut')),
+              DropdownMenuItem(
+                value: 'cross_dissolve',
+                child: Text('Cross Dissolve'),
+              ),
+              DropdownMenuItem(value: 'dip_black', child: Text('Dip to Black')),
+            ],
+          ),
+          if (active) ...[
+            Slider(
+              key: const Key('clip-transition-duration'),
+              value: duration.clamp(0.1, sliderMax).toDouble(),
+              min: 0.1,
+              max: sliderMax,
+              divisions: sliderDivisions,
+              label: '${duration.toStringAsFixed(1)}s',
+              onChanged: onDurationChanged,
+            ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                firstClip ? 'Sequence start' : 'Hard cut',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AudioRoutingPanel extends StatelessWidget {
   const _AudioRoutingPanel({
     required this.channelCount,
@@ -442,11 +576,15 @@ class _AudioRoutingPanel extends StatelessWidget {
             children: [
               const Icon(Icons.cable, size: 17),
               const SizedBox(width: 7),
-              Text(
-                'Source channel routing',
-                style: Theme.of(context).textTheme.labelLarge,
+              Expanded(
+                child: Text(
+                  'Source channel routing',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Text('$safeCount ch'),
             ],
           ),

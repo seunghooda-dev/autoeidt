@@ -21,6 +21,7 @@ from app.services.ffmpeg_service import (
     generate_waveform,
     probe_duration,
     render_highlights,
+    sequence_output_duration_seconds,
 )
 from app.services.hybrid_cut import (
     build_protected_silences,
@@ -78,13 +79,7 @@ def _unique_render_output_path(
 
 
 def _render_output_duration_seconds(segments: list[dict[str, Any]]) -> float:
-    total = 0.0
-    for segment in segments:
-        start = float(segment.get("start", 0.0))
-        end = float(segment.get("end", start))
-        speed = max(0.25, float(segment.get("playback_speed", 1.0) or 1.0))
-        total += max(0.0, end - start) / speed
-    return round(total, 3)
+    return round(sequence_output_duration_seconds(segments), 3)
 
 
 def _render_file_size_bytes(path: Path) -> int:
@@ -416,6 +411,17 @@ def _normalize_highlights(
             min(float(item.get("audio_loudness_target", -14.0)), -12.0),
         )
         playback_speed = max(0.25, min(float(item.get("playback_speed", 1.0)), 4.0))
+        transition_type = str(item.get("transition_type") or "cut").strip().lower()
+        if transition_type not in {"cross_dissolve", "dip_black"}:
+            transition_type = "cut"
+        transition_duration = _round_timecode_seconds(
+            max(
+                0.0,
+                min(float(item.get("transition_duration", 0.0)), 3.0),
+            )
+        )
+        if transition_type == "cut":
+            transition_duration = 0.0
         video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
         video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
         color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
@@ -497,6 +503,8 @@ def _normalize_highlights(
                 "audio_source_channel_left": audio_source_channel_left,
                 "audio_source_channel_right": audio_source_channel_right,
                 "playback_speed": round(playback_speed, 3),
+                "transition_type": transition_type,
+                "transition_duration": round(transition_duration, 6),
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),
                 "score": round(score, 2),
@@ -506,6 +514,25 @@ def _normalize_highlights(
     normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])
     for index, item in enumerate(normalized, start=1):
         item["order"] = index
+        if index == 1:
+            item["transition_type"] = "cut"
+            item["transition_duration"] = 0.0
+            continue
+        previous = normalized[index - 2]
+        previous_duration = (
+            float(previous["end"]) - float(previous["start"])
+        ) / max(0.25, float(previous.get("playback_speed", 1.0)))
+        incoming_duration = (
+            float(item["end"]) - float(item["start"])
+        ) / max(0.25, float(item.get("playback_speed", 1.0)))
+        item["transition_duration"] = round(
+            min(
+                float(item.get("transition_duration", 0.0)),
+                previous_duration / 2,
+                incoming_duration / 2,
+            ),
+            6,
+        )
     return normalized
 
 

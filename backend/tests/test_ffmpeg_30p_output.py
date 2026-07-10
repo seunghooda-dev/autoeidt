@@ -55,6 +55,100 @@ def test_render_reencode_forces_30p_non_drop_output(
     assert "atrim=start=2.000000:end=4.000000" in filter_complex
 
 
+def test_render_builds_video_and_constant_power_audio_transitions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_audio_channel_counts", lambda path, count: [2])
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [
+            {"order": 1, "start": 0, "end": 4, "reason": "opener"},
+            {
+                "order": 2,
+                "start": 10,
+                "end": 14,
+                "reason": "answer",
+                "transition_type": "cross_dissolve",
+                "transition_duration": 0.5,
+            },
+            {
+                "order": 3,
+                "start": 20,
+                "end": 24,
+                "reason": "close",
+                "transition_type": "dip_black",
+                "transition_duration": 0.2,
+            },
+        ],
+        tmp_path / "transitions.mp4",
+    )
+
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "xfade=transition=fade:duration=0.500000:offset=3.500000" in filter_complex
+    assert "acrossfade=d=0.500000:c1=qsin:c2=qsin" in filter_complex
+    assert "xfade=transition=fadeblack:duration=0.200000:offset=7.300000" in filter_complex
+    assert "acrossfade=d=0.200000:c1=qsin:c2=qsin" in filter_complex
+    assert ffmpeg_service.sequence_output_duration_seconds(
+        [
+            {"start": 0, "end": 4},
+            {
+                "start": 10,
+                "end": 14,
+                "transition_type": "cross_dissolve",
+                "transition_duration": 0.5,
+            },
+            {
+                "start": 20,
+                "end": 24,
+                "transition_type": "dip_black",
+                "transition_duration": 0.2,
+            },
+        ]
+    ) == 11.3
+
+
+def test_caption_timing_uses_transition_adjusted_sequence_positions(
+    tmp_path: Path,
+) -> None:
+    output = ffmpeg_service._write_caption_srt(
+        [
+            {"start": 0, "end": 1, "text": "first", "enabled": True},
+            {"start": 10, "end": 11, "text": "second", "enabled": True},
+        ],
+        [
+            {"order": 1, "start": 0, "end": 4, "reason": "opener"},
+            {
+                "order": 2,
+                "start": 10,
+                "end": 14,
+                "reason": "answer",
+                "transition_type": "cross_dissolve",
+                "transition_duration": 0.5,
+            },
+        ],
+        tmp_path / "captions.srt",
+    )
+
+    assert output is not None
+    contents = output.read_text(encoding="utf-8")
+    assert "00:00:00,000 --> 00:00:01,000" in contents
+    assert "00:00:03,500 --> 00:00:04,500" in contents
+
+
 def test_legacy_stream_copy_path_is_normalized_to_30p_non_drop(
     tmp_path: Path,
     monkeypatch,

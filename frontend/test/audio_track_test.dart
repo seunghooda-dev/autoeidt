@@ -45,6 +45,8 @@ void main() {
       audioSourceChannelLeft: 7,
       audioSourceChannelRight: 8,
       playbackSpeed: 1.5,
+      transitionType: 'dip_black',
+      transitionDuration: 0.6,
       audioFadeIn: 0.5,
       audioFadeOut: 1.0,
       score: 8.4,
@@ -76,6 +78,8 @@ void main() {
     expect(json['audio_source_channel_left'], 7);
     expect(json['audio_source_channel_right'], 8);
     expect(json['playback_speed'], 1.5);
+    expect(json['transition_type'], 'dip_black');
+    expect(json['transition_duration'], 0.6);
     expect(json['audio_fade_in'], 0.5);
     expect(json['audio_fade_out'], 1.0);
     expect(json['score'], 8.4);
@@ -107,6 +111,8 @@ void main() {
     expect(restored.audioSourceChannelLeft, 7);
     expect(restored.audioSourceChannelRight, 8);
     expect(restored.playbackSpeed, 1.5);
+    expect(restored.transitionType, 'dip_black');
+    expect(restored.transitionDuration, 0.6);
     expect(restored.audioFadeIn, 0.5);
     expect(restored.audioFadeOut, 1.0);
     expect(restored.score, 8.4);
@@ -1429,17 +1435,17 @@ void main() {
     controller.clearMarkOut();
     expect(controller.markOut, isNull);
 
-    controller.applyDefaultVideoTransition();
-    controller.applyDefaultAudioTransition();
-    expect(controller.selectedSegment!.videoFadeIn, 0.15);
-    expect(controller.selectedSegment!.videoFadeOut, 0.15);
-    expect(controller.selectedSegment!.audioFadeIn, 0.12);
-    expect(controller.selectedSegment!.audioFadeOut, 0.12);
-
     controller.addEditAt(8);
     expect(controller.segments.length, 2);
     expect(secondsToTimecodeFrame(controller.segments.first.end), 240);
     expect(secondsToTimecodeFrame(controller.segments.last.start), 240);
+
+    controller.selectSegment(2);
+    controller.applyDefaultVideoTransition();
+    controller.applyDefaultAudioTransition();
+    expect(controller.selectedSegment!.transitionType, 'cross_dissolve');
+    expect(controller.selectedSegment!.transitionDuration, 0.3);
+    expect(controller.outputDurationSeconds, closeTo(7.7, 0.001));
   });
 
   test('insert and overwrite edits use marked source range', () {

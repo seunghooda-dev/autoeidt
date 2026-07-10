@@ -1,4 +1,17 @@
+import 'dart:math' as math;
+
 import '../utils/timecode.dart';
+
+const supportedClipTransitionTypes = <String>{
+  'cut',
+  'cross_dissolve',
+  'dip_black',
+};
+
+String normalizeClipTransitionType(Object? value) {
+  final normalized = value?.toString().trim().toLowerCase() ?? 'cut';
+  return supportedClipTransitionTypes.contains(normalized) ? normalized : 'cut';
+}
 
 double _jsonTimelineSeconds(Object? value) {
   if (value is num) {
@@ -67,6 +80,8 @@ class HighlightSegment {
     this.audioSourceChannelLeft = 1,
     this.audioSourceChannelRight = 2,
     this.playbackSpeed = 1.0,
+    this.transitionType = 'cut',
+    this.transitionDuration = 0.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
     this.score = 0.0,
@@ -103,6 +118,8 @@ class HighlightSegment {
   final int audioSourceChannelLeft;
   final int audioSourceChannelRight;
   final double playbackSpeed;
+  final String transitionType;
+  final double transitionDuration;
   final double audioFadeIn;
   final double audioFadeOut;
   final double score;
@@ -147,6 +164,8 @@ class HighlightSegment {
     int? audioSourceChannelLeft,
     int? audioSourceChannelRight,
     double? playbackSpeed,
+    String? transitionType,
+    double? transitionDuration,
     double? audioFadeIn,
     double? audioFadeOut,
     double? score,
@@ -185,6 +204,10 @@ class HighlightSegment {
       audioSourceChannelRight:
           audioSourceChannelRight ?? this.audioSourceChannelRight,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+      transitionType: normalizeClipTransitionType(
+        transitionType ?? this.transitionType,
+      ),
+      transitionDuration: transitionDuration ?? this.transitionDuration,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
       score: score ?? this.score,
@@ -298,6 +321,17 @@ class HighlightSegment {
           (json['playback_speed'] as num?)?.toDouble() ??
           (json['playbackSpeed'] as num?)?.toDouble() ??
           1.0,
+      transitionType: normalizeClipTransitionType(
+        json['transition_type'] ?? json['transitionType'],
+      ),
+      transitionDuration:
+          snapSecondsToFrame(
+                (json['transition_duration'] as num?)?.toDouble() ??
+                    (json['transitionDuration'] as num?)?.toDouble() ??
+                    0.0,
+              )
+              .clamp(0.0, 3.0)
+              .toDouble(),
       audioFadeIn:
           (json['audio_fade_in'] as num?)?.toDouble() ??
           (json['audioFadeIn'] as num?)?.toDouble() ??
@@ -351,12 +385,45 @@ class HighlightSegment {
       'audio_source_channel_left': audioSourceChannelLeft,
       'audio_source_channel_right': audioSourceChannelRight,
       'playback_speed': playbackSpeed,
+      'transition_type': normalizeClipTransitionType(transitionType),
+      'transition_duration': snapSecondsToFrame(
+        transitionDuration.clamp(0.0, 3.0).toDouble(),
+      ),
       'audio_fade_in': audioFadeIn,
       'audio_fade_out': audioFadeOut,
       'score': score,
       'tags': tags,
     };
   }
+}
+
+double effectiveTransitionOverlap(
+  HighlightSegment previous,
+  HighlightSegment incoming,
+) {
+  if (normalizeClipTransitionType(incoming.transitionType) == 'cut' ||
+      incoming.transitionDuration <= 0) {
+    return 0;
+  }
+  return math
+      .min(
+        incoming.transitionDuration,
+        math.min(previous.outputDuration / 2, incoming.outputDuration / 2),
+      )
+      .clamp(0.0, 3.0)
+      .toDouble();
+}
+
+double sequenceOutputDuration(List<HighlightSegment> segments) {
+  if (segments.isEmpty) {
+    return 0;
+  }
+  var total = math.max(0.0, segments.first.outputDuration);
+  for (var index = 1; index < segments.length; index++) {
+    total += math.max(0.0, segments[index].outputDuration);
+    total -= effectiveTransitionOverlap(segments[index - 1], segments[index]);
+  }
+  return math.max(0.0, total);
 }
 
 class TranscriptSegment {

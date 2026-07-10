@@ -8,6 +8,7 @@ import 'package:highlight_editor_app/main.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
+import 'package:highlight_editor_app/widgets/clip_inspector.dart';
 import 'package:highlight_editor_app/widgets/render_outputs_panel.dart';
 import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:highlight_editor_app/widgets/video_preview.dart';
@@ -17,6 +18,44 @@ import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/state/workspace_controller.dart';
 
 void main() {
+  testWidgets('clip inspector edits an incoming A/V transition', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'opener'),
+        HighlightSegment(order: 2, start: 20, end: 30, reason: 'answer'),
+      ]
+      ..selectedSegmentOrder = 2;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 380, child: ClipInspector())),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('clip-transition-control')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('clip-transition-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dip to Black').last);
+    await tester.pumpAndSettle();
+
+    expect(controller.selectedSegment!.transitionType, 'dip_black');
+    expect(controller.selectedSegment!.transitionDuration, 0.3);
+    expect(find.byKey(const Key('clip-transition-duration')), findsOneWidget);
+    expect(controller.outputDurationSeconds, closeTo(19.7, 0.001));
+    controller.dispose();
+  });
+
   testWidgets('preview loading state can queue playback', (tester) async {
     var toggleCount = 0;
     await tester.pumpWidget(
@@ -706,8 +745,7 @@ void main() {
     expect(controller.selectedSegment!.audioLinked, isTrue);
 
     await _pressShortcut(tester, LogicalKeyboardKey.keyD, control: true);
-    expect(controller.selectedSegment!.videoFadeIn, 0.15);
-    expect(controller.selectedSegment!.videoFadeOut, 0.15);
+    expect(controller.selectedSegment!.transitionType, 'cut');
 
     await _pressShortcut(
       tester,
@@ -715,8 +753,7 @@ void main() {
       control: true,
       shift: true,
     );
-    expect(controller.selectedSegment!.audioFadeIn, 0.12);
-    expect(controller.selectedSegment!.audioFadeOut, 0.12);
+    expect(controller.selectedSegment!.transitionType, 'cut');
 
     await _pressShortcut(tester, LogicalKeyboardKey.home);
     expect(controller.currentPositionSeconds, 0);

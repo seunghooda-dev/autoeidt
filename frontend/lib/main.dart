@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player_media_kit/video_player_media_kit.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:provider/provider.dart';
 
+import 'services/reusable_media_kit_video_player.dart';
 import 'state/editor_controller.dart';
 import 'state/workspace_controller.dart';
 import 'widgets/ai_director_panel.dart';
@@ -22,7 +24,10 @@ import 'widgets/video_preview.dart';
 import 'widgets/workspace_tools_panel.dart';
 
 void main() {
-  VideoPlayerMediaKit.ensureInitialized(windows: true);
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+    MediaKit.ensureInitialized();
+    ReusableMediaKitVideoPlayer.registerWith();
+  }
   runApp(
     ChangeNotifierProvider(
       create: (_) => EditorController(enableProjectRecovery: true),

@@ -714,6 +714,81 @@ def _segment_output_duration(segment: dict) -> float:
     return source_duration / _segment_playback_speed(segment)
 
 
+def _segment_transition_type(segment: dict) -> str:
+    normalized = str(segment.get("transition_type") or "cut").strip().lower()
+    if normalized in {"cross_dissolve", "dip_black"}:
+        return normalized
+    return "cut"
+
+
+def _segment_transition_overlap(previous: dict, incoming: dict) -> float:
+    if _segment_transition_type(incoming) == "cut":
+        return 0.0
+    try:
+        requested = float(incoming.get("transition_duration", 0.0))
+    except (TypeError, ValueError):
+        requested = 0.0
+    return max(
+        0.0,
+        min(
+            requested,
+            3.0,
+            _segment_output_duration(previous) / 2,
+            _segment_output_duration(incoming) / 2,
+        ),
+    )
+
+
+def sequence_output_duration_seconds(segments: list[dict]) -> float:
+    if not segments:
+        return 0.0
+    total = _segment_output_duration(segments[0])
+    for index in range(1, len(segments)):
+        total += _segment_output_duration(segments[index])
+        total -= _segment_transition_overlap(segments[index - 1], segments[index])
+    return max(0.0, total)
+
+
+def _segment_xfade_name(segment: dict) -> str:
+    return "fadeblack" if _segment_transition_type(segment) == "dip_black" else "fade"
+
+
+def _compose_segment_streams(
+    filters: list[str],
+    segments: list[dict],
+    output_durations: list[float],
+) -> tuple[str, str, float]:
+    video_label = "[v0]"
+    audio_label = "[a0]"
+    timeline_duration = output_durations[0]
+    for index in range(1, len(segments)):
+        overlap = _segment_transition_overlap(segments[index - 1], segments[index])
+        next_video_label = f"[basev{index}]"
+        next_audio_label = f"[outa{index}]"
+        if overlap > 0:
+            offset = max(0.0, timeline_duration - overlap)
+            filters.append(
+                f"{video_label}[v{index}]xfade="
+                f"transition={_segment_xfade_name(segments[index])}:"
+                f"duration={overlap:.6f}:offset={offset:.6f}{next_video_label}"
+            )
+            filters.append(
+                f"{audio_label}[a{index}]acrossfade="
+                f"d={overlap:.6f}:c1=qsin:c2=qsin{next_audio_label}"
+            )
+        else:
+            filters.append(
+                f"{video_label}[v{index}]concat=n=2:v=1:a=0{next_video_label}"
+            )
+            filters.append(
+                f"{audio_label}[a{index}]concat=n=2:v=0:a=1{next_audio_label}"
+            )
+        timeline_duration += output_durations[index] - overlap
+        video_label = next_video_label
+        audio_label = next_audio_label
+    return video_label, audio_label, timeline_duration
+
+
 def _segment_audio_fade_in(segment: dict, output_duration: float) -> float:
     return max(0.0, min(float(segment.get("audio_fade_in", 0.0)), output_duration / 2))
 
@@ -922,7 +997,10 @@ def _write_caption_srt(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     entries: list[tuple[float, float, str]] = []
     cursor = 0.0
+    previous_segment: dict | None = None
     for segment in segments:
+        if previous_segment is not None:
+            cursor -= _segment_transition_overlap(previous_segment, segment)
         segment_start = float(segment["start"])
         segment_end = float(segment["end"])
         speed = _segment_playback_speed(segment)
@@ -937,6 +1015,7 @@ def _write_caption_srt(
             if text and end > start:
                 entries.append((start, end, text))
         cursor += _segment_output_duration(segment)
+        previous_segment = segment
 
     if not entries:
         return None
@@ -1143,7 +1222,7 @@ def _render_reencode_with_video_args(
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
-    concat_inputs: list[str] = []
+    output_durations: list[float] = []
     audio_stream_count = _audio_stream_count(video_path)
     audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
     source_starts = [float(segment["start"]) for segment in segments]
@@ -1155,6 +1234,7 @@ def _render_reencode_with_video_args(
         video_duration = max(0.000001, end - start)
         speed = _segment_playback_speed(segment)
         output_duration = max(0.000001, video_duration / speed)
+        output_durations.append(output_duration)
         audio_start = _segment_audio_start(segment) - input_seek
         audio_end = _segment_audio_end(segment) - input_seek
         if audio_end <= audio_start:
@@ -1189,7 +1269,7 @@ def _render_reencode_with_video_args(
             video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
         if aspect_ratio == "9:16":
             video_steps.extend(_portrait_reframe_filters(segment))
-        video_steps.append("format=yuv420p")
+        video_steps.extend([f"fps={RENDER_FRAME_RATE_LABEL}", "settb=AVTB", "format=yuv420p"])
         video_fade_in = _segment_video_fade_in(segment, output_duration)
         video_fade_out = _segment_video_fade_out(segment, output_duration)
         if video_fade_in > 0:
@@ -1244,10 +1324,16 @@ def _render_reencode_with_video_args(
         filters.append(
             ",".join(audio_steps)
         )
-        concat_inputs.append(f"[v{index}][a{index}]")
-
+    video_output, audio_output, _ = _compose_segment_streams(
+        filters,
+        segments,
+        output_durations,
+    )
+    if video_output != "[basev]":
+        filters.append(f"{video_output}null[basev]")
+    if audio_output != "[outa]":
+        filters.append(f"{audio_output}anull[outa]")
     filter_complex = ";".join(filters)
-    filter_complex += f";{''.join(concat_inputs)}concat=n={len(segments)}:v=1:a=1[basev][outa]"
 
     video_chain = "[basev]"
     if aspect_ratio == "9:16":

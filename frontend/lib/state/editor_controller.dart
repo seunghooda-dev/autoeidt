@@ -6,12 +6,14 @@ import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
 import '../services/api_client.dart';
 import '../services/local_engine_service.dart';
 import '../services/project_recovery_service.dart';
+import '../services/reusable_media_kit_video_player.dart';
 import '../utils/timecode.dart';
 
 class EditorController extends ChangeNotifier {
@@ -22,11 +24,19 @@ class EditorController extends ChangeNotifier {
     ProjectRecoveryService? recoveryService,
     bool enableProjectRecovery = false,
     Duration projectRecoveryDebounce = const Duration(milliseconds: 800),
+    Duration proxyPreviewInitializationTimeout = const Duration(seconds: 8),
+    Duration proxyPreviewRecoveryTimeout = const Duration(seconds: 20),
+    double seekProxyPreviewSeconds = 10,
   }) : _apiClient = apiClient ?? ApiClient(),
        _engineService = engineService ?? LocalEngineService(),
        _recoveryService = recoveryService ?? ProjectRecoveryService(),
        _projectRecoveryEnabled = enableProjectRecovery && !kIsWeb,
-       _projectRecoveryDebounce = projectRecoveryDebounce {
+       _projectRecoveryDebounce = projectRecoveryDebounce,
+       _proxyPreviewInitializationTimeout = proxyPreviewInitializationTimeout,
+       _proxyPreviewRecoveryTimeout = proxyPreviewRecoveryTimeout,
+       _seekProxyPreviewSeconds = seekProxyPreviewSeconds
+           .clamp(8.0, 30.0)
+           .toDouble() {
     if (_demoMode) {
       _loadDemoProject();
     } else if (autoStartEngine) {
@@ -42,6 +52,9 @@ class EditorController extends ChangeNotifier {
   final ProjectRecoveryService _recoveryService;
   final bool _projectRecoveryEnabled;
   final Duration _projectRecoveryDebounce;
+  final Duration _proxyPreviewInitializationTimeout;
+  final Duration _proxyPreviewRecoveryTimeout;
+  final double _seekProxyPreviewSeconds;
   Timer? _pollTimer;
   Timer? _stylePollTimer;
   Timer? _recoverySaveTimer;
@@ -136,12 +149,8 @@ class EditorController extends ChangeNotifier {
   int? _programSegmentOrder;
   bool _programCutPending = false;
   static const double _initialProxyPreviewSeconds = 8;
-  static const double _seekProxyPreviewSeconds = 30;
   static const Duration _directPreviewInitializationTimeout = Duration(
     milliseconds: 1500,
-  );
-  static const Duration _proxyPreviewInitializationTimeout = Duration(
-    seconds: 8,
   );
   static const Duration _previewControllerDisposeTimeout = Duration(seconds: 2);
   static const int _avSyncLengthToleranceFrames = 2;
@@ -616,6 +625,34 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
+  bool get canApplySelectedTransition =>
+      selectedSegment != null &&
+      selectedSegment!.order > 1 &&
+      !videoTrackLocked &&
+      !anyAudioTrackEditLocked;
+  double get selectedTransitionMaxDuration {
+    final selected = selectedSegment;
+    if (selected == null || selected.order <= 1) {
+      return 0;
+    }
+    final index = segments.indexWhere(
+      (segment) => segment.order == selected.order,
+    );
+    if (index <= 0) {
+      return 0;
+    }
+    return math
+        .min(
+          3.0,
+          math.min(
+            segments[index - 1].outputDuration / 2,
+            selected.outputDuration / 2,
+          ),
+        )
+        .clamp(0.0, 3.0)
+        .toDouble();
+  }
+
   int audioVideoLengthDriftFrames(HighlightSegment segment) {
     final videoFrames = secondsToTimecodeFrame(segment.duration);
     final audioFrames = secondsToTimecodeFrame(segment.audioDuration);
@@ -675,10 +712,7 @@ class EditorController extends ChangeNotifier {
   bool get previewPlaybackQueued => _previewAutoplayRequested;
 
   double get outputDurationSeconds {
-    return segments.fold<double>(
-      0,
-      (total, segment) => total + segment.outputDuration,
-    );
+    return sequenceOutputDuration(segments);
   }
 
   int? programSegmentOrderAt(double programSeconds) {
@@ -716,16 +750,56 @@ class EditorController extends ChangeNotifier {
           (sourceSeconds - preferred.segment.start) /
               math.max(0.1, preferred.segment.playbackSpeed);
     }
-    var cursor = 0.0;
-    for (final segment in segments) {
+    for (final span in _programSpans) {
+      final segment = span.segment;
       if (sourceSeconds >= segment.start && sourceSeconds <= segment.end) {
-        return cursor +
+        return span.sequenceStart +
             (sourceSeconds - segment.start) /
                 math.max(0.1, segment.playbackSpeed);
       }
-      cursor += math.max(0.0, segment.outputDuration);
     }
     return null;
+  }
+
+  List<_ProgramSpan> get _programSpans {
+    var cursor = 0.0;
+    HighlightSegment? previous;
+    return [
+      for (var index = 0; index < segments.length; index++)
+        (() {
+          final segment = segments[index];
+          final overlap = previous == null
+              ? 0.0
+              : effectiveTransitionOverlap(previous!, segment);
+          final start = math.max(0.0, cursor - overlap);
+          final end = start + math.max(0.0, segment.outputDuration);
+          cursor = end;
+          previous = segment;
+          return _ProgramSpan(
+            segment: segment,
+            index: index,
+            sequenceStart: start,
+            sequenceEnd: end,
+          );
+        })(),
+    ];
+  }
+
+  List<double> get _programEditPoints {
+    final spans = _programSpans;
+    if (spans.isEmpty) {
+      return const [];
+    }
+    final points = <double>[0];
+    for (var index = 1; index < spans.length; index++) {
+      final overlap = effectiveTransitionOverlap(
+        spans[index - 1].segment,
+        spans[index].segment,
+      );
+      points.add(spans[index].sequenceStart + overlap / 2);
+    }
+    points.add(outputDurationSeconds);
+    return points;
   }
 
   _ProgramSpan? _programSpanAt(double programSeconds) {
@@ -735,41 +809,26 @@ class EditorController extends ChangeNotifier {
     final clamped = programSeconds
         .clamp(0.0, math.max(0.0, outputDurationSeconds))
         .toDouble();
-    var cursor = 0.0;
-    for (var index = 0; index < segments.length; index++) {
-      final segment = segments[index];
-      final end = cursor + math.max(0.0, segment.outputDuration);
-      if (clamped < end - timecodeFrameDurationSeconds / 2 ||
-          index == segments.length - 1) {
-        return _ProgramSpan(
-          segment: segment,
-          index: index,
-          sequenceStart: cursor,
-          sequenceEnd: end,
-        );
+    final spans = _programSpans;
+    for (var index = spans.length - 1; index >= 0; index--) {
+      final span = spans[index];
+      if (clamped >= span.sequenceStart - timecodeFrameDurationSeconds / 2 &&
+          (clamped < span.sequenceEnd - timecodeFrameDurationSeconds / 2 ||
+              index == spans.length - 1)) {
+        return span;
       }
-      cursor = end;
     }
-    return null;
+    return spans.first;
   }
 
   _ProgramSpan? _programSpanForOrder(int? order) {
     if (order == null) {
       return null;
     }
-    var cursor = 0.0;
-    for (var index = 0; index < segments.length; index++) {
-      final segment = segments[index];
-      final end = cursor + math.max(0.0, segment.outputDuration);
-      if (segment.order == order) {
-        return _ProgramSpan(
-          segment: segment,
-          index: index,
-          sequenceStart: cursor,
-          sequenceEnd: end,
-        );
+    for (final span in _programSpans) {
+      if (span.segment.order == order) {
+        return span;
       }
-      cursor = end;
     }
     return null;
   }
@@ -2051,10 +2110,7 @@ class EditorController extends ChangeNotifier {
         if (segment.order == normalized.order) normalized else segment,
     ];
 
-    segments = [
-      for (var index = 0; index < segments.length; index++)
-        segments[index].copyWith(order: index + 1),
-    ];
+    segments = _reorderSegments(segments);
     selectedSegmentOrder = normalized.order.clamp(1, segments.length).toInt();
     renderUrl = null;
     notifyListeners();
@@ -2321,11 +2377,9 @@ class EditorController extends ChangeNotifier {
     if (isProgramMonitor) {
       final threshold =
           _programPlayheadSeconds + timecodeFrameDurationSeconds / 2;
-      var cursor = 0.0;
-      for (final segment in segments) {
-        cursor += math.max(0.0, segment.outputDuration);
-        if (cursor > threshold) {
-          await _seekProgramTo(cursor, autoplay: false);
+      for (final point in _programEditPoints) {
+        if (point > threshold) {
+          await _seekProgramTo(point, autoplay: false);
           return;
         }
       }
@@ -2345,13 +2399,7 @@ class EditorController extends ChangeNotifier {
     if (isProgramMonitor) {
       final threshold =
           _programPlayheadSeconds - timecodeFrameDurationSeconds / 2;
-      final points = <double>[0];
-      var cursor = 0.0;
-      for (final segment in segments) {
-        cursor += math.max(0.0, segment.outputDuration);
-        points.add(cursor);
-      }
-      for (final point in points.reversed) {
+      for (final point in _programEditPoints.reversed) {
         if (point < threshold) {
           await _seekProgramTo(point, autoplay: false);
           return;
@@ -2911,28 +2959,56 @@ class EditorController extends ChangeNotifier {
   }
 
   void applyDefaultVideoTransition() {
+    setSelectedTransitionType('cross_dissolve');
+  }
+
+  void applyDefaultAudioTransition() {
+    setSelectedTransitionType('cross_dissolve');
+  }
+
+  void setSelectedTransitionType(String value) {
     final selected = selectedSegment;
-    if (selected == null || videoTrackLocked) {
+    if (!canApplySelectedTransition || selected == null) {
+      return;
+    }
+    final normalized = normalizeClipTransitionType(value);
+    final maxDuration = selectedTransitionMaxDuration;
+    final duration = normalized == 'cut'
+        ? 0.0
+        : (selected.transitionDuration > 0
+              ? math.min(selected.transitionDuration, maxDuration)
+              : math.min(0.30, maxDuration));
+    if (selected.transitionType == normalized &&
+        (selected.transitionDuration - duration).abs() < 0.001) {
       return;
     }
     updateSegment(
       selected.copyWith(
-        videoFadeIn: selected.videoFadeIn == 0 ? 0.15 : selected.videoFadeIn,
-        videoFadeOut: selected.videoFadeOut == 0 ? 0.15 : selected.videoFadeOut,
+        transitionType: normalized,
+        transitionDuration: duration,
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
   }
 
-  void applyDefaultAudioTransition() {
+  void setSelectedTransitionDuration(double value) {
     final selected = selectedSegment;
-    if (selected == null || anyAudioTrackEditLocked) {
+    if (!canApplySelectedTransition ||
+        selected == null ||
+        selected.transitionType == 'cut') {
+      return;
+    }
+    final maxDuration = selectedTransitionMaxDuration;
+    if (maxDuration < 0.10) {
+      return;
+    }
+    final duration = value.clamp(0.10, maxDuration).toDouble();
+    if ((selected.transitionDuration - duration).abs() < 0.001) {
       return;
     }
     updateSegment(
       selected.copyWith(
-        audioFadeIn: selected.audioFadeIn == 0 ? 0.12 : selected.audioFadeIn,
-        audioFadeOut: selected.audioFadeOut == 0 ? 0.12 : selected.audioFadeOut,
+        transitionDuration: duration,
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
@@ -5442,10 +5518,7 @@ class EditorController extends ChangeNotifier {
     required bool requireCaptions,
   }) {
     final checks = <RenderSafetyItem>[];
-    final totalDuration = input.fold<double>(
-      0,
-      (total, segment) => total + segment.outputDuration,
-    );
+    final totalDuration = sequenceOutputDuration(input);
 
     if (input.isEmpty) {
       return const [
@@ -6368,7 +6441,6 @@ class EditorController extends ChangeNotifier {
 
     _proxyContinuationPending = true;
     _previewAutoplayRequested = true;
-    final previousController = controller;
     try {
       await _initializeProxyPreview(
         path,
@@ -6391,7 +6463,6 @@ class EditorController extends ChangeNotifier {
     }
     final continued =
         nextController != null &&
-        !identical(nextController, previousController) &&
         nextController.value.isInitialized &&
         _previewUsesProxy &&
         _proxyContainsSourceTime(proxyEnd);
@@ -6685,10 +6756,13 @@ class EditorController extends ChangeNotifier {
     if (autoplay) {
       _previewAutoplayRequested = true;
     }
-    final sourceStart = math.max(0.0, focusSeconds - 8.0);
     final requestedDuration = focusSeconds > 0
         ? _seekProxyPreviewSeconds
         : _initialProxyPreviewSeconds;
+    final preRoll = focusSeconds > 0
+        ? math.min(2.0, requestedDuration / 4)
+        : 0.0;
+    final sourceStart = math.max(0.0, focusSeconds - preRoll);
     final requestKey =
         '$path|${sourceStart.toStringAsFixed(3)}|${requestedDuration.toStringAsFixed(3)}';
     final activeRequest = _activeProxyRequest;
@@ -6727,6 +6801,7 @@ class EditorController extends ChangeNotifier {
     isPreparingPreview = true;
     notifyListeners();
     VideoPlayerController? pendingController;
+    var reusedController = false;
     try {
       await _ensureLocalEngineForApi();
       final preview = await _apiClient.createLocalPreview(
@@ -6741,30 +6816,88 @@ class EditorController extends ChangeNotifier {
       final localPreviewFile = localPreviewPath == null
           ? null
           : io.File(localPreviewPath);
-      if (localPreviewFile != null && await localPreviewFile.exists()) {
+      final localPreviewExists =
+          localPreviewFile != null && await localPreviewFile.exists();
+      final activeController = videoController;
+      final platform = VideoPlayerPlatform.instance;
+      if (activeController != null &&
+          activeController.value.isInitialized &&
+          platform is ReusableVideoPlayerPlatform) {
+        final resource = localPreviewExists
+            ? localPreviewFile.uri.toString()
+            : preview.url;
+        try {
+          final info = await (platform as ReusableVideoPlayerPlatform)
+              .replaceActiveSource(
+                resource,
+                timeout: _proxyPreviewRecoveryTimeout,
+              );
+          activeController.value = activeController.value.copyWith(
+            duration: info.duration,
+            size: info.size,
+            position: Duration.zero,
+            buffered: const [],
+            isInitialized: true,
+            isPlaying: false,
+            isBuffering: false,
+            isCompleted: false,
+            errorDescription: null,
+          );
+          pendingController = activeController;
+          reusedController = true;
+        } catch (_) {
+          pendingController = null;
+        }
+      }
+      if (pendingController == null && localPreviewExists) {
+        await _disposeVideoController();
         pendingController = VideoPlayerController.file(localPreviewFile);
         try {
           await pendingController.initialize().timeout(
             _proxyPreviewInitializationTimeout,
           );
+        } on TimeoutException {
+          await _disposePreviewControllerSafely(pendingController);
+          pendingController = null;
+          if (revision == _previewRevision && selectedFile?.path == path) {
+            await _disposeVideoController();
+            pendingController = VideoPlayerController.file(localPreviewFile);
+            try {
+              await pendingController.initialize().timeout(
+                _proxyPreviewRecoveryTimeout,
+              );
+            } catch (_) {
+              await _disposePreviewControllerSafely(pendingController);
+              pendingController = null;
+            }
+          }
         } catch (_) {
           await _disposePreviewControllerSafely(pendingController);
           pendingController = null;
         }
       }
       if (pendingController == null) {
+        if (revision != _previewRevision || selectedFile?.path != path) {
+          return;
+        }
+        await _disposeVideoController();
         pendingController = VideoPlayerController.networkUrl(
           Uri.parse(preview.url),
         );
         await pendingController.initialize().timeout(
-          _proxyPreviewInitializationTimeout,
+          _proxyPreviewRecoveryTimeout,
         );
       }
       await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
+        if (reusedController) {
+          pendingController = null;
+        }
         return;
       }
-      await _disposeVideoController();
+      if (!reusedController) {
+        await _disposeVideoController();
+      }
       final controller = pendingController;
       videoController = controller;
       pendingController = null;
@@ -6792,7 +6925,9 @@ class EditorController extends ChangeNotifier {
         playbackShuttleDirection = 1;
         playbackShuttleRate = 1.0;
       }
-      controller.addListener(_handleVideoTick);
+      if (!reusedController) {
+        controller.addListener(_handleVideoTick);
+      }
       if (errorMessage?.startsWith('프리뷰 생성 실패') ?? false) {
         errorMessage = null;
       }
@@ -7061,6 +7196,10 @@ class EditorController extends ChangeNotifier {
     final focusX = segment.focusX.clamp(0.0, 1.0).toDouble();
     final focusY = segment.focusY.clamp(0.0, 1.0).toDouble();
     final focusConfidence = segment.focusConfidence.clamp(0.0, 1.0).toDouble();
+    final transitionType = normalizeClipTransitionType(segment.transitionType);
+    final transitionDuration = transitionType == 'cut'
+        ? 0.0
+        : _snapToFrame(segment.transitionDuration.clamp(0.10, 3.0).toDouble());
     final focusKeyframes =
         segment.focusKeyframes
             .map(
@@ -7079,6 +7218,8 @@ class EditorController extends ChangeNotifier {
       start: start,
       end: end,
       playbackSpeed: playbackSpeed,
+      transitionType: transitionType,
+      transitionDuration: transitionDuration,
       colorBrightness: colorBrightness,
       colorContrast: colorContrast,
       colorSaturation: colorSaturation,
@@ -7180,6 +7321,8 @@ class EditorController extends ChangeNotifier {
           end: end,
           audioStart: start,
           audioEnd: end,
+          transitionType: firstHalf ? segment.transitionType : 'cut',
+          transitionDuration: firstHalf ? segment.transitionDuration : 0,
           reason: '${segment.reason} / $reasonSuffix',
           source: source,
         ),
@@ -7201,6 +7344,8 @@ class EditorController extends ChangeNotifier {
         audioStart: firstHalf ? segment.effectiveAudioStart : audioSplit,
         audioEnd: firstHalf ? audioSplit : segment.effectiveAudioEnd,
         audioLinked: false,
+        transitionType: firstHalf ? segment.transitionType : 'cut',
+        transitionDuration: firstHalf ? segment.transitionDuration : 0,
         reason: '${segment.reason} / $reasonSuffix',
         source: source,
       ),
@@ -7302,6 +7447,8 @@ class EditorController extends ChangeNotifier {
         audioPan: 0,
         audioNormalize: false,
         audioLinked: true,
+        transitionType: 'cut',
+        transitionDuration: 0,
         audioFadeIn: 0,
         audioFadeOut: 0,
         score: 0,
@@ -7354,10 +7501,29 @@ class EditorController extends ChangeNotifier {
   }
 
   List<HighlightSegment> _reorderSegments(List<HighlightSegment> input) {
-    return [
+    final ordered = [
       for (var index = 0; index < input.length; index++)
-        _normalizeSegmentAudio(input[index].copyWith(order: index + 1)),
+        _normalizeSegmentAudio(
+          input[index].copyWith(
+            order: index + 1,
+            transitionType: index == 0 ? 'cut' : input[index].transitionType,
+            transitionDuration: index == 0
+                ? 0
+                : input[index].transitionDuration,
+          ),
+        ),
     ];
+    for (var index = 1; index < ordered.length; index++) {
+      final overlap = effectiveTransitionOverlap(
+        ordered[index - 1],
+        ordered[index],
+      );
+      if (ordered[index].transitionType != 'cut' &&
+          (ordered[index].transitionDuration - overlap).abs() > 0.001) {
+        ordered[index] = ordered[index].copyWith(transitionDuration: overlap);
+      }
+    }
+    return ordered;
   }
 
   List<AutoFixReviewItem> _buildAutoFixQueue(
@@ -8549,9 +8715,7 @@ class EditorController extends ChangeNotifier {
       tags.addAll(segment.tags.take(3));
     }
     final tagText = tags.take(3).join(', ');
-    final durationText = input
-        .fold<double>(0, (total, segment) => total + segment.outputDuration)
-        .round();
+    final durationText = sequenceOutputDuration(input).round();
     final scoreText = score == null ? '' : ' · Q${score.round()}';
     final riskText = riskCount <= 0 ? '' : ' · Risk $riskCount';
     return tagText.isEmpty
@@ -9091,10 +9255,7 @@ class ShortsCandidate {
   final double storyScore;
   final bool selected;
 
-  double get durationSeconds => segments.fold<double>(
-    0,
-    (total, segment) => total + segment.outputDuration,
-  );
+  double get durationSeconds => sequenceOutputDuration(segments);
 
   bool get hasSeriousReviewIssue =>
       riskCount > 0 ||

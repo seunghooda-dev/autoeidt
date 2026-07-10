@@ -152,6 +152,8 @@ class HighlightSegment(BaseModel):
     audio_source_channel_left: int = 1
     audio_source_channel_right: int = 2
     playback_speed: float = 1.0
+    transition_type: str = "cut"
+    transition_duration: float = 0.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
     score: float = 0.0
@@ -194,6 +196,17 @@ class HighlightSegment(BaseModel):
     @classmethod
     def playback_speed_must_be_safe(cls, value: float) -> float:
         return max(0.25, min(float(value), 4.0))
+
+    @field_validator("transition_type", mode="before")
+    @classmethod
+    def transition_type_must_be_supported(cls, value: Any) -> str:
+        normalized = str(value or "cut").strip().lower()
+        return normalized if normalized in {"cut", "cross_dissolve", "dip_black"} else "cut"
+
+    @field_validator("transition_duration")
+    @classmethod
+    def transition_duration_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(_snap_seconds_to_30p(value), 3.0))
 
     @field_validator(
         "audio_fade_in",

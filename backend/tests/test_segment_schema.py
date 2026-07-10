@@ -1,4 +1,5 @@
 from app.schemas import CaptionSegment, CaptionStyle, HighlightSegment, ProjectState
+from app.tasks import _normalize_highlights
 
 
 def test_highlight_segment_accepts_track_controls() -> None:
@@ -28,6 +29,8 @@ def test_highlight_segment_accepts_track_controls() -> None:
         audio_channel_2_enabled=False,
         audio_source_channel_left=99,
         audio_source_channel_right=-5,
+        transition_type="unsupported",
+        transition_duration=99,
     )
 
     assert segment.video_enabled is False
@@ -49,6 +52,38 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.audio_channel_2_enabled is False
     assert segment.audio_source_channel_left == 64
     assert segment.audio_source_channel_right == 1
+    assert segment.transition_type == "cut"
+    assert segment.transition_duration == 3.0
+
+
+def test_render_normalization_preserves_supported_clip_transitions() -> None:
+    normalized = _normalize_highlights(
+        [
+            {
+                "order": 1,
+                "start": 0,
+                "end": 4,
+                "reason": "opener",
+                "transition_type": "dip_black",
+                "transition_duration": 1,
+            },
+            {
+                "order": 2,
+                "start": 10,
+                "end": 14,
+                "reason": "answer",
+                "transition_type": "cross_dissolve",
+                "transition_duration": 0.45,
+            },
+        ],
+        duration=30,
+        preserve_order=True,
+    )
+
+    assert normalized[0]["transition_type"] == "cut"
+    assert normalized[0]["transition_duration"] == 0
+    assert normalized[1]["transition_type"] == "cross_dissolve"
+    assert normalized[1]["transition_duration"] == 0.466667
 
 
 def test_caption_style_clamps_unsafe_values() -> None:
