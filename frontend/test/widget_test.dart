@@ -1,4 +1,5 @@
 import 'dart:io' as io;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -454,6 +455,65 @@ void main() {
       expect(videoTargetToggles, 1);
     },
   );
+
+  testWidgets('timeline paints cached video frames inside V1 clips', (
+    tester,
+  ) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 32, 18),
+      Paint()..color = const Color(0xFF3FAE72),
+    );
+    final thumbnail = await recorder.endRecording().toImage(32, 18);
+    addTearDown(thumbnail.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 240,
+            child: TimelineEditor(
+              duration: 20,
+              segments: const [
+                HighlightSegment(
+                  order: 1,
+                  start: 1,
+                  end: 12,
+                  reason: 'thumbnail clip',
+                ),
+              ],
+              playheadSeconds: 1,
+              selectedSegmentOrder: 1,
+              markIn: null,
+              markOut: null,
+              timelineMarkers: const [],
+              waveform: const [],
+              timelineThumbnails: {30: thumbnail},
+              zoom: 1,
+              trackHeightScale: 1,
+              snappingEnabled: true,
+              videoTrackTargeted: true,
+              audioTrack1Targeted: true,
+              audioTrack2Targeted: true,
+              videoTrackLocked: false,
+              audioTrackLocked: false,
+              audioTrack1Locked: false,
+              audioTrack2Locked: false,
+              razorTool: false,
+              onSegmentChanged: (_) {},
+              onScrub: (_) {},
+              onSegmentSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('timeline-canvas')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('sequence timeline maps output positions back to source edits', (
     tester,

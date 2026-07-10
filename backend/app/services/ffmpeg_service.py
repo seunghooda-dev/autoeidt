@@ -446,6 +446,69 @@ def create_preview_proxy(
         return output_path, False, source_start, proxy_seconds
 
 
+def create_timeline_thumbnail(
+    video_path: Path,
+    time_seconds: float = 0.0,
+    width: int = 320,
+) -> tuple[Path, bool, float, int]:
+    settings = get_settings()
+    resolved = video_path.resolve(strict=True)
+    stat = resolved.stat()
+    source_frame = max(0, round(float(time_seconds or 0.0) * RENDER_FRAME_RATE))
+    source_time = source_frame / RENDER_FRAME_RATE
+    output_width = max(160, min(int(width), 640))
+    cache_identity = (
+        f"timeline-thumbnail-v1|{source_frame}|{output_width}|{resolved}|"
+        f"{stat.st_size}|{stat.st_mtime_ns}"
+    )
+    cache_key = sha1(cache_identity.encode("utf-8")).hexdigest()
+    preview_dir = settings.data_dir / "preview_proxies"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    output_path = preview_dir / f"thumb_{cache_key}.jpg"
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return output_path, True, source_time, output_width
+
+    with _preview_proxy_lock(f"thumbnail-{cache_key}"):
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path, True, source_time, output_width
+
+        temp_path = output_path.with_suffix(".tmp.jpg")
+        if temp_path.exists():
+            temp_path.unlink()
+        try:
+            _run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{source_time:.3f}",
+                    "-i",
+                    str(resolved),
+                    "-map",
+                    "0:v:0",
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    (
+                        "yadif=deint=interlaced,"
+                        f"scale={output_width}:-2:force_original_aspect_ratio=decrease,"
+                        "format=yuv420p"
+                    ),
+                    "-c:v",
+                    "mjpeg",
+                    "-q:v",
+                    "3",
+                    str(temp_path),
+                ],
+                timeout=60,
+            )
+            temp_path.replace(output_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+        return output_path, False, source_time, output_width
+
+
 def _preview_audio_output_args(audio_channel_counts: list[int]) -> list[str]:
     if not audio_channel_counts:
         return []

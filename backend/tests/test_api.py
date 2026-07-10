@@ -28,6 +28,7 @@ def test_health_endpoint() -> None:
     assert "cancellable_jobs_v1" in payload["features"]
     assert "recent_jobs_v1" in payload["features"]
     assert "timeline_30p_ndf" in payload["features"]
+    assert "timeline_thumbnails_v1" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:
@@ -49,6 +50,15 @@ def test_local_probe_returns_not_found_for_missing_file() -> None:
     response = client.post(
         "/api/jobs/probe-local",
         json={"path": "C:/definitely/missing/source.mxf"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_local_thumbnail_returns_not_found_for_missing_file() -> None:
+    response = client.post(
+        "/api/jobs/thumbnail-local",
+        json={"path": "C:/definitely/missing/source.mxf", "time_seconds": 4.0},
     )
 
     assert response.status_code == 404

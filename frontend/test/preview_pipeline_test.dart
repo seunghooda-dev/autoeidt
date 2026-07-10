@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:file_picker/file_picker.dart';
@@ -28,6 +29,68 @@ void main() {
 
     expect(probe.pixelFormat, 'yuv444p');
     expect(probe.requiresCompatibilityProxy, isTrue);
+  });
+
+  test('timeline thumbnails load for unique 30p clip in-points', () async {
+    final originalPlatform = VideoPlayerPlatform.instance;
+    final platform = _FakeVideoPlayerPlatform();
+    VideoPlayerPlatform.instance = platform;
+    final temporaryDirectory = await io.Directory.systemTemp.createTemp(
+      'autoedit-thumbnail-test-',
+    );
+    final source = io.File(
+      '${temporaryDirectory.path}${io.Platform.pathSeparator}source.mxf',
+    );
+    final thumbnail = io.File(
+      '${temporaryDirectory.path}${io.Platform.pathSeparator}thumb.png',
+    );
+    await source.writeAsBytes(const [0, 0, 0, 0]);
+    await thumbnail.writeAsBytes(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ),
+    );
+    final api = _ThumbnailApiClient(thumbnail.path);
+    final controller = EditorController(
+      apiClient: api,
+      engineService: _ReadyEngineService(),
+      autoStartEngine: false,
+      enableTimelineThumbnails: true,
+    );
+
+    try {
+      await controller.openMediaFile(
+        PlatformFile(
+          name: 'source.mxf',
+          size: await source.length(),
+          path: source.path,
+        ),
+      );
+      controller
+        ..segments = const [
+          HighlightSegment(order: 1, start: 1, end: 3, reason: 'first'),
+          HighlightSegment(order: 2, start: 5, end: 7, reason: 'second'),
+        ]
+        ..selectedSegmentOrder = 1;
+      controller.updateSegment(controller.segments.first);
+
+      await _waitUntil(
+        () => controller.timelineThumbnails.length == 2,
+        describe: () =>
+            'times=${api.thumbnailTimes} '
+            'loaded=${controller.timelineThumbnails.keys}',
+      );
+
+      expect(api.thumbnailTimes, [1, 5]);
+      expect(controller.timelineThumbnails.keys, containsAll([30, 150]));
+      expect(controller.isLoadingTimelineThumbnails, isFalse);
+    } finally {
+      await controller.videoController?.dispose();
+      controller.dispose();
+      await platform.close();
+      await temporaryDirectory.delete(recursive: true);
+      VideoPlayerPlatform.instance = originalPlatform;
+    }
   });
 
   test(
@@ -513,6 +576,28 @@ class _ReadyEngineService extends LocalEngineService {
 
   @override
   Future<void> dispose() async {}
+}
+
+class _ThumbnailApiClient extends _ProxyApiClient {
+  _ThumbnailApiClient(this.thumbnailPath);
+
+  final String thumbnailPath;
+  final List<double> thumbnailTimes = [];
+
+  @override
+  Future<LocalThumbnailInfo> createLocalThumbnail(
+    String path, {
+    required double timeSeconds,
+    int width = 320,
+  }) async {
+    thumbnailTimes.add(timeSeconds);
+    return LocalThumbnailInfo(
+      url: 'https://preview.invalid/thumb.png',
+      localPath: thumbnailPath,
+      sourceTime: timeSeconds,
+      width: width,
+    );
+  }
 }
 
 class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {

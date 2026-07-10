@@ -20,6 +20,22 @@ class LocalPreviewInfo {
   double get sourceEnd => sourceStart + duration;
 }
 
+class LocalThumbnailInfo {
+  const LocalThumbnailInfo({
+    required this.url,
+    required this.sourceTime,
+    required this.width,
+    this.localPath,
+    this.cached = false,
+  });
+
+  final String url;
+  final String? localPath;
+  final double sourceTime;
+  final int width;
+  final bool cached;
+}
+
 class ApiClient {
   ApiClient({String? baseUrl, Dio? dio})
     : baseUrl =
@@ -105,6 +121,28 @@ class ApiClient {
       sourceStart: _readDouble(response.data?['source_start']),
       duration: _readDouble(response.data?['duration']),
       localPath: response.data?['preview_path'] as String?,
+    );
+  }
+
+  Future<LocalThumbnailInfo> createLocalThumbnail(
+    String path, {
+    required double timeSeconds,
+    int width = 320,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/thumbnail-local',
+      data: {'path': path, 'time_seconds': timeSeconds, 'width': width},
+    );
+    final thumbnailUrl = response.data?['thumbnail_url'] as String? ?? '';
+    if (thumbnailUrl.isEmpty) {
+      throw StateError('타임라인 썸네일 URL을 받지 못했습니다.');
+    }
+    return LocalThumbnailInfo(
+      url: absoluteUrl(thumbnailUrl),
+      localPath: response.data?['thumbnail_path'] as String?,
+      sourceTime: _readDouble(response.data?['source_time']),
+      width: (response.data?['width'] as num?)?.toInt() ?? width,
+      cached: response.data?['cached'] as bool? ?? false,
     );
   }
 

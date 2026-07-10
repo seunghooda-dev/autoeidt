@@ -1,10 +1,12 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/highlight_segment.dart';
 import '../models/job_models.dart';
+import '../utils/timecode.dart';
 import 'time_format.dart';
 
 enum _DragEdge { start, end }
@@ -168,6 +170,7 @@ class TimelineEditor extends StatefulWidget {
     required this.markOut,
     required this.timelineMarkers,
     required this.waveform,
+    this.timelineThumbnails = const {},
     required this.zoom,
     required this.trackHeightScale,
     required this.snappingEnabled,
@@ -268,6 +271,7 @@ class TimelineEditor extends StatefulWidget {
   final double? markOut;
   final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
+  final Map<int, ui.Image> timelineThumbnails;
   final double zoom;
   final double trackHeightScale;
   final bool snappingEnabled;
@@ -571,6 +575,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                   markOut: widget.markOut,
                                   timelineMarkers: widget.timelineMarkers,
                                   waveform: widget.waveform,
+                                  timelineThumbnails: widget.timelineThumbnails,
                                   activeIndex: _activeIndex,
                                   activeEdge: _activeEdge,
                                   activeTrack: _activeTrack,
@@ -2442,6 +2447,7 @@ class _TimelinePainter extends CustomPainter {
     required this.markOut,
     required this.timelineMarkers,
     required this.waveform,
+    required this.timelineThumbnails,
     required this.activeIndex,
     required this.activeEdge,
     required this.activeTrack,
@@ -2470,6 +2476,7 @@ class _TimelinePainter extends CustomPainter {
   final double? markOut;
   final List<TimelineMarker> timelineMarkers;
   final List<double> waveform;
+  final Map<int, ui.Image> timelineThumbnails;
   final int? activeIndex;
   final _DragEdge? activeEdge;
   final _DragTrack? activeTrack;
@@ -2734,6 +2741,7 @@ class _TimelinePainter extends CustomPainter {
         disabledPattern: !segment.videoEnabled,
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
+        thumbnail: timelineThumbnails[secondsToTimecodeFrame(segment.start)],
       );
       _drawFadeOverlay(canvas, size, segment, placement);
 
@@ -2839,6 +2847,7 @@ class _TimelinePainter extends CustomPainter {
     double? waveformSourceStart,
     double? waveformSourceEnd,
     bool disabledPattern = false,
+    ui.Image? thumbnail,
   }) {
     final left = _secondsToX(start, size.width);
     final right = _secondsToX(end, size.width);
@@ -2868,6 +2877,15 @@ class _TimelinePainter extends CustomPainter {
           ],
         ).createShader(rect),
     );
+    if (track == _DragTrack.video && thumbnail != null && rect.width >= 20) {
+      _drawVideoThumbnailStrip(
+        canvas,
+        rrect,
+        rect,
+        thumbnail,
+        enabled: !disabledPattern,
+      );
+    }
     if (disabledPattern) {
       final patternPaint = Paint()
         ..color = colorScheme.error.withValues(alpha: 0.42)
@@ -2900,7 +2918,15 @@ class _TimelinePainter extends CustomPainter {
         waveformSourceEnd ?? end,
       );
     }
-    _drawClipTimecodeLabel(canvas, rect, label, start, end, track);
+    _drawClipTimecodeLabel(
+      canvas,
+      rect,
+      label,
+      start,
+      end,
+      track,
+      hasThumbnail: track == _DragTrack.video && thumbnail != null,
+    );
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
       rrect,
@@ -2922,6 +2948,45 @@ class _TimelinePainter extends CustomPainter {
         );
       }
     }
+  }
+
+  void _drawVideoThumbnailStrip(
+    Canvas canvas,
+    RRect clip,
+    Rect rect,
+    ui.Image image, {
+    required bool enabled,
+  }) {
+    final tileWidth = math.max(36.0, rect.height * 16 / 9);
+    canvas.save();
+    canvas.clipRRect(clip);
+    for (var left = rect.left; left < rect.right; left += tileWidth) {
+      paintImage(
+        canvas: canvas,
+        rect: Rect.fromLTWH(
+          left,
+          rect.top,
+          math.min(tileWidth, rect.right - left),
+          rect.height,
+        ),
+        image: image,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        opacity: enabled ? 0.82 : 0.28,
+        filterQuality: FilterQuality.low,
+      );
+    }
+    canvas.drawRect(
+      Rect.fromLTWH(rect.left, rect.top, rect.width, 14),
+      Paint()..color = Colors.black.withValues(alpha: 0.46),
+    );
+    if (rect.height >= 30) {
+      canvas.drawRect(
+        Rect.fromLTWH(rect.left, rect.bottom - 12, rect.width, 12),
+        Paint()..color = Colors.black.withValues(alpha: 0.40),
+      );
+    }
+    canvas.restore();
   }
 
   void _drawVideoPresence(Canvas canvas, Rect rect) {
@@ -2982,18 +3047,20 @@ class _TimelinePainter extends CustomPainter {
     String label,
     double start,
     double end,
-    _DragTrack track,
-  ) {
+    _DragTrack track, {
+    bool hasThumbnail = false,
+  }) {
     if (rect.width < 28) {
       return;
     }
     final timeText = '${formatSeconds(start)} - ${formatSeconds(end)}';
     final compactLabel = rect.width >= 92 ? label : label.split(' ').first;
+    final textColor = hasThumbnail ? Colors.white : _clipTextColor;
     final labelPainter = TextPainter(
       text: TextSpan(
         text: compactLabel,
         style: TextStyle(
-          color: _clipTextColor.withValues(alpha: 0.92),
+          color: textColor.withValues(alpha: 0.94),
           fontSize: rect.width >= 92 ? 9 : 8,
           fontWeight: FontWeight.w800,
         ),
@@ -3020,7 +3087,7 @@ class _TimelinePainter extends CustomPainter {
             ? timeText
             : formatSeconds(track == _DragTrack.video ? start : end),
         style: TextStyle(
-          color: _clipTextColor.withValues(alpha: 0.76),
+          color: textColor.withValues(alpha: 0.82),
           fontSize: 8,
           fontWeight: FontWeight.w600,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -3367,6 +3434,7 @@ class _TimelinePainter extends CustomPainter {
         markOut != oldDelegate.markOut ||
         timelineMarkers != oldDelegate.timelineMarkers ||
         waveform != oldDelegate.waveform ||
+        timelineThumbnails != oldDelegate.timelineThumbnails ||
         activeIndex != oldDelegate.activeIndex ||
         activeEdge != oldDelegate.activeEdge ||
         activeTrack != oldDelegate.activeTrack ||

@@ -302,6 +302,20 @@ class LocalPreviewResponse(BaseModel):
     duration: float = 0.0
 
 
+class LocalThumbnailRequest(BaseModel):
+    path: str
+    time_seconds: float = Field(default=0.0, ge=0.0)
+    width: int = Field(default=320, ge=160, le=640)
+
+
+class LocalThumbnailResponse(BaseModel):
+    thumbnail_url: str
+    thumbnail_path: str = ""
+    cached: bool = False
+    source_time: float = 0.0
+    width: int = 320
+
+
 class StorageCategoryUsage(BaseModel):
     key: str
     label: str

@@ -251,6 +251,51 @@ def test_preview_proxy_routes_first_two_program_audio_streams(
     assert command[command.index("-filter_complex") + 3] == "[previewa]"
 
 
+def test_timeline_thumbnail_is_frame_snapped_deinterlaced_and_cached(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "source.mxf"
+    source_path.write_bytes(b"source")
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"jpeg")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    first = ffmpeg_service.create_timeline_thumbnail(
+        source_path,
+        time_seconds=5.119,
+        width=320,
+    )
+    second = ffmpeg_service.create_timeline_thumbnail(
+        source_path,
+        time_seconds=5.119,
+        width=320,
+    )
+
+    assert len(commands) == 1
+    command = commands[0]
+    assert first[0].name.startswith("thumb_")
+    assert first[0].suffix == ".jpg"
+    assert first[1] is False
+    assert abs(first[2] - (154 / 30)) < 1e-9
+    assert first[3] == 320
+    assert second[0] == first[0]
+    assert second[1] is True
+    assert _command_value(command, "-ss") == "5.133"
+    assert _command_value(command, "-frames:v") == "1"
+    assert "yadif=deint=interlaced" in _command_value(command, "-vf")
+    assert "scale=320:-2" in _command_value(command, "-vf")
+
+
 def test_duplicate_preview_requests_share_one_ffmpeg_generation(
     tmp_path: Path,
     monkeypatch,

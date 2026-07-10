@@ -23,6 +23,8 @@ from app.schemas import (
     LocalImportRequest,
     LocalPreviewRequest,
     LocalPreviewResponse,
+    LocalThumbnailRequest,
+    LocalThumbnailResponse,
     MediaProbeRequest,
     MediaProbeResponse,
     ProjectResponse,
@@ -32,7 +34,12 @@ from app.schemas import (
     TimelineResponse,
     UploadJobResponse,
 )
-from app.services.ffmpeg_service import FFmpegError, create_preview_proxy, probe_media_info
+from app.services.ffmpeg_service import (
+    FFmpegError,
+    create_preview_proxy,
+    create_timeline_thumbnail,
+    probe_media_info,
+)
 from app.storage import now_iso, safe_filename, store
 from app.tasks import (
     analyze_video_job,
@@ -221,6 +228,41 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
         source_start=source_start,
         duration=duration,
     )
+
+
+@router.post("/thumbnail-local", response_model=LocalThumbnailResponse)
+def create_local_thumbnail(payload: LocalThumbnailRequest) -> LocalThumbnailResponse:
+    source_path = _resolve_local_file(payload.path)
+    try:
+        thumbnail_path, cached, source_time, width = create_timeline_thumbnail(
+            source_path,
+            time_seconds=payload.time_seconds,
+            width=payload.width,
+        )
+    except FFmpegError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LocalThumbnailResponse(
+        thumbnail_url=f"/api/jobs/thumbnail/{thumbnail_path.name}",
+        thumbnail_path=str(thumbnail_path.resolve()),
+        cached=cached,
+        source_time=source_time,
+        width=width,
+    )
+
+
+@router.get("/thumbnail/{filename}")
+def stream_timeline_thumbnail(filename: str) -> FileResponse:
+    if (
+        "/" in filename
+        or "\\" in filename
+        or not filename.startswith("thumb_")
+        or not filename.endswith(".jpg")
+    ):
+        raise HTTPException(status_code=400, detail="invalid thumbnail filename")
+    path = get_settings().data_dir / "preview_proxies" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="thumbnail not found")
+    return FileResponse(path, media_type="image/jpeg", filename=filename)
 
 
 @router.get("/preview/{filename}")

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -21,6 +22,7 @@ class EditorController extends ChangeNotifier {
     ApiClient? apiClient,
     LocalEngineService? engineService,
     bool autoStartEngine = true,
+    bool? enableTimelineThumbnails,
     ProjectRecoveryService? recoveryService,
     bool enableProjectRecovery = false,
     Duration projectRecoveryDebounce = const Duration(milliseconds: 800),
@@ -31,6 +33,8 @@ class EditorController extends ChangeNotifier {
        _engineService = engineService ?? LocalEngineService(),
        _recoveryService = recoveryService ?? ProjectRecoveryService(),
        _projectRecoveryEnabled = enableProjectRecovery && !kIsWeb,
+       _timelineThumbnailsEnabled =
+           (enableTimelineThumbnails ?? autoStartEngine) && !kIsWeb,
        _projectRecoveryDebounce = projectRecoveryDebounce,
        _proxyPreviewInitializationTimeout = proxyPreviewInitializationTimeout,
        _proxyPreviewRecoveryTimeout = proxyPreviewRecoveryTimeout,
@@ -51,6 +55,7 @@ class EditorController extends ChangeNotifier {
   final LocalEngineService _engineService;
   final ProjectRecoveryService _recoveryService;
   final bool _projectRecoveryEnabled;
+  final bool _timelineThumbnailsEnabled;
   final Duration _projectRecoveryDebounce;
   final Duration _proxyPreviewInitializationTimeout;
   final Duration _proxyPreviewRecoveryTimeout;
@@ -59,6 +64,7 @@ class EditorController extends ChangeNotifier {
   Timer? _stylePollTimer;
   Timer? _recoverySaveTimer;
   Timer? _reverseShuttleTimer;
+  Timer? _timelineThumbnailTimer;
   final List<_EditorSnapshot> _undoStack = [];
   final List<_EditorSnapshot> _redoStack = [];
   String? _lastRecoveryPayload;
@@ -93,6 +99,9 @@ class EditorController extends ChangeNotifier {
   List<TranscriptSegment> transcript = [];
   List<CaptionSegment> captions = [];
   List<double> waveform = [];
+  Map<int, ui.Image> timelineThumbnails = const {};
+  bool isLoadingTimelineThumbnails = false;
+  int timelineThumbnailTargetCount = 0;
   List<TimelineMarker> timelineMarkers = [];
   String? renderUrl;
   int? selectedSegmentOrder;
@@ -148,6 +157,7 @@ class EditorController extends ChangeNotifier {
   double _programPlayheadSeconds = 0;
   int? _programSegmentOrder;
   bool _programCutPending = false;
+  int _timelineThumbnailRevision = 0;
   static const double _initialProxyPreviewSeconds = 8;
   static const Duration _directPreviewInitializationTimeout = Duration(
     milliseconds: 1500,
@@ -1044,6 +1054,9 @@ class EditorController extends ChangeNotifier {
     if (isPreparingPreview) {
       return '프리뷰 프록시 생성 중...';
     }
+    if (isLoadingTimelineThumbnails) {
+      return '타임라인 프레임 준비 중 · ${timelineThumbnails.length}/$timelineThumbnailTargetCount';
+    }
     if (selectedFile != null) {
       return selectedFile!.name;
     }
@@ -1219,7 +1232,110 @@ class EditorController extends ChangeNotifier {
     return _initializeLocalPreview(path);
   }
 
+  void _clearTimelineThumbnails() {
+    _timelineThumbnailTimer?.cancel();
+    _timelineThumbnailRevision += 1;
+    final previous = timelineThumbnails.values.toList();
+    timelineThumbnails = const {};
+    timelineThumbnailTargetCount = 0;
+    isLoadingTimelineThumbnails = false;
+    for (final image in previous) {
+      image.dispose();
+    }
+  }
+
+  void _scheduleTimelineThumbnails({
+    Duration delay = const Duration(milliseconds: 550),
+  }) {
+    if (!_timelineThumbnailsEnabled || _isDisposed || segments.isEmpty) {
+      return;
+    }
+    final path = selectedFile?.path;
+    if (path == null || path.isEmpty || !io.File(path).existsSync()) {
+      return;
+    }
+    _timelineThumbnailTimer?.cancel();
+    final revision = ++_timelineThumbnailRevision;
+    _timelineThumbnailTimer = Timer(delay, () {
+      unawaited(_prepareTimelineThumbnails(path, revision));
+    });
+  }
+
+  Future<void> _prepareTimelineThumbnails(String path, int revision) async {
+    if (_isDisposed || revision != _timelineThumbnailRevision) {
+      return;
+    }
+    final targets = <int, double>{};
+    for (final segment in segments) {
+      final key = secondsToTimecodeFrame(segment.start);
+      targets.putIfAbsent(key, () => segment.start);
+    }
+    timelineThumbnailTargetCount = targets.length;
+    final obsoleteKeys = timelineThumbnails.keys
+        .where((key) => !targets.containsKey(key))
+        .toList();
+    if (obsoleteKeys.isNotEmpty) {
+      final next = Map<int, ui.Image>.of(timelineThumbnails);
+      for (final key in obsoleteKeys) {
+        next.remove(key)?.dispose();
+      }
+      timelineThumbnails = next;
+    }
+    final pending = targets.entries
+        .where((entry) => !timelineThumbnails.containsKey(entry.key))
+        .toList();
+    if (pending.isEmpty) {
+      isLoadingTimelineThumbnails = false;
+      notifyListeners();
+      return;
+    }
+
+    isLoadingTimelineThumbnails = true;
+    notifyListeners();
+    try {
+      await _ensureLocalEngineForApi();
+      for (final target in pending) {
+        if (_isDisposed || revision != _timelineThumbnailRevision) {
+          return;
+        }
+        try {
+          final info = await _apiClient.createLocalThumbnail(
+            path,
+            timeSeconds: target.value,
+          );
+          final thumbnailPath = info.localPath;
+          if (thumbnailPath == null || thumbnailPath.isEmpty) {
+            continue;
+          }
+          final file = io.File(thumbnailPath);
+          if (!await file.exists()) {
+            continue;
+          }
+          final codec = await ui.instantiateImageCodec(
+            await file.readAsBytes(),
+          );
+          final frame = await codec.getNextFrame();
+          codec.dispose();
+          if (_isDisposed || revision != _timelineThumbnailRevision) {
+            frame.image.dispose();
+            return;
+          }
+          timelineThumbnails = {...timelineThumbnails, target.key: frame.image};
+          notifyListeners();
+        } catch (_) {
+          // A missing thumbnail must not interrupt editing or playback.
+        }
+      }
+    } finally {
+      if (!_isDisposed && revision == _timelineThumbnailRevision) {
+        isLoadingTimelineThumbnails = false;
+        notifyListeners();
+      }
+    }
+  }
+
   Future<void> openMediaFile(PlatformFile file) async {
+    _clearTimelineThumbnails();
     projectFilePath = null;
     selectedFile = file;
     selectedMediaProbe = null;
@@ -1287,6 +1403,7 @@ class EditorController extends ChangeNotifier {
     }
 
     final file = result.files.single;
+    _clearTimelineThumbnails();
     selectedFile = file;
     selectedMediaProbe = null;
     renderUrl = null;
@@ -6668,6 +6785,7 @@ class EditorController extends ChangeNotifier {
     }
     _clearHistory();
     _markProjectDirty();
+    _scheduleTimelineThumbnails(delay: Duration.zero);
   }
 
   Future<void> _initializePreview(String id) async {
@@ -8796,6 +8914,7 @@ class EditorController extends ChangeNotifier {
     bool resetHistory = true,
     bool markProjectDirty = true,
   }) {
+    final previousSourcePath = selectedFile?.path;
     projectName = project.name;
     if (!keepJob) {
       if (jobId != project.jobId) {
@@ -8852,6 +8971,10 @@ class EditorController extends ChangeNotifier {
     if (markProjectDirty) {
       _markProjectDirty();
     }
+    if (previousSourcePath != selectedFile?.path) {
+      _clearTimelineThumbnails();
+    }
+    _scheduleTimelineThumbnails(delay: Duration.zero);
   }
 
   void _scheduleProjectRecoverySave() {
@@ -8937,6 +9060,7 @@ class EditorController extends ChangeNotifier {
 
   void _markProjectDirty() {
     _projectRevision += 1;
+    _scheduleTimelineThumbnails();
   }
 
   void _markProjectSaved() {
@@ -9108,6 +9232,11 @@ class EditorController extends ChangeNotifier {
     _stylePollTimer?.cancel();
     _recoverySaveTimer?.cancel();
     _reverseShuttleTimer?.cancel();
+    _timelineThumbnailTimer?.cancel();
+    for (final image in timelineThumbnails.values) {
+      image.dispose();
+    }
+    timelineThumbnails = const {};
     videoController?.dispose();
     unawaited(_engineService.dispose());
     super.dispose();

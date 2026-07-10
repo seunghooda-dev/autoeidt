@@ -1544,6 +1544,7 @@ class _MediaPanel extends StatelessWidget {
           if (controller.isUploading ||
               controller.isProbingMedia ||
               controller.isPreparingPreview ||
+              controller.isLoadingTimelineThumbnails ||
               controller.hasActiveJob ||
               controller.errorMessage != null) ...[
             const SizedBox(height: 7),
@@ -2605,6 +2606,7 @@ class _TimelineEditorBody extends StatelessWidget {
       markOut: controller.markOut,
       timelineMarkers: controller.timelineMarkers,
       waveform: controller.waveform,
+      timelineThumbnails: controller.timelineThumbnails,
       zoom: controller.timelineZoom,
       trackHeightScale: controller.timelineTrackHeightScale,
       snappingEnabled: controller.timelineSnappingEnabled,
