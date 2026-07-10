@@ -563,6 +563,15 @@ def _segment_audio_channel_2_enabled(segment: dict) -> bool:
     return bool(segment.get("audio_channel_2_enabled", True))
 
 
+def _segment_audio_source_channel(segment: dict, side: str) -> int:
+    fallback = 1 if side == "left" else 2
+    try:
+        value = int(segment.get(f"audio_source_channel_{side}", fallback) or fallback)
+    except (TypeError, ValueError):
+        value = fallback
+    return max(1, min(value, 64))
+
+
 def _segment_video_enabled(segment: dict) -> bool:
     return bool(segment.get("video_enabled", True))
 
@@ -737,6 +746,10 @@ def _segment_uses_default_audio(segment: dict) -> bool:
         return False
     if not _segment_audio_channel_2_enabled(segment):
         return False
+    if _segment_audio_source_channel(segment, "left") != 1:
+        return False
+    if _segment_audio_source_channel(segment, "right") != 2:
+        return False
     if _segment_audio_normalize(segment):
         return False
     if abs(_segment_playback_speed(segment) - 1.0) > 0.001:
@@ -858,6 +871,54 @@ def _audio_stream_count(video_path: Path) -> int:
     return len(data.get("streams") or [])
 
 
+def _audio_channel_counts(
+    video_path: Path,
+    fallback_stream_count: int,
+) -> list[int]:
+    try:
+        result = _run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=channels",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            timeout=60,
+        )
+        data = json.loads(result.stdout or "{}")
+        counts = [
+            max(1, _safe_int(stream.get("channels"), 1))
+            for stream in data.get("streams") or []
+            if isinstance(stream, dict)
+        ]
+        if counts:
+            return counts
+    except (FFmpegError, json.JSONDecodeError):
+        pass
+    return [1] * max(0, fallback_stream_count)
+
+
+def _logical_audio_channel(
+    channel_counts: list[int],
+    requested_channel: int,
+) -> tuple[int, int]:
+    if not channel_counts:
+        return 0, 0
+    total = max(1, sum(channel_counts))
+    remaining = max(1, min(requested_channel, total)) - 1
+    for stream_index, channel_count in enumerate(channel_counts):
+        if remaining < channel_count:
+            return stream_index, remaining
+        remaining -= channel_count
+    return len(channel_counts) - 1, max(0, channel_counts[-1] - 1)
+
+
 def _silence_audio_filter(label: str, duration: float, layout: str = "mono") -> str:
     return (
         f"anullsrc=channel_layout={layout}:sample_rate=48000,"
@@ -873,7 +934,9 @@ def _segment_audio_source_filters(
     volume: float,
     channel_1_enabled: bool,
     channel_2_enabled: bool,
-    audio_stream_count: int,
+    audio_channel_counts: list[int],
+    source_channel_left: int,
+    source_channel_right: int,
 ) -> tuple[list[str], str]:
     filters: list[str] = []
     source_label = f"asrc{index}"
@@ -881,18 +944,34 @@ def _segment_audio_source_filters(
         filters.append(_silence_audio_filter(source_label, video_duration, "stereo"))
         return filters, f"[{source_label}]"
 
-    if audio_stream_count >= 2:
+    if not audio_channel_counts:
+        filters.append(_silence_audio_filter(source_label, video_duration, "stereo"))
+        return filters, f"[{source_label}]"
+
+    left_stream, left_channel = _logical_audio_channel(
+        audio_channel_counts,
+        source_channel_left,
+    )
+    right_stream, right_channel = _logical_audio_channel(
+        audio_channel_counts,
+        source_channel_right,
+    )
+
+    if left_stream != right_stream:
         channel_labels: list[str] = []
-        for channel_index, enabled in enumerate(
-            [channel_1_enabled, channel_2_enabled]
+        for output_index, (stream_index, stream_channel, enabled) in enumerate(
+            [
+                (left_stream, left_channel, channel_1_enabled),
+                (right_stream, right_channel, channel_2_enabled),
+            ]
         ):
-            channel_label = f"a{index}ch{channel_index + 1}"
+            channel_label = f"a{index}ch{output_index + 1}"
             if enabled:
                 filters.append(
-                    f"[0:a:{channel_index}]"
+                    f"[0:a:{stream_index}]"
                     f"atrim=start={audio_start:.6f}:end={audio_end:.6f},"
                     "asetpts=PTS-STARTPTS,"
-                    "pan=mono|c0=c0,"
+                    f"pan=mono|c0=c{stream_channel},"
                     f"volume={volume:.3f},"
                     "apad,"
                     f"atrim=duration={video_duration:.6f},"
@@ -909,13 +988,13 @@ def _segment_audio_source_filters(
         )
         return filters, f"[{source_label}]"
 
-    left_expr = "c0" if channel_1_enabled else "0*c0"
-    right_expr = "c1" if channel_2_enabled else "0*c1"
+    left_expr = f"c{left_channel}" if channel_1_enabled else "0*c0"
+    right_expr = f"c{right_channel}" if channel_2_enabled else "0*c0"
     filters.append(
-        f"[0:a]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
+        f"[0:a:{left_stream}]"
+        f"atrim=start={audio_start:.6f}:end={audio_end:.6f},"
         "asetpts=PTS-STARTPTS,"
         f"volume={volume:.3f},"
-        "aformat=channel_layouts=stereo,"
         f"pan=stereo|c0={left_expr}|c1={right_expr},"
         "apad,"
         f"atrim=duration={video_duration:.6f},"
@@ -937,6 +1016,7 @@ def _render_reencode_with_video_args(
     filters: list[str] = []
     concat_inputs: list[str] = []
     audio_stream_count = _audio_stream_count(video_path)
+    audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
     source_starts = [float(segment["start"]) for segment in segments]
     source_starts.extend(_segment_audio_start(segment) for segment in segments)
     input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)
@@ -958,6 +1038,8 @@ def _render_reencode_with_video_args(
         )
         channel_1_enabled = _segment_audio_channel_1_enabled(segment)
         channel_2_enabled = _segment_audio_channel_2_enabled(segment)
+        source_channel_left = _segment_audio_source_channel(segment, "left")
+        source_channel_right = _segment_audio_source_channel(segment, "right")
         video_steps = [
             f"[0:v]trim=start={start:.6f}:end={end:.6f}",
             f"setpts=(PTS-STARTPTS)/{speed:.6f}",
@@ -996,7 +1078,9 @@ def _render_reencode_with_video_args(
             volume,
             channel_1_enabled,
             channel_2_enabled,
-            audio_stream_count,
+            audio_channel_counts,
+            source_channel_left,
+            source_channel_right,
         )
         filters.extend(audio_source_filters)
         pan = _segment_audio_pan(segment)

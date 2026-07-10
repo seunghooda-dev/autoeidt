@@ -63,6 +63,8 @@ class HighlightSegment {
     this.audioLinked = true,
     this.audioChannel1Enabled = true,
     this.audioChannel2Enabled = true,
+    this.audioSourceChannelLeft = 1,
+    this.audioSourceChannelRight = 2,
     this.playbackSpeed = 1.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
@@ -96,6 +98,8 @@ class HighlightSegment {
   final bool audioLinked;
   final bool audioChannel1Enabled;
   final bool audioChannel2Enabled;
+  final int audioSourceChannelLeft;
+  final int audioSourceChannelRight;
   final double playbackSpeed;
   final double audioFadeIn;
   final double audioFadeOut;
@@ -137,6 +141,8 @@ class HighlightSegment {
     bool? audioLinked,
     bool? audioChannel1Enabled,
     bool? audioChannel2Enabled,
+    int? audioSourceChannelLeft,
+    int? audioSourceChannelRight,
     double? playbackSpeed,
     double? audioFadeIn,
     double? audioFadeOut,
@@ -170,6 +176,10 @@ class HighlightSegment {
       audioLinked: audioLinked ?? this.audioLinked,
       audioChannel1Enabled: audioChannel1Enabled ?? this.audioChannel1Enabled,
       audioChannel2Enabled: audioChannel2Enabled ?? this.audioChannel2Enabled,
+      audioSourceChannelLeft:
+          audioSourceChannelLeft ?? this.audioSourceChannelLeft,
+      audioSourceChannelRight:
+          audioSourceChannelRight ?? this.audioSourceChannelRight,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
@@ -264,6 +274,16 @@ class HighlightSegment {
           (json['audio_channel_2_enabled'] as bool?) ??
           (json['audioChannel2Enabled'] as bool?) ??
           true,
+      audioSourceChannelLeft:
+          ((json['audio_source_channel_left'] as num?)?.toInt() ??
+                  (json['audioSourceChannelLeft'] as num?)?.toInt() ??
+                  1)
+              .clamp(1, 64),
+      audioSourceChannelRight:
+          ((json['audio_source_channel_right'] as num?)?.toInt() ??
+                  (json['audioSourceChannelRight'] as num?)?.toInt() ??
+                  2)
+              .clamp(1, 64),
       playbackSpeed:
           (json['playback_speed'] as num?)?.toDouble() ??
           (json['playbackSpeed'] as num?)?.toDouble() ??
@@ -317,6 +337,8 @@ class HighlightSegment {
       'audio_linked': audioLinked,
       'audio_channel_1_enabled': audioChannel1Enabled,
       'audio_channel_2_enabled': audioChannel2Enabled,
+      'audio_source_channel_left': audioSourceChannelLeft,
+      'audio_source_channel_right': audioSourceChannelRight,
       'playback_speed': playbackSpeed,
       'audio_fade_in': audioFadeIn,
       'audio_fade_out': audioFadeOut,

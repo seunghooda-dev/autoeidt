@@ -560,6 +560,9 @@ class EditorController extends ChangeNotifier {
     return audioStreams == 1 ? 'A1 Source' : '$audioStreams audio streams';
   }
 
+  int get sourceAudioChannelCount =>
+      math.max(1, selectedMediaProbe?.audioChannelCount ?? 2);
+
   double get previewVolumePercent => previewMuted ? 0 : previewVolume * 100;
 
   double get outputDurationSeconds {
@@ -2525,6 +2528,33 @@ class EditorController extends ChangeNotifier {
     updateSegment(
       selected.copyWith(
         audioPan: value.clamp(-1.0, 1.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioSourceChannelLeft(int channel) {
+    _setSelectedAudioSourceChannel(channel, left: true);
+  }
+
+  void setSelectedAudioSourceChannelRight(int channel) {
+    _setSelectedAudioSourceChannel(channel, left: false);
+  }
+
+  void _setSelectedAudioSourceChannel(int channel, {required bool left}) {
+    final selected = selectedSegment;
+    if (selected == null || anyAudioTrackEditLocked) {
+      return;
+    }
+    final safeChannel = channel.clamp(1, sourceAudioChannelCount).toInt();
+    updateSegment(
+      selected.copyWith(
+        audioSourceChannelLeft: left
+            ? safeChannel
+            : selected.audioSourceChannelLeft,
+        audioSourceChannelRight: left
+            ? selected.audioSourceChannelRight
+            : safeChannel,
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );

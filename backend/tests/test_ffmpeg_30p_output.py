@@ -181,3 +181,44 @@ def test_square_render_profile_outputs_30p_square_frame(
     assert "scale=1080:1080" in filter_complex
     assert "pad=1080:1080" in filter_complex
     assert "fps=30" in filter_complex
+
+
+def test_audio_routing_maps_interleaved_source_channels() -> None:
+    filters, source = ffmpeg_service._segment_audio_source_filters(
+        index=0,
+        audio_start=0,
+        audio_end=5,
+        video_duration=5,
+        volume=1,
+        channel_1_enabled=True,
+        channel_2_enabled=True,
+        audio_channel_counts=[8],
+        source_channel_left=7,
+        source_channel_right=8,
+    )
+
+    filter_text = ";".join(filters)
+    assert source == "[asrc0]"
+    assert "[0:a:0]" in filter_text
+    assert "pan=stereo|c0=c6|c1=c7" in filter_text
+
+
+def test_audio_routing_maps_separate_mono_streams() -> None:
+    filters, source = ffmpeg_service._segment_audio_source_filters(
+        index=0,
+        audio_start=0,
+        audio_end=5,
+        video_duration=5,
+        volume=1,
+        channel_1_enabled=True,
+        channel_2_enabled=True,
+        audio_channel_counts=[1] * 8,
+        source_channel_left=7,
+        source_channel_right=8,
+    )
+
+    filter_text = ";".join(filters)
+    assert source == "[asrc0]"
+    assert "[0:a:6]" in filter_text
+    assert "[0:a:7]" in filter_text
+    assert "amerge=inputs=2" in filter_text

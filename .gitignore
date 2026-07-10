@@ -17,6 +17,7 @@ backend/data/jobs/
 backend/data/uploads/
 backend/data/outputs/
 backend/data/preview_proxies/
+backend/data/integration_outputs/
 test-assets/
 dist/
 

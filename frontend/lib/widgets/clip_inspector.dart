@@ -149,6 +149,18 @@ class ClipInspector extends StatelessWidget {
               : editor.resetSelectedFocus,
         ),
         const SizedBox(height: 8),
+        _AudioRoutingPanel(
+          channelCount: controller.sourceAudioChannelCount,
+          leftChannel: selected.audioSourceChannelLeft,
+          rightChannel: selected.audioSourceChannelRight,
+          onLeftChanged: controller.anyAudioTrackEditLocked
+              ? null
+              : editor.setSelectedAudioSourceChannelLeft,
+          onRightChanged: controller.anyAudioTrackEditLocked
+              ? null
+              : editor.setSelectedAudioSourceChannelRight,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
           icon: Icons.align_horizontal_center,
           label: 'Reframe X',
@@ -377,6 +389,122 @@ class ClipInspector extends StatelessWidget {
           onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioFadeOut,
+        ),
+      ],
+    );
+  }
+}
+
+class _AudioRoutingPanel extends StatelessWidget {
+  const _AudioRoutingPanel({
+    required this.channelCount,
+    required this.leftChannel,
+    required this.rightChannel,
+    required this.onLeftChanged,
+    required this.onRightChanged,
+  });
+
+  final int channelCount;
+  final int leftChannel;
+  final int rightChannel;
+  final ValueChanged<int>? onLeftChanged;
+  final ValueChanged<int>? onRightChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeCount = channelCount.clamp(1, 64).toInt();
+    final items = [
+      for (var channel = 1; channel <= safeCount; channel++)
+        DropdownMenuItem<int>(
+          value: channel,
+          child: Text('Source CH $channel'),
+        ),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.cable, size: 17),
+              const SizedBox(width: 7),
+              Text(
+                'Source channel routing',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const Spacer(),
+              Text('$safeCount ch'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _ChannelRouteDropdown(
+                  label: 'A1 / Left',
+                  value: leftChannel.clamp(1, safeCount).toInt(),
+                  items: items,
+                  onChanged: onLeftChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ChannelRouteDropdown(
+                  label: 'A2 / Right',
+                  value: rightChannel.clamp(1, safeCount).toInt(),
+                  items: items,
+                  onChanged: onRightChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Proxy preview uses a safety mix. This routing is applied to the final render.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChannelRouteDropdown extends StatelessWidget {
+  const _ChannelRouteDropdown({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final List<DropdownMenuItem<int>> items;
+  final ValueChanged<int>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        DropdownButton<int>(
+          isExpanded: true,
+          value: value,
+          items: items,
+          onChanged: onChanged == null
+              ? null
+              : (next) {
+                  if (next != null) {
+                    onChanged!(next);
+                  }
+                },
         ),
       ],
     );

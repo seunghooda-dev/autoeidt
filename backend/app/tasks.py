@@ -441,6 +441,12 @@ def _normalize_highlights(
         audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
         audio_channel_1_enabled = bool(item.get("audio_channel_1_enabled", True))
         audio_channel_2_enabled = bool(item.get("audio_channel_2_enabled", True))
+        audio_source_channel_left = max(
+            1, min(int(item.get("audio_source_channel_left", 1) or 1), 64)
+        )
+        audio_source_channel_right = max(
+            1, min(int(item.get("audio_source_channel_right", 2) or 2), 64)
+        )
         if not audio_channel_1_enabled and not audio_channel_2_enabled:
             audio_channel_1_enabled = True
         score = max(0.0, min(float(item.get("score", 0.0)), 20.0))
@@ -473,6 +479,8 @@ def _normalize_highlights(
                 "audio_linked": audio_linked,
                 "audio_channel_1_enabled": audio_channel_1_enabled,
                 "audio_channel_2_enabled": audio_channel_2_enabled,
+                "audio_source_channel_left": audio_source_channel_left,
+                "audio_source_channel_right": audio_source_channel_right,
                 "playback_speed": round(playback_speed, 3),
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),

@@ -174,6 +174,12 @@ def refine_highlights_with_hybrid_cut(
                     "audio_channel_2_enabled": bool(
                         highlight.get("audio_channel_2_enabled", True)
                     ),
+                    "audio_source_channel_left": int(
+                        highlight.get("audio_source_channel_left", 1) or 1
+                    ),
+                    "audio_source_channel_right": int(
+                        highlight.get("audio_source_channel_right", 2) or 2
+                    ),
                     "score": float(highlight.get("score", 0.0)),
                     "tags": list(highlight.get("tags", [])),
                 }

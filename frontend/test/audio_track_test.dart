@@ -39,6 +39,8 @@ void main() {
       audioLinked: false,
       audioChannel1Enabled: true,
       audioChannel2Enabled: false,
+      audioSourceChannelLeft: 7,
+      audioSourceChannelRight: 8,
       playbackSpeed: 1.5,
       audioFadeIn: 0.5,
       audioFadeOut: 1.0,
@@ -67,6 +69,8 @@ void main() {
     expect(json['audio_linked'], isFalse);
     expect(json['audio_channel_1_enabled'], isTrue);
     expect(json['audio_channel_2_enabled'], isFalse);
+    expect(json['audio_source_channel_left'], 7);
+    expect(json['audio_source_channel_right'], 8);
     expect(json['playback_speed'], 1.5);
     expect(json['audio_fade_in'], 0.5);
     expect(json['audio_fade_out'], 1.0);
@@ -95,12 +99,34 @@ void main() {
     expect(restored.audioLinked, isFalse);
     expect(restored.audioChannel1Enabled, isTrue);
     expect(restored.audioChannel2Enabled, isFalse);
+    expect(restored.audioSourceChannelLeft, 7);
+    expect(restored.audioSourceChannelRight, 8);
     expect(restored.playbackSpeed, 1.5);
     expect(restored.audioFadeIn, 0.5);
     expect(restored.audioFadeOut, 1.0);
     expect(restored.score, 8.4);
     expect(restored.tags, ['핵심', '문제해결']);
     expect(restored.outputDuration, closeTo(6.666, 0.01));
+  });
+
+  test('selected clip routes broadcast source channels to stereo output', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..selectedMediaProbe = MediaProbeInfo.fromJson({
+        'audio_stream_count': 1,
+        'audio_channel_count': 8,
+      })
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'routing'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setSelectedAudioSourceChannelLeft(7);
+    controller.setSelectedAudioSourceChannelRight(8);
+    expect(controller.selectedSegment!.audioSourceChannelLeft, 7);
+    expect(controller.selectedSegment!.audioSourceChannelRight, 8);
+    controller.setSelectedAudioSourceChannelRight(99);
+    expect(controller.selectedSegment!.audioSourceChannelRight, 8);
+    controller.dispose();
   });
 
   test('project state preserves render settings and marks', () {

@@ -147,6 +147,8 @@ class HighlightSegment(BaseModel):
     audio_linked: bool = True
     audio_channel_1_enabled: bool = True
     audio_channel_2_enabled: bool = True
+    audio_source_channel_left: int = 1
+    audio_source_channel_right: int = 2
     playback_speed: float = 1.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
@@ -175,6 +177,11 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_pan_must_be_safe(cls, value: float) -> float:
         return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("audio_source_channel_left", "audio_source_channel_right")
+    @classmethod
+    def audio_source_channel_must_be_safe(cls, value: int) -> int:
+        return max(1, min(int(value), 64))
 
     @field_validator("playback_speed")
     @classmethod
