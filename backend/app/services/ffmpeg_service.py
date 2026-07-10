@@ -3,6 +3,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from array import array
 from dataclasses import dataclass
 from functools import lru_cache
@@ -12,6 +13,11 @@ from threading import Lock
 from typing import Any
 
 from app.config import get_settings
+from app.job_cancellation import (
+    JobCancelledError,
+    current_cancellable_job_id,
+    raise_if_job_cancelled,
+)
 
 RENDER_FRAME_RATE = 30
 RENDER_FRAME_RATE_LABEL = str(RENDER_FRAME_RATE)
@@ -40,6 +46,8 @@ class SilenceRange:
 
 
 def _run(command: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+    if current_cancellable_job_id() is not None:
+        return _run_cancellable(command, timeout)
     result = subprocess.run(
         command,
         capture_output=True,
@@ -52,6 +60,61 @@ def _run(command: list[str], timeout: int | None = None) -> subprocess.Completed
         pretty = " ".join(shlex.quote(part) for part in command)
         raise FFmpegError(f"command failed: {pretty}\n{result.stderr}")
     return result
+
+
+def _run_cancellable(
+    command: list[str],
+    timeout: int | None,
+) -> subprocess.CompletedProcess[str]:
+    started_at = time.monotonic()
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                try:
+                    raise_if_job_cancelled()
+                except JobCancelledError:
+                    process.terminate()
+                    try:
+                        process.communicate(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.communicate()
+                    raise
+                if timeout is not None and time.monotonic() - started_at >= timeout:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    raise subprocess.TimeoutExpired(
+                        command,
+                        timeout,
+                        output=stdout,
+                        stderr=stderr,
+                    )
+        raise_if_job_cancelled()
+        result = subprocess.CompletedProcess(
+            command,
+            process.returncode,
+            stdout,
+            stderr,
+        )
+        if result.returncode != 0:
+            pretty = " ".join(shlex.quote(part) for part in command)
+            raise FFmpegError(f"command failed: {pretty}\n{result.stderr}")
+        return result
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
 
 
 @lru_cache(maxsize=8)
@@ -484,15 +547,7 @@ def detect_silence(
         "null",
         "-",
     ]
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
-        raise FFmpegError(result.stderr)
+    result = _run(command)
 
     ranges: list[SilenceRange] = []
     current_start: float | None = None
@@ -530,14 +585,9 @@ def detect_scene_changes(video_path: Path, threshold: float = 0.35) -> list[floa
         "null",
         "-",
     ]
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
+    try:
+        result = _run(command)
+    except FFmpegError:
         return []
 
     points: list[float] = []

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-TERMINAL_JOB_STATUSES = {"completed", "rendered", "failed"}
+TERMINAL_JOB_STATUSES = {"completed", "rendered", "cancelled", "failed"}
 
 
 def _iter_regular_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:

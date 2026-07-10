@@ -29,6 +29,7 @@ class JobStatus(StrEnum):
     completed = "completed"
     rendering = "rendering"
     rendered = "rendered"
+    cancelled = "cancelled"
     failed = "failed"
 
 

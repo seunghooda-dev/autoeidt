@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
+from app.celery_app import celery_app
 from app.schemas import (
     BatchRenderRequest,
     JobStatus,
@@ -34,6 +35,11 @@ from app.tasks import (
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+ACTIVE_JOB_STATUSES = {
+    JobStatus.queued.value,
+    JobStatus.processing.value,
+    JobStatus.rendering.value,
+}
 
 
 def _load_job_or_404(job_id: str) -> dict:
@@ -246,6 +252,33 @@ def get_job(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(**job)
 
 
+@router.post("/{job_id}/cancel", response_model=JobStatusResponse)
+def cancel_job(job_id: str) -> JobStatusResponse:
+    job = _load_job_or_404(job_id)
+    current_status = str(job.get("status") or "")
+    if current_status == JobStatus.cancelled.value:
+        return JobStatusResponse(**job)
+    if current_status not in ACTIVE_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="job is not active")
+
+    settings = get_settings()
+    task_id = job.get("render_task_id") or job.get("celery_task_id")
+    if settings.task_runner != "inline" and task_id:
+        try:
+            celery_app.control.revoke(str(task_id), terminate=False)
+        except Exception:
+            pass
+    cancelled = store.update(
+        job_id,
+        status=JobStatus.cancelled.value,
+        stage="cancelled",
+        message="작업이 취소되었습니다",
+        cancel_requested=True,
+        error=None,
+    )
+    return JobStatusResponse(**cancelled)
+
+
 @router.get("/{job_id}/timeline", response_model=TimelineResponse)
 def get_timeline(job_id: str) -> TimelineResponse:
     job = _load_job_or_404(job_id)
@@ -367,7 +400,9 @@ def render_job(
     payload: RenderRequest,
     background_tasks: BackgroundTasks,
 ) -> RenderResponse:
-    _load_job_or_404(job_id)
+    job = _load_job_or_404(job_id)
+    if str(job.get("status") or "") in ACTIVE_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="job is already active")
     settings = get_settings()
     segments = [segment.model_dump() for segment in payload.segments]
     render_options = {
@@ -408,7 +443,9 @@ def batch_render_job(
     payload: BatchRenderRequest,
     background_tasks: BackgroundTasks,
 ) -> RenderResponse:
-    _load_job_or_404(job_id)
+    job = _load_job_or_404(job_id)
+    if str(job.get("status") or "") in ACTIVE_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="job is already active")
     if not payload.items:
         raise HTTPException(status_code=400, detail="at least one shorts item is required")
     settings = get_settings()

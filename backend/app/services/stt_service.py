@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
+from app.job_cancellation import JobCancelledError, raise_if_job_cancelled
 
 
 def _cuda_runtime_available() -> bool:
@@ -184,6 +185,7 @@ def _transcribe_with_local_runtime(
     )
     transcript: list[dict[str, Any]] = []
     for segment in segments:
+        raise_if_job_cancelled()
         words = [
             {
                 "start": float(word.start or segment.start),
@@ -225,6 +227,8 @@ def transcribe_with_local_whisper(audio_path: Path) -> list[dict[str, Any]]:
                 device,
                 compute_type,
             )
+        except JobCancelledError:
+            raise
         except Exception as exc:
             errors.append(f"{device}/{compute_type}: {exc}")
     raise RuntimeError("; ".join(errors) or "local Whisper runtime unavailable")
@@ -267,6 +271,8 @@ def transcribe_audio(audio_path: Path, duration: float) -> list[dict[str, Any]]:
             if transcript:
                 return transcript
             return fallback_transcript(duration, "local_whisper_empty_transcript")
+        except JobCancelledError:
+            raise
         except Exception as exc:
             return fallback_transcript(duration, f"local_whisper_failed: {exc}")
     return fallback_transcript(duration, "openai_key_missing_and_local_whisper_disabled")

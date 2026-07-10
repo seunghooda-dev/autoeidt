@@ -22,6 +22,7 @@ def test_health_endpoint() -> None:
     assert "fast_proxy_preview_v2" in payload["features"]
     assert "fast_proxy_preview_v3" in payload["features"]
     assert "safe_storage_cleanup_v1" in payload["features"]
+    assert "cancellable_jobs_v1" in payload["features"]
     assert "timeline_30p_ndf" in payload["features"]
 
 
@@ -47,6 +48,92 @@ def test_local_probe_returns_not_found_for_missing_file() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_cancel_active_job_is_idempotent_and_preserves_existing_results(
+    monkeypatch,
+) -> None:
+    class FakeStore:
+        def __init__(self) -> None:
+            self.job = {
+                "job_id": "active-job",
+                "status": "processing",
+                "stage": "transcribing",
+                "progress": 45,
+                "message": "working",
+                "render_path": "C:/outputs/previous.mp4",
+                "render_url": "/api/jobs/active-job/download",
+                "segments": [],
+            }
+
+        def load(self, job_id: str) -> dict:
+            assert job_id == "active-job"
+            return dict(self.job)
+
+        def update(self, job_id: str, **fields) -> dict:
+            assert job_id == "active-job"
+            self.job.update(fields)
+            return dict(self.job)
+
+    fake_store = FakeStore()
+    monkeypatch.setattr(jobs, "store", fake_store)
+
+    response = client.post("/api/jobs/active-job/cancel")
+    repeated = client.post("/api/jobs/active-job/cancel")
+
+    assert response.status_code == 200
+    assert repeated.status_code == 200
+    payload = repeated.json()
+    assert payload["status"] == "cancelled"
+    assert payload["stage"] == "cancelled"
+    assert payload["render_path"] == "C:/outputs/previous.mp4"
+    assert payload["error"] is None
+
+
+def test_cancel_rejects_finished_job(monkeypatch) -> None:
+    class FakeStore:
+        def load(self, job_id: str) -> dict:
+            return {
+                "job_id": job_id,
+                "status": "rendered",
+                "stage": "rendered",
+                "progress": 100,
+                "message": "done",
+                "segments": [],
+            }
+
+    monkeypatch.setattr(jobs, "store", FakeStore())
+
+    response = client.post("/api/jobs/finished-job/cancel")
+
+    assert response.status_code == 409
+
+
+def test_render_rejects_duplicate_request_while_job_is_active(monkeypatch) -> None:
+    class FakeStore:
+        def load(self, job_id: str) -> dict:
+            return {
+                "job_id": job_id,
+                "status": "rendering",
+                "stage": "rendering",
+                "progress": 30,
+                "message": "working",
+                "segments": [],
+            }
+
+    monkeypatch.setattr(jobs, "store", FakeStore())
+
+    response = client.post(
+        "/api/jobs/active-render/render",
+        json={
+            "segments": [
+                {"order": 1, "start": 0, "end": 5, "reason": "test"}
+            ]
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "job is already active"
 
 
 def test_batch_render_returns_not_found_for_unknown_job() -> None:

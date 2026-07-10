@@ -66,6 +66,7 @@ class EditorController extends ChangeNotifier {
   bool isUploading = false;
   bool isTrainingStyle = false;
   bool isRendering = false;
+  bool isCancellingJob = false;
   bool hasRecoverySnapshot = false;
   DateTime? recoverySnapshotSavedAt;
   List<ProjectRecoverySnapshot> recoveryVersions = [];
@@ -217,12 +218,22 @@ class EditorController extends ChangeNotifier {
     return probeDuration > 0 ? probeDuration : 0;
   }
 
+  bool get hasActiveJob {
+    final status = job?.status;
+    return isRendering ||
+        status == 'queued' ||
+        status == 'processing' ||
+        status == 'rendering';
+  }
+
+  bool get canCancelJob => jobId != null && hasActiveJob && !isCancellingJob;
   bool get canStartUpload =>
       hasFile &&
       !isUploading &&
       !isProbingMedia &&
       selectedMediaProbe?.canAnalyze != false &&
-      job?.status != 'processing';
+      !hasActiveJob &&
+      !isCancellingJob;
   bool get hasReadyStyle => activeStyleProfile?.isReady ?? false;
   bool get hasComparisonVariants =>
       comparisonDefaultSegments.isNotEmpty &&
@@ -1142,6 +1153,14 @@ class EditorController extends ChangeNotifier {
         );
       }
       jobId = response.jobId;
+      job = JobStatusResponse(
+        jobId: response.jobId,
+        status: response.status,
+        stage: response.stage,
+        progress: response.progress,
+        message: '분석 작업 대기 중',
+        duration: response.duration,
+      );
       isUploading = false;
       try {
         if (!kIsWeb && localPath != null && localPath.isNotEmpty) {
@@ -1168,6 +1187,34 @@ class EditorController extends ChangeNotifier {
       errorMessage = '분석 요청 실패: $error';
     }
     notifyListeners();
+  }
+
+  Future<bool> cancelActiveJob() async {
+    final id = jobId;
+    if (id == null || !canCancelJob) {
+      return false;
+    }
+    isCancellingJob = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      await _ensureLocalEngineForApi();
+      final cancelled = await _apiClient.cancelJob(id);
+      if (jobId != id) {
+        return false;
+      }
+      job = cancelled;
+      isUploading = false;
+      isRendering = false;
+      _pollTimer?.cancel();
+      return cancelled.status == 'cancelled';
+    } catch (error) {
+      errorMessage = '작업 취소 실패: $error';
+      return false;
+    } finally {
+      isCancellingJob = false;
+      notifyListeners();
+    }
   }
 
   Future<void> dropSelectedFileOnTimeline() async {
@@ -6047,6 +6094,11 @@ class EditorController extends ChangeNotifier {
       } else if (latest.status == 'failed') {
         errorMessage = latest.error ?? latest.message;
         isRendering = false;
+        _pollTimer?.cancel();
+      } else if (latest.status == 'cancelled') {
+        isUploading = false;
+        isRendering = false;
+        errorMessage = null;
         _pollTimer?.cancel();
       } else if (latest.status == 'rendering') {
         isRendering = true;

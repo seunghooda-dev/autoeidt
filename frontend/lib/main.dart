@@ -1539,7 +1539,7 @@ class _MediaPanel extends StatelessWidget {
           if (controller.isUploading ||
               controller.isProbingMedia ||
               controller.isPreparingPreview ||
-              controller.job?.status == 'processing' ||
+              controller.hasActiveJob ||
               controller.errorMessage != null) ...[
             const SizedBox(height: 7),
             _MediaActivityStrip(controller: controller),
@@ -1898,6 +1898,10 @@ class _MediaActivityStrip extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
               ),
+              if (controller.canCancelJob || controller.isCancellingJob) ...[
+                const SizedBox(width: 6),
+                JobCancelButton(controller: controller, compact: true),
+              ],
             ],
           ),
           if (!failed) ...[

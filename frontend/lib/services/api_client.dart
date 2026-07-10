@@ -203,6 +203,13 @@ class ApiClient {
     return JobStatusResponse.fromJson(response.data!);
   }
 
+  Future<JobStatusResponse> cancelJob(String jobId) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/jobs/$jobId/cancel',
+    );
+    return JobStatusResponse.fromJson(response.data!);
+  }
+
   Future<TimelineResponse> getTimeline(String jobId) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '$baseUrl/api/jobs/$jobId/timeline',

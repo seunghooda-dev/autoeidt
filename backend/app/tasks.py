@@ -5,6 +5,14 @@ from typing import Any
 
 from app.celery_app import celery_app
 from app.config import get_settings
+from app.job_cancellation import (
+    JobCancelledError,
+    activate_job_cancellation,
+    deactivate_job_cancellation,
+    job_cancellation_requested,
+    mark_job_cancelled,
+    raise_if_job_cancelled,
+)
 from app.schemas import JobStatus
 from app.services.ffmpeg_service import (
     detect_scene_changes,
@@ -326,6 +334,8 @@ def _set_task_state(
     message: str,
     **fields: Any,
 ) -> None:
+    if status is not JobStatus.cancelled:
+        raise_if_job_cancelled(job_id)
     payload = {
         "status": status.value,
         "stage": stage,
@@ -641,6 +651,8 @@ def _analyze_framing_for_analysis(
 
 def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
     settings = get_settings()
+    cancellation_token = activate_job_cancellation(job_id)
+    audio_path: Path | None = None
     try:
         job = store.load(job_id)
         video_path = Path(job["video_path"])
@@ -846,7 +858,25 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             analysis_warnings=analysis_warnings,
         )
         return store.load(job_id)
+    except JobCancelledError:
+        if audio_path is not None:
+            try:
+                if audio_path.exists():
+                    audio_path.unlink()
+            except OSError:
+                pass
+        mark_job_cancelled(job_id, message="분석 작업이 취소되었습니다")
+        return store.load(job_id)
     except Exception as exc:
+        if job_cancellation_requested(job_id):
+            if audio_path is not None:
+                try:
+                    if audio_path.exists():
+                        audio_path.unlink()
+                except OSError:
+                    pass
+            mark_job_cancelled(job_id, message="분석 작업이 취소되었습니다")
+            return store.load(job_id)
         store.update(
             job_id,
             status=JobStatus.failed.value,
@@ -856,6 +886,8 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             error=str(exc),
         )
         raise
+    finally:
+        deactivate_job_cancellation(cancellation_token)
 
 
 @celery_app.task(bind=True, name="app.tasks.analyze_video")
@@ -950,6 +982,8 @@ def render_video_job(
     options: dict[str, Any] | None = None,
     task: Any | None = None,
 ) -> dict[str, Any]:
+    cancellation_token = activate_job_cancellation(job_id)
+    output_path: Path | None = None
     try:
         options = options or {}
         job = store.load(job_id)
@@ -1011,7 +1045,25 @@ def render_video_job(
             render_warnings=render_warnings,
         )
         return store.load(job_id)
+    except JobCancelledError:
+        if output_path is not None:
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+            except OSError:
+                pass
+        mark_job_cancelled(job_id, message="렌더링 작업이 취소되었습니다")
+        return store.load(job_id)
     except Exception as exc:
+        if job_cancellation_requested(job_id):
+            if output_path is not None:
+                try:
+                    if output_path.exists():
+                        output_path.unlink()
+                except OSError:
+                    pass
+            mark_job_cancelled(job_id, message="렌더링 작업이 취소되었습니다")
+            return store.load(job_id)
         store.update(
             job_id,
             status=JobStatus.failed.value,
@@ -1021,6 +1073,8 @@ def render_video_job(
             error=str(exc),
         )
         raise
+    finally:
+        deactivate_job_cancellation(cancellation_token)
 
 
 def render_batch_video_job(
@@ -1029,6 +1083,9 @@ def render_batch_video_job(
     options: dict[str, Any] | None = None,
     task: Any | None = None,
 ) -> dict[str, Any]:
+    cancellation_token = activate_job_cancellation(job_id)
+    output_path: Path | None = None
+    rendered_items: list[dict[str, Any]] = []
     try:
         options = options or {}
         job = store.load(job_id)
@@ -1038,7 +1095,6 @@ def render_batch_video_job(
         if not options.get("include_captions", True):
             captions = []
         caption_style = options.get("caption_style") or {}
-        rendered_items: list[dict[str, Any]] = []
         reserved_output_names: set[str] = set()
         total = max(len(items), 1)
         for index, item in enumerate(items, start=1):
@@ -1126,7 +1182,38 @@ def render_batch_video_job(
             ],
         )
         return store.load(job_id)
+    except JobCancelledError:
+        if output_path is not None:
+            try:
+                if output_path.exists() and not any(
+                    item.get("path") == str(output_path) for item in rendered_items
+                ):
+                    output_path.unlink()
+            except OSError:
+                pass
+        mark_job_cancelled(
+            job_id,
+            message="쇼츠 일괄 렌더링이 취소되었습니다",
+            batch_render_items=rendered_items,
+        )
+        return store.load(job_id)
     except Exception as exc:
+        if job_cancellation_requested(job_id):
+            if output_path is not None:
+                try:
+                    if output_path.exists() and not any(
+                        item.get("path") == str(output_path)
+                        for item in rendered_items
+                    ):
+                        output_path.unlink()
+                except OSError:
+                    pass
+            mark_job_cancelled(
+                job_id,
+                message="쇼츠 일괄 렌더링이 취소되었습니다",
+                batch_render_items=rendered_items,
+            )
+            return store.load(job_id)
         store.update(
             job_id,
             status=JobStatus.failed.value,
@@ -1136,6 +1223,8 @@ def render_batch_video_job(
             error=str(exc),
         )
         raise
+    finally:
+        deactivate_job_cancellation(cancellation_token)
 
 
 @celery_app.task(bind=True, name="app.tasks.render_video")

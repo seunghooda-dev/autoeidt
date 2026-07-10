@@ -15,13 +15,10 @@ class StatusPanel extends StatelessWidget {
     final progress = controller.isUploading
         ? controller.uploadProgress
         : ((controller.job?.progress ?? 0) / 100).clamp(0.0, 1.0);
-    final jobStatus = controller.job?.status;
     final isActive =
         controller.isUploading ||
         controller.isProbingMedia ||
-        jobStatus == 'queued' ||
-        jobStatus == 'processing' ||
-        jobStatus == 'rendering';
+        controller.hasActiveJob;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -108,6 +105,10 @@ class StatusPanel extends StatelessWidget {
                     label: const Text('Analyze'),
                   ),
                 ),
+                if (controller.canCancelJob || controller.isCancellingJob) ...[
+                  const SizedBox(width: 8),
+                  JobCancelButton(controller: controller),
+                ],
               ],
             ),
             if (controller.selectedMediaProbe != null) ...[
@@ -129,6 +130,67 @@ class StatusPanel extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class JobCancelButton extends StatelessWidget {
+  const JobCancelButton({
+    super.key,
+    required this.controller,
+    this.compact = false,
+  });
+
+  final EditorController controller;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.outlined(
+      key: const Key('job-cancel-button'),
+      tooltip: 'Cancel current job',
+      color: Theme.of(context).colorScheme.error,
+      visualDensity: compact ? VisualDensity.compact : null,
+      onPressed: controller.isCancellingJob
+          ? null
+          : () => _confirmCancelJob(context, controller),
+      icon: controller.isCancellingJob
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.stop_circle_outlined),
+    );
+  }
+}
+
+Future<void> _confirmCancelJob(
+  BuildContext context,
+  EditorController controller,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Cancel current job?'),
+      content: const Text(
+        'The running analysis or render will stop. Source media, project data '
+        'and previously completed render files will remain available.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Keep running'),
+        ),
+        FilledButton.icon(
+          key: const Key('job-confirm-cancel-button'),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          icon: const Icon(Icons.stop_circle_outlined),
+          label: const Text('Cancel job'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true && context.mounted) {
+    await controller.cancelActiveJob();
   }
 }
 

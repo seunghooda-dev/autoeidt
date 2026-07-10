@@ -41,6 +41,7 @@ def health() -> dict[str, object]:
             "fast_proxy_preview_v2",
             "fast_proxy_preview_v3",
             "safe_storage_cleanup_v1",
+            "cancellable_jobs_v1",
             "timeline_30p_ndf",
         ],
     }
