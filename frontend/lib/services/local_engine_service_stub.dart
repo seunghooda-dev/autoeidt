@@ -19,6 +19,14 @@ class LocalEngineState {
       message: '브라우저 모드는 실행 중인 API 서버에 연결합니다.',
     );
   }
+
+  factory LocalEngineState.unavailable(String message) {
+    return LocalEngineState(
+      status: 'unavailable',
+      message: message,
+      canStart: false,
+    );
+  }
 }
 
 class LocalEngineService {

@@ -867,12 +867,18 @@ class EditorController extends ChangeNotifier {
   Future<void> ensureLocalEngine() async {
     engineState = const LocalEngineState(
       status: 'starting',
-      message: '로컬 편집 엔진 확인 중',
+      message: '로컬 편집 엔진 확인 및 시작 중 · 첫 실행은 구성요소 설치로 시간이 걸릴 수 있습니다',
       isStarting: true,
     );
     notifyListeners();
 
-    engineState = await _engineService.ensureRunning();
+    try {
+      engineState = await _engineService.ensureRunning();
+    } catch (error) {
+      engineState = LocalEngineState.unavailable(
+        '로컬 편집 엔진 시작 중 오류가 발생했습니다: $error',
+      );
+    }
     notifyListeners();
   }
 

@@ -108,7 +108,13 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 
 set(AUTOEDIT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-install(DIRECTORY "${AUTOEDIT_ROOT}/scripts/"
+install(CODE "
+  file(REMOVE_RECURSE \"${CMAKE_INSTALL_PREFIX}/scripts\")
+  file(REMOVE_RECURSE \"${CMAKE_INSTALL_PREFIX}/backend\")
+  " COMPONENT Runtime)
+install(FILES
+  "${AUTOEDIT_ROOT}/scripts/start-desktop-engine.ps1"
+  "${AUTOEDIT_ROOT}/scripts/stop-desktop-engine.ps1"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/scripts"
   COMPONENT Runtime)
 install(DIRECTORY "${AUTOEDIT_ROOT}/backend/app"

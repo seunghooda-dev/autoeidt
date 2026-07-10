@@ -1,15 +1,31 @@
 param(
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    [string]$WorkspaceRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$Root = Split-Path -Parent $PSScriptRoot
+$Root = if ($WorkspaceRoot) {
+    [IO.Path]::GetFullPath($WorkspaceRoot)
+} else {
+    Split-Path -Parent $PSScriptRoot
+}
 $Backend = Join-Path $Root "backend"
-$VenvPython = Join-Path $Backend ".venv\Scripts\python.exe"
 $Requirements = Join-Path $Backend "requirements.txt"
-$Stamp = Join-Path $Backend ".venv\.desktop-deps.stamp"
-$DataDir = Join-Path $Backend "data"
+$IsSourceWorkspace = Test-Path -LiteralPath (Join-Path $Root ".git")
+$RuntimeRoot = if ($IsSourceWorkspace) {
+    $Backend
+} else {
+    Join-Path $env:LOCALAPPDATA "AutoEdit\engine-runtime"
+}
+$VenvDir = Join-Path $RuntimeRoot ".venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$Stamp = Join-Path $VenvDir ".desktop-deps.stamp"
+$DataDir = if ($IsSourceWorkspace) {
+    Join-Path $Backend "data"
+} else {
+    Join-Path $env:LOCALAPPDATA "AutoEdit\engine-data"
+}
 $PidFile = Join-Path $DataDir "desktop-engine-$Port.pid"
 
 function Get-FirstCommandPath {
@@ -50,24 +66,58 @@ function Add-FFmpegPath {
 }
 
 function New-BackendVenv {
-    Push-Location $Backend
+    function Invoke-VenvCreation {
+        param(
+            [string]$Executable,
+            [string[]]$PrefixArguments = @()
+        )
+
+        try {
+            & $Executable @PrefixArguments -m venv $VenvDir 2>&1 | Out-Host
+            $Succeeded = $LASTEXITCODE -eq 0
+        } catch {
+            Write-Host $_
+            $Succeeded = $false
+        }
+        return [bool]($Succeeded -and (Test-Path -LiteralPath $VenvPython))
+    }
+
+    New-Item -ItemType Directory -Path $RuntimeRoot -Force | Out-Null
+    Push-Location $RuntimeRoot
     try {
-        if (Get-Command py -ErrorAction SilentlyContinue) {
-            try {
-                py -3.12 -m venv .venv
-                return
-            } catch {
-                try {
-                    py -3.11 -m venv .venv
-                    return
-                } catch {
-                    py -3 -m venv .venv
+        $PyLauncher = Join-Path $env:WINDIR "py.exe"
+        if (Test-Path -LiteralPath $PyLauncher) {
+            foreach ($Version in @("-3.12", "-3.11", "-3")) {
+                if (Invoke-VenvCreation -Executable $PyLauncher -PrefixArguments @($Version)) {
                     return
                 }
             }
         }
 
-        python -m venv .venv
+        $Candidates = @(
+            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\python.exe"),
+            (Join-Path $env:LOCALAPPDATA "Python\pythoncore-3.14-64\python.exe")
+        )
+        foreach ($Candidate in $Candidates) {
+            if (
+                (Test-Path -LiteralPath $Candidate) -and
+                (Invoke-VenvCreation -Executable $Candidate)
+            ) {
+                return
+            }
+        }
+
+        $Python = Get-Command python.exe -ErrorAction SilentlyContinue
+        if (
+            $Python -and
+            $Python.Source -notlike "*\WindowsApps\*" -and
+            (Invoke-VenvCreation -Executable $Python.Source)
+        ) {
+            return
+        }
+
+        throw "Python 3.11 이상 런타임을 찾지 못해 로컬 엔진 환경을 만들 수 없습니다."
     } finally {
         Pop-Location
     }
@@ -77,6 +127,10 @@ Add-FFmpegPath
 
 if (-not (Test-Path $VenvPython)) {
     New-BackendVenv
+}
+
+if (-not (Test-Path -LiteralPath $VenvPython)) {
+    throw "로컬 엔진 Python을 준비하지 못했습니다: $VenvPython"
 }
 
 $NeedsInstall = -not (Test-Path $Stamp)

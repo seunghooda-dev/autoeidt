@@ -11,6 +11,13 @@ $ReleaseDir = Join-Path $Frontend "build\windows\x64\runner\Release"
 $ArtifactDir = Join-Path $Root "dist"
 $ZipPath = Join-Path $ArtifactDir "AutoEdit-windows-x64.zip"
 
+function Assert-AppIsClosed {
+    $Running = Get-Process AutoEdit -ErrorAction SilentlyContinue
+    if ($Running) {
+        throw "AutoEdit가 실행 중입니다. 프로그램을 닫은 뒤 Windows 패키지를 다시 빌드해 주세요."
+    }
+}
+
 function Assert-Command {
     param([string]$Name, [string]$Help)
 
@@ -48,6 +55,7 @@ function Invoke-Flutter {
 Assert-Command "flutter" "Flutter SDK가 PATH에 있어야 합니다."
 Assert-Command "ffmpeg" "winget install Gyan.FFmpeg 로 FFmpeg를 설치해 주세요."
 Assert-VisualStudioTools
+Assert-AppIsClosed
 
 Push-Location $Frontend
 try {

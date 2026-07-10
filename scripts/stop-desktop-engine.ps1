@@ -1,12 +1,23 @@
 param(
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    [string]$WorkspaceRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$Root = Split-Path -Parent $PSScriptRoot
+$Root = if ($WorkspaceRoot) {
+    [IO.Path]::GetFullPath($WorkspaceRoot)
+} else {
+    Split-Path -Parent $PSScriptRoot
+}
 $Backend = [IO.Path]::GetFullPath((Join-Path $Root "backend"))
-$PidFile = Join-Path $Backend "data\desktop-engine-$Port.pid"
+$IsSourceWorkspace = Test-Path -LiteralPath (Join-Path $Root ".git")
+$DataDir = if ($IsSourceWorkspace) {
+    Join-Path $Backend "data"
+} else {
+    Join-Path $env:LOCALAPPDATA "AutoEdit\engine-data"
+}
+$PidFile = Join-Path $DataDir "desktop-engine-$Port.pid"
 $Listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
     Select-Object -First 1
 
