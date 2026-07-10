@@ -129,6 +129,7 @@ class WorkspaceController extends ChangeNotifier {
   String activePanel = 'preview';
   String? maximizedPanel;
   String activePreset = 'Edit';
+  String activeWorkspaceView = 'edit';
   String assetFolder = 'All';
   String assetTagFilter = '';
   String assetSearchQuery = '';
@@ -249,6 +250,15 @@ class WorkspaceController extends ChangeNotifier {
       maximizedPanel == null ? 'Panel restored' : 'Panel maximized',
       maximizedPanel ?? activePanel,
     );
+  }
+
+  void setWorkspaceView(String view) {
+    if (!const {'edit', 'captions', 'export'}.contains(view) ||
+        activeWorkspaceView == view) {
+      return;
+    }
+    activeWorkspaceView = view;
+    _changed();
   }
 
   void saveCurrentPreset(String name) {
@@ -400,6 +410,10 @@ class WorkspaceController extends ChangeNotifier {
       mediaOnLeft = json['media_on_left'] as bool? ?? mediaOnLeft;
       layoutLocked = json['layout_locked'] as bool? ?? layoutLocked;
       activePreset = json['active_preset'] as String? ?? activePreset;
+      final restoredView = json['active_workspace_view'] as String?;
+      if (const {'edit', 'captions', 'export'}.contains(restoredView)) {
+        activeWorkspaceView = restoredView!;
+      }
       customPresets
         ..clear()
         ..addAll(
@@ -450,6 +464,7 @@ class WorkspaceController extends ChangeNotifier {
       'media_on_left': mediaOnLeft,
       'layout_locked': layoutLocked,
       'active_preset': activePreset,
+      'active_workspace_view': activeWorkspaceView,
       'custom_presets': customPresets.map((preset) => preset.toJson()).toList(),
       'assets': assets.map((asset) => asset.toJson()).toList(),
       'snapshots': snapshots.map((snapshot) => snapshot.toJson()).toList(),

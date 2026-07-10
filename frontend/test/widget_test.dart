@@ -211,6 +211,60 @@ void main() {
     workspace.dispose();
   });
 
+  testWidgets('top workspace tabs open captions and export tools', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final workspace = WorkspaceController(persist: false);
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 90
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 25, reason: 'lead'),
+      ]
+      ..captions = const [
+        CaptionSegment(
+          order: 1,
+          start: 5,
+          end: 8,
+          text: 'Caption workspace text',
+        ),
+      ];
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: MaterialApp(
+          home: EditorDashboard(workspaceController: workspace),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('workspace-tab-captions')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'captions');
+    expect(find.text('Caption workspace text'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('workspace-tab-export')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'export');
+    expect(find.byKey(const Key('export-workspace-panel')), findsOneWidget);
+    expect(find.text('Delivery formats'), findsOneWidget);
+    expect(find.text('Render preflight'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('workspace-tab-edit')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'edit');
+    expect(find.byKey(const Key('export-workspace-panel')), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    workspace.dispose();
+  });
+
   testWidgets(
     'timeline keeps professional track headers fixed and interactive',
     (tester) async {

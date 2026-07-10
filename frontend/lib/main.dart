@@ -634,6 +634,27 @@ List<EditorCommand> _buildEditorCommands(
       keywords: const ['reset', 'layout'],
     ),
     EditorCommand(
+      label: 'Open Edit workspace',
+      category: 'Workspace',
+      icon: Icons.content_cut,
+      action: () => workspace.setWorkspaceView('edit'),
+      keywords: const ['clips', 'timeline'],
+    ),
+    EditorCommand(
+      label: 'Open Captions workspace',
+      category: 'Workspace',
+      icon: Icons.closed_caption_outlined,
+      action: () => workspace.setWorkspaceView('captions'),
+      keywords: const ['text', 'subtitle'],
+    ),
+    EditorCommand(
+      label: 'Open Export workspace',
+      category: 'Workspace',
+      icon: Icons.ios_share,
+      action: () => workspace.setWorkspaceView('export'),
+      keywords: const ['render', 'delivery'],
+    ),
+    EditorCommand(
       label: 'Render current timeline',
       category: 'Export',
       icon: Icons.movie_creation_outlined,
@@ -960,6 +981,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final workspace = context.watch<WorkspaceController>();
     return Container(
       height: compact ? 56 : 58,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1019,9 +1041,24 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           if (!compact) ...[
-            const _WorkspaceTab(label: 'Edit', selected: true),
-            const _WorkspaceTab(label: 'Captions'),
-            const _WorkspaceTab(label: 'Export'),
+            _WorkspaceTab(
+              label: 'Edit',
+              view: 'edit',
+              selected: workspace.activeWorkspaceView == 'edit',
+              onPressed: () => workspace.setWorkspaceView('edit'),
+            ),
+            _WorkspaceTab(
+              label: 'Captions',
+              view: 'captions',
+              selected: workspace.activeWorkspaceView == 'captions',
+              onPressed: () => workspace.setWorkspaceView('captions'),
+            ),
+            _WorkspaceTab(
+              label: 'Export',
+              view: 'export',
+              selected: workspace.activeWorkspaceView == 'export',
+              onPressed: () => workspace.setWorkspaceView('export'),
+            ),
             const SizedBox(width: 10),
             IconButton.outlined(
               tooltip: 'Workspace, assets, history',
@@ -2182,69 +2219,279 @@ class _InspectorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final workspace = context.watch<WorkspaceController>();
+    final workspaceView = workspace.activeWorkspaceView;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: _SurfacePanel(
         padding: const EdgeInsets.all(12),
-        child: DefaultTabController(
-          length: 5,
-          initialIndex: const bool.fromEnvironment('AUTOEDIT_DEMO') ? 1 : 0,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const TabBar(
-                tabs: [
-                  Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
-                  Tab(icon: Icon(Icons.auto_fix_high), text: 'AI'),
-                  Tab(icon: Icon(Icons.bookmarks_outlined), text: 'Markers'),
-                  Tab(
-                    icon: Icon(Icons.closed_caption_outlined),
-                    text: 'Captions',
-                  ),
-                  Tab(icon: Icon(Icons.tune), text: 'Properties'),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: TabBarView(
+        child: workspaceView == 'export'
+            ? const _ExportWorkspacePanel()
+            : DefaultTabController(
+                key: ValueKey('inspector-$workspaceView'),
+                length: 5,
+                initialIndex: workspaceView == 'captions'
+                    ? 3
+                    : const bool.fromEnvironment('AUTOEDIT_DEMO')
+                    ? 1
+                    : 0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    controller.segments.isEmpty
-                        ? Center(
-                            child: Text(
-                              '분석 후 추천 클립이 표시됩니다',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          )
-                        : HighlightCards(
-                            segments: controller.segments,
-                            onSeek: context.read<EditorController>().seekTo,
-                            selectedOrder: controller.selectedSegmentOrder,
-                            onSelect: context
-                                .read<EditorController>()
-                                .selectSegment,
-                          ),
-                    const AiDirectorPanel(),
-                    const TimelineMarkerPanel(),
-                    CaptionEditor(
-                      captions: controller.captions,
-                      onChanged: context.read<EditorController>().updateCaption,
-                      onToggle: context.read<EditorController>().toggleCaption,
-                      onSeek: context.read<EditorController>().seekTo,
+                    const TabBar(
+                      tabs: [
+                        Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
+                        Tab(icon: Icon(Icons.auto_fix_high), text: 'AI'),
+                        Tab(
+                          icon: Icon(Icons.bookmarks_outlined),
+                          text: 'Markers',
+                        ),
+                        Tab(
+                          icon: Icon(Icons.closed_caption_outlined),
+                          text: 'Captions',
+                        ),
+                        Tab(icon: Icon(Icons.tune), text: 'Properties'),
+                      ],
                     ),
-                    const ClipInspector(),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          controller.segments.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    '분석 후 추천 클립이 표시됩니다',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                )
+                              : HighlightCards(
+                                  segments: controller.segments,
+                                  onSeek: context
+                                      .read<EditorController>()
+                                      .seekTo,
+                                  selectedOrder:
+                                      controller.selectedSegmentOrder,
+                                  onSelect: context
+                                      .read<EditorController>()
+                                      .selectSegment,
+                                ),
+                          const AiDirectorPanel(),
+                          const TimelineMarkerPanel(),
+                          CaptionEditor(
+                            captions: controller.captions,
+                            onChanged: context
+                                .read<EditorController>()
+                                .updateCaption,
+                            onToggle: context
+                                .read<EditorController>()
+                                .toggleCaption,
+                            onSeek: context.read<EditorController>().seekTo,
+                          ),
+                          const ClipInspector(),
+                        ],
+                      ),
+                    ),
+                    if (controller.renderOutputs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      RenderOutputsPanel(
+                        outputs: controller.renderOutputs,
+                        compact: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
-              if (controller.renderOutputs.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                RenderOutputsPanel(
-                  outputs: controller.renderOutputs,
-                  compact: true,
-                ),
-              ],
-            ],
+      ),
+    );
+  }
+}
+
+class _ExportWorkspacePanel extends StatelessWidget {
+  const _ExportWorkspacePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<EditorController>();
+    final editor = context.read<EditorController>();
+    final safety = controller.renderSafetyChecklist;
+    return ListView(
+      key: const Key('export-workspace-panel'),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.ios_share, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Export',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            Text(
+              '${controller.outputDurationSeconds.toStringAsFixed(1)}s',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text('Delivery formats', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          multiSelectionEnabled: true,
+          segments: const [
+            ButtonSegment(value: '16:9', label: Text('16:9')),
+            ButtonSegment(value: '9:16', label: Text('9:16')),
+            ButtonSegment(value: '1:1', label: Text('1:1')),
+          ],
+          selected: controller.selectedExportProfileSet,
+          onSelectionChanged: controller.hasTimeline
+              ? editor.setExportProfiles
+              : null,
+        ),
+        const SizedBox(height: 10),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Burn captions'),
+          value: controller.includeCaptions,
+          onChanged: controller.hasTimeline ? editor.setIncludeCaptions : null,
+        ),
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            'export-caption-style-${controller.captionStylePreset}',
+          ),
+          initialValue: controller.captionStylePreset,
+          decoration: const InputDecoration(
+            labelText: 'Caption style',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'news', child: Text('News')),
+            DropdownMenuItem(value: 'shorts', child: Text('Shorts')),
+            DropdownMenuItem(value: 'minimal', child: Text('Minimal')),
+          ],
+          onChanged: controller.hasTimeline
+              ? (value) {
+                  if (value != null) {
+                    editor.applyCaptionStylePreset(value);
+                  }
+                }
+              : null,
+        ),
+        const Divider(height: 28),
+        Row(
+          children: [
+            Icon(
+              controller.canPassRenderSafety
+                  ? Icons.verified_outlined
+                  : Icons.gpp_maybe_outlined,
+              size: 19,
+              color: controller.canPassRenderSafety
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Render preflight',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            Text(
+              '${controller.renderSafetyBlockCount} block · '
+              '${controller.renderSafetyWarnCount} warn',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final item in safety.take(6)) _ExportSafetyRow(item: item),
+        if (safety.length > 6)
+          Text(
+            '+${safety.length - 6} additional checks',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed:
+              controller.segments.isEmpty ||
+                  (controller.renderSafetyBlockCount == 0 &&
+                      controller.renderSafetyWarnCount == 0)
+              ? null
+              : editor.applyRenderSafetyAutoRepair,
+          icon: const Icon(Icons.health_and_safety_outlined, size: 18),
+          label: const Text('Repair preflight issues'),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: controller.canRender ? editor.requestRender : null,
+          icon: const Icon(Icons.file_upload_outlined),
+          label: Text(
+            controller.hasMultiFormatExport ? 'Export all formats' : 'Export',
           ),
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: controller.canRender ? editor.requestShortsRender : null,
+          icon: const Icon(Icons.phone_iphone),
+          label: const Text('Build shorts export'),
+        ),
+        if (controller.renderOutputs.isNotEmpty) ...[
+          const Divider(height: 28),
+          RenderOutputsPanel(outputs: controller.renderOutputs, compact: true),
+        ],
+      ],
+    );
+  }
+}
+
+class _ExportSafetyRow extends StatelessWidget {
+  const _ExportSafetyRow({required this.item});
+
+  final RenderSafetyItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = switch (item.status) {
+      EditorialCheckStatus.pass => colorScheme.primary,
+      EditorialCheckStatus.warn => colorScheme.tertiary,
+      EditorialCheckStatus.block => colorScheme.error,
+    };
+    final icon = switch (item.status) {
+      EditorialCheckStatus.pass => Icons.check_circle_outline,
+      EditorialCheckStatus.warn => Icons.error_outline,
+      EditorialCheckStatus.block => Icons.cancel_outlined,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.label,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                Text(
+                  item.detail,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2546,31 +2793,50 @@ class _RailButton extends StatelessWidget {
 }
 
 class _WorkspaceTab extends StatelessWidget {
-  const _WorkspaceTab({required this.label, this.selected = false});
+  const _WorkspaceTab({
+    required this.label,
+    required this.view,
+    required this.selected,
+    required this.onPressed,
+  });
 
   final String label;
+  final String view;
   final bool selected;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: selected
-            ? colorScheme.primary.withValues(alpha: 0.14)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: selected ? colorScheme.primary : Colors.transparent,
-        ),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
-          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: TextButton(
+          key: Key('workspace-tab-$view'),
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            foregroundColor: selected
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
+            backgroundColor: selected
+                ? colorScheme.primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+              side: BorderSide(
+                color: selected ? colorScheme.primary : Colors.transparent,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );
