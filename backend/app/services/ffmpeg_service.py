@@ -290,11 +290,14 @@ def create_preview_proxy(
     )
     proxy_seconds = max(30.0, min(requested_duration, 600.0))
     audio_stream_count = _audio_stream_count(resolved)
-    cache_key = sha1(
-        f"preview-v5|audio-mix-{min(audio_stream_count, 8)}|{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|{stat.st_size}|{stat.st_mtime_ns}".encode(
-            "utf-8"
-        )
-    ).hexdigest()
+    audio_channel_counts = _audio_channel_counts(resolved, audio_stream_count)
+    audio_layout_signature = "-".join(str(count) for count in audio_channel_counts)
+    cache_identity = (
+        f"preview-v6|program-audio-a1-a2-{audio_layout_signature}|"
+        f"{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|"
+        f"{stat.st_size}|{stat.st_mtime_ns}"
+    )
+    cache_key = sha1(cache_identity.encode("utf-8")).hexdigest()
     preview_dir = settings.data_dir / "preview_proxies"
     preview_dir.mkdir(parents=True, exist_ok=True)
     output_path = preview_dir / f"{cache_key}.mp4"
@@ -304,7 +307,7 @@ def create_preview_proxy(
     temp_path = output_path.with_suffix(".tmp.mp4")
     if temp_path.exists():
         temp_path.unlink()
-    audio_args = _preview_audio_output_args(audio_stream_count)
+    audio_args = _preview_audio_output_args(audio_channel_counts)
     _run(
         [
             "ffmpeg",
@@ -347,47 +350,78 @@ def create_preview_proxy(
     return output_path, False, source_start, proxy_seconds
 
 
-def _preview_audio_output_args(audio_stream_count: int) -> list[str]:
-    stream_count = max(0, min(audio_stream_count, 8))
-    if stream_count == 0:
+def _preview_audio_output_args(audio_channel_counts: list[int]) -> list[str]:
+    if not audio_channel_counts:
         return []
 
-    mono_filters: list[str] = []
-    mono_labels: list[str] = []
-    for index in range(stream_count):
-        label = f"preview_a{index}"
-        mono_filters.append(
-            f"[0:a:{index}]aresample=48000,"
-            f"aformat=sample_rates=48000:channel_layouts=mono[{label}]"
-        )
-        mono_labels.append(f"[{label}]")
-
-    if stream_count == 1:
+    left_stream, left_channel = _logical_audio_channel(audio_channel_counts, 1)
+    right_stream, right_channel = _logical_audio_channel(
+        audio_channel_counts,
+        2 if sum(audio_channel_counts) >= 2 else 1,
+    )
+    if left_stream == right_stream:
         filter_complex = (
-            f"{mono_filters[0]};"
-            f"{mono_labels[0]}pan=stereo|c0=c0|c1=c0[previewa]"
+            f"[0:a:{left_stream}]aresample=48000,"
+            f"pan=stereo|c0=c{left_channel}|c1=c{right_channel}[previewa]"
         )
     else:
         filter_complex = (
-            ";".join(mono_filters)
-            + ";"
-            + "".join(mono_labels)
-            + f"amix=inputs={stream_count}:duration=first:"
-            "dropout_transition=0:normalize=1,"
-            "pan=stereo|c0=c0|c1=c0[previewa]"
+            f"[0:a:{left_stream}]aresample=48000,"
+            f"pan=mono|c0=c{left_channel}[previewleft];"
+            f"[0:a:{right_stream}]aresample=48000,"
+            f"pan=mono|c0=c{right_channel}[previewright];"
+            "[previewleft][previewright]amerge=inputs=2,"
+            "aformat=channel_layouts=stereo[previewa]"
         )
 
     return ["-filter_complex", filter_complex, "-map", "[previewa]"]
 
 
+def _analysis_audio_output_args(audio_channel_counts: list[int]) -> list[str]:
+    if not audio_channel_counts:
+        return []
+
+    left_stream, left_channel = _logical_audio_channel(audio_channel_counts, 1)
+    right_stream, right_channel = _logical_audio_channel(
+        audio_channel_counts,
+        2 if sum(audio_channel_counts) >= 2 else 1,
+    )
+    if left_stream == right_stream:
+        if left_channel == right_channel:
+            filter_complex = (
+                f"[0:a:{left_stream}]aresample=16000,"
+                f"pan=mono|c0=c{left_channel}[analysisa]"
+            )
+        else:
+            filter_complex = (
+                f"[0:a:{left_stream}]aresample=16000,"
+                f"pan=mono|c0=0.5*c{left_channel}+0.5*c{right_channel}"
+                "[analysisa]"
+            )
+    else:
+        filter_complex = (
+            f"[0:a:{left_stream}]aresample=16000,"
+            f"pan=mono|c0=c{left_channel}[analysisleft];"
+            f"[0:a:{right_stream}]aresample=16000,"
+            f"pan=mono|c0=c{right_channel}[analysisright];"
+            "[analysisleft][analysisright]amix=inputs=2:duration=longest:"
+            "dropout_transition=0:normalize=1[analysisa]"
+        )
+    return ["-filter_complex", filter_complex, "-map", "[analysisa]"]
+
+
 def extract_audio(video_path: Path, audio_path: Path) -> Path:
     audio_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_stream_count = _audio_stream_count(video_path)
+    audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
+    audio_args = _analysis_audio_output_args(audio_channel_counts)
     _run(
         [
             "ffmpeg",
             "-y",
             "-i",
             str(video_path),
+            *audio_args,
             "-vn",
             "-acodec",
             "pcm_s16le",

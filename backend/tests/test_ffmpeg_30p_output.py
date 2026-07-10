@@ -116,7 +116,7 @@ def test_preview_proxy_forces_30p_non_drop_output(
     assert _command_value(command, "-write_tmcd") == "0"
 
 
-def test_preview_proxy_mixes_multistream_audio_for_preview(
+def test_preview_proxy_routes_first_two_program_audio_streams(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -143,12 +143,53 @@ def test_preview_proxy_mixes_multistream_audio_for_preview(
 
     assert "0:a:0" in filter_complex
     assert "0:a:1" in filter_complex
-    assert "0:a:2" in filter_complex
-    assert "0:a:3" in filter_complex
-    assert "amix=inputs=4" in filter_complex
+    assert "0:a:2" not in filter_complex
+    assert "0:a:3" not in filter_complex
+    assert "amerge=inputs=2" in filter_complex
     assert _command_value(command, "-map") == "0:v:0"
     assert command[command.index("-filter_complex") + 2] == "-map"
     assert command[command.index("-filter_complex") + 3] == "[previewa]"
+
+
+def test_preview_proxy_routes_first_two_interleaved_channels() -> None:
+    args = ffmpeg_service._preview_audio_output_args([8])
+
+    filter_complex = _command_value(args, "-filter_complex")
+    assert "[0:a:0]" in filter_complex
+    assert "pan=stereo|c0=c0|c1=c1" in filter_complex
+
+
+def test_analysis_audio_routes_first_two_separate_program_streams(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 8)
+    monkeypatch.setattr(
+        ffmpeg_service,
+        "_audio_channel_counts",
+        lambda path, count: [1] * 8,
+    )
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.extract_audio(
+        Path("C:/media/broadcast_source.mxf"),
+        tmp_path / "analysis.wav",
+    )
+
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "0:a:0" in filter_complex
+    assert "0:a:1" in filter_complex
+    assert "0:a:2" not in filter_complex
+    assert "amix=inputs=2" in filter_complex
 
 
 def test_square_render_profile_outputs_30p_square_frame(

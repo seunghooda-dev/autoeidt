@@ -17,6 +17,7 @@ def test_health_endpoint() -> None:
     assert payload["status"] == "ok"
     assert payload["timeline_frame_rate"] == "30"
     assert "preview_audio_mix_v1" in payload["features"]
+    assert "broadcast_audio_a1_a2_v2" in payload["features"]
     assert "timeline_30p_ndf" in payload["features"]
 
 

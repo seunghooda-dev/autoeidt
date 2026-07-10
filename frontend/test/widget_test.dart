@@ -260,6 +260,27 @@ void main() {
     expect(workspace.activeWorkspaceView, 'edit');
     expect(find.byKey(const Key('export-workspace-panel')), findsNothing);
 
+    await tester.tap(find.byKey(const Key('workspace-rail-ai')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'edit');
+    expect(workspace.activeInspectorTab, 1);
+
+    await tester.tap(find.byKey(const Key('workspace-rail-text')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'captions');
+    expect(workspace.activeInspectorTab, 3);
+
+    workspace.setActivePanel('preview');
+    await tester.tap(find.byKey(const Key('workspace-rail-media')));
+    await tester.pump();
+    expect(workspace.activePanel, 'media');
+
+    await tester.tap(find.byKey(const Key('workspace-rail-settings')));
+    await tester.pumpAndSettle();
+    expect(find.text('Layout'), findsOneWidget);
+    expect(find.text('Assets'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
     workspace.dispose();

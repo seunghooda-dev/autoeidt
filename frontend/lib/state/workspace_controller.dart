@@ -130,6 +130,7 @@ class WorkspaceController extends ChangeNotifier {
   String? maximizedPanel;
   String activePreset = 'Edit';
   String activeWorkspaceView = 'edit';
+  int activeInspectorTab = const bool.fromEnvironment('AUTOEDIT_DEMO') ? 1 : 0;
   String assetFolder = 'All';
   String assetTagFilter = '';
   String assetSearchQuery = '';
@@ -258,6 +259,24 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     activeWorkspaceView = view;
+    if (view == 'edit') {
+      activeInspectorTab = 0;
+    } else if (view == 'captions') {
+      activeInspectorTab = 3;
+    }
+    _changed();
+  }
+
+  void setInspectorTab(int index) {
+    if (index < 0 || index > 4) {
+      return;
+    }
+    final nextView = index == 3 ? 'captions' : 'edit';
+    if (activeInspectorTab == index && activeWorkspaceView == nextView) {
+      return;
+    }
+    activeInspectorTab = index;
+    activeWorkspaceView = nextView;
     _changed();
   }
 
@@ -414,6 +433,13 @@ class WorkspaceController extends ChangeNotifier {
       if (const {'edit', 'captions', 'export'}.contains(restoredView)) {
         activeWorkspaceView = restoredView!;
       }
+      activeInspectorTab =
+          ((json['active_inspector_tab'] as num?)?.toInt() ??
+                  activeInspectorTab)
+              .clamp(0, 4);
+      if (activeWorkspaceView == 'captions') {
+        activeInspectorTab = 3;
+      }
       customPresets
         ..clear()
         ..addAll(
@@ -465,6 +491,7 @@ class WorkspaceController extends ChangeNotifier {
       'layout_locked': layoutLocked,
       'active_preset': activePreset,
       'active_workspace_view': activeWorkspaceView,
+      'active_inspector_tab': activeInspectorTab,
       'custom_presets': customPresets.map((preset) => preset.toJson()).toList(),
       'assets': assets.map((asset) => asset.toJson()).toList(),
       'snapshots': snapshots.map((snapshot) => snapshot.toJson()).toList(),

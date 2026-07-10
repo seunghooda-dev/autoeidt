@@ -10,6 +10,7 @@ output/
 
 backend/.env
 backend/.venv/
+backend/data/
 backend/data/*.mp4
 backend/data/*.mov
 backend/data/*.mkv

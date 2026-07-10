@@ -518,6 +518,19 @@ Future<void> _showEditorCommandPalette(BuildContext context) {
   );
 }
 
+Future<void> _showWorkspaceToolsDialog(BuildContext context) {
+  final workspace = context.read<WorkspaceController>();
+  return showDialog<void>(
+    context: context,
+    builder: (_) => ChangeNotifierProvider<WorkspaceController>.value(
+      value: workspace,
+      child: const Dialog(
+        child: SizedBox(width: 460, height: 620, child: WorkspaceToolsPanel()),
+      ),
+    ),
+  );
+}
+
 List<EditorCommand> _buildEditorCommands(
   EditorController editor,
   WorkspaceController workspace,
@@ -1062,16 +1075,7 @@ class _TopBar extends StatelessWidget {
             const SizedBox(width: 10),
             IconButton.outlined(
               tooltip: 'Workspace, assets, history',
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (_) => Dialog(
-                  child: SizedBox(
-                    width: 460,
-                    height: 620,
-                    child: const WorkspaceToolsPanel(),
-                  ),
-                ),
-              ),
+              onPressed: () => _showWorkspaceToolsDialog(context),
               icon: const Icon(Icons.dashboard_customize_outlined),
             ),
             const SizedBox(width: 6),
@@ -2228,18 +2232,19 @@ class _InspectorPanel extends StatelessWidget {
         child: workspaceView == 'export'
             ? const _ExportWorkspacePanel()
             : DefaultTabController(
-                key: ValueKey('inspector-$workspaceView'),
+                key: ValueKey(
+                  'inspector-$workspaceView-${workspace.activeInspectorTab}',
+                ),
                 length: 5,
                 initialIndex: workspaceView == 'captions'
                     ? 3
-                    : const bool.fromEnvironment('AUTOEDIT_DEMO')
-                    ? 1
-                    : 0,
+                    : workspace.activeInspectorTab,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const TabBar(
-                      tabs: [
+                    TabBar(
+                      onTap: workspace.setInspectorTab,
+                      tabs: const [
                         Tab(icon: Icon(Icons.auto_awesome), text: 'Clips'),
                         Tab(icon: Icon(Icons.auto_fix_high), text: 'AI'),
                         Tab(
@@ -2732,22 +2737,53 @@ class _WorkspaceRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workspace = context.watch<WorkspaceController>();
     return DecoratedBox(
       decoration: const BoxDecoration(color: Color(0xFF101217)),
       child: Column(
-        children: const [
-          SizedBox(height: 10),
+        children: [
+          const SizedBox(height: 10),
           _RailButton(
+            key: const Key('workspace-rail-media'),
             icon: Icons.perm_media_outlined,
             label: 'Media',
-            active: true,
+            active: workspace.activePanel == 'media',
+            onPressed: () => workspace.setActivePanel('media'),
           ),
-          _RailButton(icon: Icons.content_cut, label: 'Edit'),
-          _RailButton(icon: Icons.auto_awesome, label: 'AI'),
-          _RailButton(icon: Icons.closed_caption_outlined, label: 'Text'),
-          Spacer(),
-          _RailButton(icon: Icons.settings_outlined, label: 'Settings'),
-          SizedBox(height: 10),
+          _RailButton(
+            key: const Key('workspace-rail-edit'),
+            icon: Icons.content_cut,
+            label: 'Edit',
+            active:
+                workspace.activeWorkspaceView == 'edit' &&
+                workspace.activeInspectorTab == 0,
+            onPressed: () => workspace.setInspectorTab(0),
+          ),
+          _RailButton(
+            key: const Key('workspace-rail-ai'),
+            icon: Icons.auto_awesome,
+            label: 'AI',
+            active:
+                workspace.activeWorkspaceView == 'edit' &&
+                workspace.activeInspectorTab == 1,
+            onPressed: () => workspace.setInspectorTab(1),
+          ),
+          _RailButton(
+            key: const Key('workspace-rail-text'),
+            icon: Icons.closed_caption_outlined,
+            label: 'Text',
+            active: workspace.activeWorkspaceView == 'captions',
+            onPressed: () => workspace.setWorkspaceView('captions'),
+          ),
+          const Spacer(),
+          _RailButton(
+            key: const Key('workspace-rail-settings'),
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            active: false,
+            onPressed: () => _showWorkspaceToolsDialog(context),
+          ),
+          const SizedBox(height: 10),
         ],
       ),
     );
@@ -2756,37 +2792,39 @@ class _WorkspaceRail extends StatelessWidget {
 
 class _RailButton extends StatelessWidget {
   const _RailButton({
+    super.key,
     required this.icon,
     required this.label,
-    this.active = false,
+    required this.active,
+    required this.onPressed,
   });
 
   final IconData icon;
   final String label;
   final bool active;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final color = active ? colorScheme.primary : colorScheme.onSurfaceVariant;
-    return Tooltip(
-      message: label,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: active
-                ? colorScheme.primary.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: active
-                ? Border.all(color: colorScheme.primary.withValues(alpha: 0.45))
-                : null,
-          ),
-          child: Icon(icon, size: 21, color: color),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: IconButton(
+        tooltip: label,
+        onPressed: onPressed,
+        isSelected: active,
+        style: IconButton.styleFrom(
+          fixedSize: const Size(42, 42),
+          backgroundColor: active
+              ? colorScheme.primary.withValues(alpha: 0.14)
+              : Colors.transparent,
+          side: active
+              ? BorderSide(color: colorScheme.primary.withValues(alpha: 0.45))
+              : BorderSide.none,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
+        icon: Icon(icon, size: 21, color: color),
       ),
     );
   }

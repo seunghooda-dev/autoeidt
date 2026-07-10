@@ -27,13 +27,14 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "app": settings.app_name,
-        "engine_version": "2026.07.09-preview-audio-mix",
+        "engine_version": "2026.07.10-broadcast-audio-routing",
         "timeline_frame_rate": "30",
         "features": [
             "local_import",
             "local_probe",
             "local_preview_proxy",
             "preview_audio_mix_v1",
+            "broadcast_audio_a1_a2_v2",
             "timeline_30p_ndf",
         ],
     }
