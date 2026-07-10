@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,11 +7,19 @@ from app.config import get_settings
 from app.routers.jobs import router as jobs_router
 from app.routers.styles import router as styles_router
 from app.routers.system import router as system_router
+from app.storage import store
 
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if settings.task_runner == "inline":
+        store.recover_interrupted_jobs()
+    yield
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +39,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "app": settings.app_name,
-        "engine_version": "2026.07.10-fast-preview-v3",
+        "engine_version": "2026.07.10-fast-preview-v5",
         "timeline_frame_rate": "30",
         "preview_proxy_seconds": settings.preview_proxy_seconds,
         "features": [
@@ -40,8 +50,11 @@ def health() -> dict[str, object]:
             "broadcast_audio_a1_a2_v2",
             "fast_proxy_preview_v2",
             "fast_proxy_preview_v3",
+            "compatibility_preview_v1",
+            "local_preview_file_v1",
             "safe_storage_cleanup_v1",
             "cancellable_jobs_v1",
+            "recent_jobs_v1",
             "timeline_30p_ndf",
         ],
     }

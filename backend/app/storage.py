@@ -110,6 +110,41 @@ class JobStore:
         data.update(fields)
         return self.save(job_id, data)
 
+    def list_jobs(self, limit: int | None = 50) -> list[dict[str, Any]]:
+        jobs: list[dict[str, Any]] = []
+        for path in self.jobs_dir.glob("*/job.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(payload, dict) and payload.get("job_id"):
+                jobs.append(payload)
+        jobs.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        if limit is None:
+            return jobs
+        return jobs[: max(0, limit)]
+
+    def recover_interrupted_jobs(self) -> int:
+        active_statuses = {
+            JobStatus.queued.value,
+            JobStatus.processing.value,
+            JobStatus.rendering.value,
+        }
+        recovered = 0
+        for job in self.list_jobs(limit=None):
+            if str(job.get("status") or "") not in active_statuses:
+                continue
+            self.update(
+                str(job["job_id"]),
+                status=JobStatus.cancelled.value,
+                stage="interrupted",
+                message="이전 엔진 세션이 종료되어 작업이 중단되었습니다",
+                cancel_requested=False,
+                error=None,
+            )
+            recovered += 1
+        return recovered
+
     def load_style(self, style_id: str) -> dict[str, Any]:
         path = self.style_file(style_id)
         if not path.exists():

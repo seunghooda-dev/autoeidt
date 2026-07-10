@@ -12,6 +12,19 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('broadcast pixel formats require a compatibility preview proxy', () {
+    final probe = MediaProbeInfo.fromJson({
+      'path': r'C:\media\studio-master.mp4',
+      'filename': 'studio-master.mp4',
+      'video_codec': 'h264',
+      'pixel_format': 'yuv444p',
+      'can_analyze': true,
+    });
+
+    expect(probe.pixelFormat, 'yuv444p');
+    expect(probe.requiresCompatibilityProxy, isTrue);
+  });
+
   test(
     'MXF preview starts quickly and continues in the next proxy window',
     () async {

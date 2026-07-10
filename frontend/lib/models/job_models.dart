@@ -37,6 +37,7 @@ class MediaProbeInfo {
     required this.bitRate,
     required this.videoCodec,
     required this.videoCodecLongName,
+    required this.pixelFormat,
     required this.width,
     required this.height,
     required this.frameRate,
@@ -64,6 +65,7 @@ class MediaProbeInfo {
   final int bitRate;
   final String videoCodec;
   final String videoCodecLongName;
+  final String pixelFormat;
   final int width;
   final int height;
   final double frameRate;
@@ -101,6 +103,25 @@ class MediaProbeInfo {
     return '${timelineFrameRate.toStringAsFixed(2)}p NDF';
   }
 
+  bool get requiresCompatibilityProxy {
+    if (isMxf) {
+      return true;
+    }
+    final format = pixelFormat.toLowerCase();
+    if (format.contains('422') ||
+        format.contains('444') ||
+        format.contains('10le') ||
+        format.contains('12le') ||
+        format.contains('16le')) {
+      return true;
+    }
+    return const {
+      'dnxhd',
+      'prores',
+      'mpeg2video',
+    }.contains(videoCodec.toLowerCase());
+  }
+
   factory MediaProbeInfo.fromJson(Map<String, dynamic> json) {
     final rawWarnings = json['warnings'] as List<dynamic>? ?? const [];
     return MediaProbeInfo(
@@ -112,6 +133,7 @@ class MediaProbeInfo {
       bitRate: (json['bit_rate'] as num?)?.toInt() ?? 0,
       videoCodec: json['video_codec'] as String? ?? '',
       videoCodecLongName: json['video_codec_long_name'] as String? ?? '',
+      pixelFormat: json['pixel_format'] as String? ?? '',
       width: (json['width'] as num?)?.toInt() ?? 0,
       height: (json['height'] as num?)?.toInt() ?? 0,
       frameRate: (json['frame_rate'] as num?)?.toDouble() ?? 0,
@@ -456,6 +478,100 @@ class StyleProfile {
           )
           .toList(),
       error: json['error'] as String?,
+    );
+  }
+}
+
+class RecentJobSummary {
+  const RecentJobSummary({
+    required this.jobId,
+    required this.status,
+    required this.stage,
+    required this.progress,
+    required this.message,
+    required this.projectName,
+    required this.originalFilename,
+    required this.videoPath,
+    required this.duration,
+    required this.importMode,
+    required this.sourceExists,
+    required this.hasTimeline,
+    required this.segmentCount,
+    required this.renderExists,
+    required this.canResume,
+    this.renderPath,
+    this.renderUrl,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String jobId;
+  final String status;
+  final String stage;
+  final int progress;
+  final String message;
+  final String projectName;
+  final String originalFilename;
+  final String videoPath;
+  final double duration;
+  final String importMode;
+  final bool sourceExists;
+  final bool hasTimeline;
+  final int segmentCount;
+  final bool renderExists;
+  final String? renderPath;
+  final String? renderUrl;
+  final bool canResume;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  String get displayName {
+    if (projectName.trim().isNotEmpty) {
+      return projectName;
+    }
+    if (originalFilename.trim().isNotEmpty) {
+      return originalFilename;
+    }
+    return 'Untitled job';
+  }
+
+  String get statusLabel {
+    if (stage == 'interrupted') {
+      return 'Interrupted';
+    }
+    return switch (status) {
+      'rendered' => 'Rendered',
+      'completed' => 'Ready',
+      'processing' => 'Analyzing',
+      'rendering' => 'Rendering',
+      'queued' => 'Queued',
+      'cancelled' => 'Cancelled',
+      'failed' => 'Failed',
+      _ => status,
+    };
+  }
+
+  factory RecentJobSummary.fromJson(Map<String, dynamic> json) {
+    return RecentJobSummary(
+      jobId: json['job_id'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      stage: json['stage'] as String? ?? '',
+      progress: (json['progress'] as num?)?.toInt() ?? 0,
+      message: json['message'] as String? ?? '',
+      projectName: json['project_name'] as String? ?? '',
+      originalFilename: json['original_filename'] as String? ?? '',
+      videoPath: json['video_path'] as String? ?? '',
+      duration: (json['duration'] as num?)?.toDouble() ?? 0,
+      importMode: json['import_mode'] as String? ?? '',
+      sourceExists: json['source_exists'] as bool? ?? false,
+      hasTimeline: json['has_timeline'] as bool? ?? false,
+      segmentCount: (json['segment_count'] as num?)?.toInt() ?? 0,
+      renderExists: json['render_exists'] as bool? ?? false,
+      renderPath: json['render_path'] as String?,
+      renderUrl: json['render_url'] as String?,
+      canResume: json['can_resume'] as bool? ?? false,
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
     );
   }
 }

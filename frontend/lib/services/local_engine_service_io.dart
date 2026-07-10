@@ -190,8 +190,11 @@ class LocalEngineService {
       final featureSet = features.map((item) => '$item').toSet();
       return featureSet.contains('broadcast_audio_a1_a2_v2') &&
           featureSet.contains('fast_proxy_preview_v3') &&
+          featureSet.contains('compatibility_preview_v1') &&
+          featureSet.contains('local_preview_file_v1') &&
           featureSet.contains('safe_storage_cleanup_v1') &&
           featureSet.contains('cancellable_jobs_v1') &&
+          featureSet.contains('recent_jobs_v1') &&
           featureSet.contains('timeline_30p_ndf');
     } catch (_) {
       return false;

@@ -70,6 +70,10 @@ class EditorController extends ChangeNotifier {
   bool hasRecoverySnapshot = false;
   DateTime? recoverySnapshotSavedAt;
   List<ProjectRecoverySnapshot> recoveryVersions = [];
+  List<RecentJobSummary> recentJobs = [];
+  bool isLoadingRecentJobs = false;
+  bool isOpeningRecentJob = false;
+  String? recentJobsError;
   String? errorMessage;
   double duration = 0;
   List<HighlightSegment> segments = [];
@@ -129,6 +133,12 @@ class EditorController extends ChangeNotifier {
   double _manualPlayheadSeconds = 0;
   static const double _initialProxyPreviewSeconds = 8;
   static const double _seekProxyPreviewSeconds = 30;
+  static const Duration _directPreviewInitializationTimeout = Duration(
+    milliseconds: 1500,
+  );
+  static const Duration _proxyPreviewInitializationTimeout = Duration(
+    seconds: 8,
+  );
   static const int _avSyncLengthToleranceFrames = 2;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
@@ -1099,10 +1109,10 @@ class EditorController extends ChangeNotifier {
       }
       if (!probe.canAnalyze) {
         errorMessage = '사전검사 실패: 분석 가능한 비디오 스트림이 없습니다.';
-      } else if (probe.isMxf &&
-          !isPreparingPreview &&
-          (videoController == null || !_previewUsesProxy)) {
-        unawaited(_initializeProxyPreview(path));
+      } else if (probe.requiresCompatibilityProxy && !_previewUsesProxy) {
+        unawaited(
+          _initializeProxyPreview(path, focusSeconds: currentPositionSeconds),
+        );
       }
     } catch (error) {
       if (selectedFile?.path == path) {
@@ -1207,6 +1217,7 @@ class EditorController extends ChangeNotifier {
       isUploading = false;
       isRendering = false;
       _pollTimer?.cancel();
+      unawaited(refreshRecentJobs(silent: true));
       return cancelled.status == 'cancelled';
     } catch (error) {
       errorMessage = '작업 취소 실패: $error';
@@ -1684,6 +1695,68 @@ class EditorController extends ChangeNotifier {
       recoveryVersions = [];
     }
     notifyListeners();
+  }
+
+  Future<void> refreshRecentJobs({bool silent = false}) async {
+    if (isLoadingRecentJobs || isOpeningRecentJob) {
+      return;
+    }
+    isLoadingRecentJobs = true;
+    recentJobsError = null;
+    if (!silent) {
+      notifyListeners();
+    }
+    try {
+      await _ensureLocalEngineForApi();
+      recentJobs = await _apiClient.listRecentJobs();
+    } catch (error) {
+      recentJobsError = '최근 작업을 불러오지 못했습니다: $error';
+    } finally {
+      isLoadingRecentJobs = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> resumeRecentJob(RecentJobSummary summary) async {
+    if (isOpeningRecentJob || hasActiveJob || !summary.canResume) {
+      return false;
+    }
+    isOpeningRecentJob = true;
+    recentJobsError = null;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      await _ensureLocalEngineForApi();
+      final status = await _apiClient.getJob(summary.jobId);
+      final project = await _apiClient.getProject(summary.jobId);
+      await _disposeVideoController();
+      _applyProject(project, keepJob: false, markProjectDirty: false);
+      job = status;
+      jobId = summary.jobId;
+      projectFilePath = null;
+      selectedMediaProbe = null;
+      isUploading = false;
+      isRendering = status.status == 'rendering';
+      renderUrl = status.renderUrl == null
+          ? null
+          : _apiClient.absoluteUrl(status.renderUrl!);
+      _markProjectSaved();
+
+      if (hasActiveJob) {
+        _startPolling();
+      }
+      if (!kIsWeb && sourceMediaIsLinked) {
+        unawaited(_prepareLocalPreview(sourceMediaPath!));
+        unawaited(probeSelectedMedia());
+      }
+      return true;
+    } catch (error) {
+      recentJobsError = '최근 작업 열기 실패: $error';
+      return false;
+    } finally {
+      isOpeningRecentJob = false;
+      notifyListeners();
+    }
   }
 
   Future<void> restoreRecoveryProject({bool initializePreview = true}) async {
@@ -6164,7 +6237,9 @@ class EditorController extends ChangeNotifier {
         return;
       }
       pendingController = VideoPlayerController.file(file);
-      await pendingController.initialize();
+      await pendingController.initialize().timeout(
+        _directPreviewInitializationTimeout,
+      );
       await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;
@@ -6266,10 +6341,17 @@ class EditorController extends ChangeNotifier {
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;
       }
-      pendingController = VideoPlayerController.networkUrl(
-        Uri.parse(preview.url),
+      final localPreviewPath = preview.localPath;
+      final localPreviewFile = localPreviewPath == null
+          ? null
+          : io.File(localPreviewPath);
+      pendingController =
+          localPreviewFile != null && await localPreviewFile.exists()
+          ? VideoPlayerController.file(localPreviewFile)
+          : VideoPlayerController.networkUrl(Uri.parse(preview.url));
+      await pendingController.initialize().timeout(
+        _proxyPreviewInitializationTimeout,
       );
-      await pendingController.initialize();
       await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;

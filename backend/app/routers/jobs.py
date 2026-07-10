@@ -1,7 +1,16 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -10,6 +19,7 @@ from app.schemas import (
     BatchRenderRequest,
     JobStatus,
     JobStatusResponse,
+    JobSummaryResponse,
     LocalImportRequest,
     LocalPreviewRequest,
     LocalPreviewResponse,
@@ -206,6 +216,7 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LocalPreviewResponse(
         preview_url=f"/api/jobs/preview/{preview_path.name}",
+        preview_path=str(preview_path.resolve()),
         cached=cached,
         source_start=source_start,
         duration=duration,
@@ -244,6 +255,49 @@ def import_local_video(
         stage="queued",
         progress=0,
     )
+
+
+@router.get("", response_model=list[JobSummaryResponse])
+def list_recent_jobs(
+    limit: int = Query(default=30, ge=1, le=100),
+) -> list[JobSummaryResponse]:
+    summaries: list[JobSummaryResponse] = []
+    for job in store.list_jobs(limit=limit):
+        video_path_value = str(job.get("video_path") or "")
+        video_path = Path(video_path_value) if video_path_value else None
+        render_path_value = str(job.get("render_path") or "")
+        render_path = Path(render_path_value) if render_path_value else None
+        segments = job.get("segments") or []
+        source_exists = bool(video_path is not None and video_path.is_file())
+        render_exists = bool(render_path is not None and render_path.is_file())
+        has_timeline = bool(segments and float(job.get("duration") or 0) > 0)
+        status_value = str(job.get("status") or "")
+        if status_value not in {item.value for item in JobStatus}:
+            status_value = JobStatus.failed.value
+        summaries.append(
+            JobSummaryResponse(
+                job_id=str(job.get("job_id") or ""),
+                status=status_value,
+                stage=str(job.get("stage") or ""),
+                progress=int(job.get("progress") or 0),
+                message=str(job.get("message") or ""),
+                project_name=str(job.get("project_name") or ""),
+                original_filename=str(job.get("original_filename") or ""),
+                video_path=video_path_value,
+                duration=float(job.get("duration") or 0),
+                import_mode=str(job.get("import_mode") or ""),
+                source_exists=source_exists,
+                has_timeline=has_timeline,
+                segment_count=len(segments),
+                render_exists=render_exists,
+                render_path=str(render_path) if render_path is not None else None,
+                render_url=job.get("render_url"),
+                can_resume=source_exists or has_timeline or render_exists,
+                created_at=job.get("created_at"),
+                updated_at=job.get("updated_at"),
+            )
+        )
+    return summaries
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)

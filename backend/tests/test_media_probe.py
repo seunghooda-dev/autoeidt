@@ -19,6 +19,7 @@ def test_media_probe_summarizes_broadcast_mxf_op1a_like_file() -> None:
                     "codec_type": "video",
                     "codec_name": "mpeg2video",
                     "codec_long_name": "MPEG-2 video",
+                    "pix_fmt": "yuv422p",
                     "width": 1920,
                     "height": 1080,
                     "avg_frame_rate": "30000/1001",
@@ -40,6 +41,7 @@ def test_media_probe_summarizes_broadcast_mxf_op1a_like_file() -> None:
     )
 
     assert summary["is_mxf"] is True
+    assert summary["pixel_format"] == "yuv422p"
     assert summary["can_analyze"] is True
     assert summary["mxf_operational_pattern"] == "OP1a-like single-file MXF"
     assert summary["frame_rate"] == 29.97

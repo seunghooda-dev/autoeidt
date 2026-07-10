@@ -283,6 +283,7 @@ class LocalPreviewRequest(BaseModel):
 
 class LocalPreviewResponse(BaseModel):
     preview_url: str
+    preview_path: str = ""
     cached: bool = False
     source_start: float = 0.0
     duration: float = 0.0
@@ -330,6 +331,7 @@ class MediaProbeResponse(BaseModel):
     bit_rate: int = 0
     video_codec: str = ""
     video_codec_long_name: str = ""
+    pixel_format: str = ""
     width: int = 0
     height: int = 0
     frame_rate: float = 0.0
@@ -486,6 +488,28 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
     style_profile: StyleProfile | None = None
     analysis_warnings: list[str] = Field(default_factory=list)
+
+
+class JobSummaryResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    stage: str
+    progress: int = 0
+    message: str = ""
+    project_name: str = ""
+    original_filename: str = ""
+    video_path: str = ""
+    duration: float = 0.0
+    import_mode: str = ""
+    source_exists: bool = False
+    has_timeline: bool = False
+    segment_count: int = 0
+    render_exists: bool = False
+    render_path: str | None = None
+    render_url: str | None = None
+    can_resume: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class BatchRenderRequest(BaseModel):

@@ -297,6 +297,7 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         "bit_rate": _safe_int(format_info.get("bit_rate")),
         "video_codec": str(video.get("codec_name") or ""),
         "video_codec_long_name": str(video.get("codec_long_name") or ""),
+        "pixel_format": str(video.get("pix_fmt") or ""),
         "width": _safe_int(video.get("width")),
         "height": _safe_int(video.get("height")),
         "frame_rate": round(frame_rate, 3),

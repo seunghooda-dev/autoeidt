@@ -9,11 +9,13 @@ class LocalPreviewInfo {
     required this.url,
     required this.sourceStart,
     required this.duration,
+    this.localPath,
   });
 
   final String url;
   final double sourceStart;
   final double duration;
+  final String? localPath;
 
   double get sourceEnd => sourceStart + duration;
 }
@@ -102,6 +104,7 @@ class ApiClient {
       url: absoluteUrl(previewUrl),
       sourceStart: _readDouble(response.data?['source_start']),
       duration: _readDouble(response.data?['duration']),
+      localPath: response.data?['preview_path'] as String?,
     );
   }
 
@@ -208,6 +211,19 @@ class ApiClient {
       '$baseUrl/api/jobs/$jobId/cancel',
     );
     return JobStatusResponse.fromJson(response.data!);
+  }
+
+  Future<List<RecentJobSummary>> listRecentJobs({int limit = 30}) async {
+    final response = await _dio.get<List<dynamic>>(
+      '$baseUrl/api/jobs',
+      queryParameters: {'limit': limit},
+    );
+    return (response.data ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) => RecentJobSummary.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .toList();
   }
 
   Future<TimelineResponse> getTimeline(String jobId) async {

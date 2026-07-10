@@ -20,7 +20,11 @@ class WorkspaceToolsPanel extends StatelessWidget {
         children: [
           TabBar(
             onTap: (index) {
-              if (index == 3 &&
+              if (index == 2 &&
+                  editor.recentJobs.isEmpty &&
+                  !editor.isLoadingRecentJobs) {
+                unawaited(editor.refreshRecentJobs());
+              } else if (index == 3 &&
                   editor.storageUsage == null &&
                   !editor.isRefreshingStorage) {
                 unawaited(editor.refreshStorageUsage());
@@ -500,6 +504,50 @@ class _HistoryTab extends StatelessWidget {
         Row(
           children: [
             Text(
+              'Recent engine jobs',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const Spacer(),
+            IconButton.outlined(
+              tooltip: 'Refresh recent jobs',
+              onPressed: editor.isLoadingRecentJobs || editor.isOpeningRecentJob
+                  ? null
+                  : () => editor.refreshRecentJobs(),
+              icon: editor.isLoadingRecentJobs
+                  ? const SizedBox.square(
+                      dimension: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 19),
+            ),
+          ],
+        ),
+        if (editor.recentJobsError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              editor.recentJobsError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          )
+        else if (editor.recentJobs.isEmpty && !editor.isLoadingRecentJobs)
+          const ListTile(
+            dense: true,
+            leading: Icon(Icons.history_toggle_off),
+            title: Text('No engine jobs yet'),
+          )
+        else
+          for (final recent in editor.recentJobs.take(8))
+            _RecentJobTile(
+              job: recent,
+              current: editor.jobId == recent.jobId,
+              opening: editor.isOpeningRecentJob,
+              onOpen: () => _openRecentJob(context, recent),
+            ),
+        const Divider(height: 28),
+        Row(
+          children: [
+            Text(
               'Saved versions',
               style: Theme.of(context).textTheme.titleSmall,
             ),
@@ -631,6 +679,156 @@ class _HistoryTab extends StatelessWidget {
       labelController.dispose();
     }
   }
+
+  Future<void> _openRecentJob(
+    BuildContext context,
+    RecentJobSummary recent,
+  ) async {
+    if (editor.jobId == recent.jobId || editor.hasActiveJob) {
+      return;
+    }
+    if (editor.hasUnsavedProjectChanges) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Open recent job?'),
+          content: Text(
+            'The current unsaved edit will remain in Auto Recovery. Open '
+            '${recent.displayName} now?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep current'),
+            ),
+            FilledButton.icon(
+              key: const Key('recent-job-confirm-open'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.history),
+              label: const Text('Open job'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) {
+        return;
+      }
+    }
+    final opened = await editor.resumeRecentJob(recent);
+    if (opened && context.mounted) {
+      Navigator.pop(context);
+    }
+  }
+}
+
+class _RecentJobTile extends StatelessWidget {
+  const _RecentJobTile({
+    required this.job,
+    required this.current,
+    required this.opening,
+    required this.onOpen,
+  });
+
+  final RecentJobSummary job;
+  final bool current;
+  final bool opening;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusColor = switch (job.status) {
+      'rendered' || 'completed' => colorScheme.primary,
+      'processing' || 'rendering' || 'queued' => colorScheme.tertiary,
+      'failed' => colorScheme.error,
+      _ => colorScheme.onSurfaceVariant,
+    };
+    final canOpen = job.canResume && !current && !opening;
+    return ListTile(
+      key: Key('recent-job-${job.jobId}'),
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      enabled: canOpen,
+      onTap: canOpen ? onOpen : null,
+      leading: Icon(
+        job.sourceExists
+            ? job.renderExists
+                  ? Icons.movie_filter_outlined
+                  : Icons.video_file_outlined
+            : job.renderExists || job.hasTimeline
+            ? Icons.link_off
+            : Icons.error_outline,
+        color: statusColor,
+      ),
+      title: Text(
+        job.displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        _recentJobDetail(job),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: current
+          ? const Chip(
+              label: Text('Current'),
+              visualDensity: VisualDensity.compact,
+            )
+          : IconButton(
+              tooltip: job.canResume
+                  ? 'Open recent job'
+                  : 'Job files unavailable',
+              onPressed: canOpen ? onOpen : null,
+              icon: const Icon(Icons.open_in_new, size: 18),
+            ),
+    );
+  }
+}
+
+String _recentJobDetail(RecentJobSummary job) {
+  final parts = <String>[job.statusLabel];
+  if (job.segmentCount > 0) {
+    parts.add('${job.segmentCount} clips');
+  }
+  if (job.duration > 0) {
+    parts.add(_shortDuration(job.duration));
+  }
+  if (!job.sourceExists) {
+    parts.add('Source offline');
+  }
+  if (job.updatedAt != null) {
+    parts.add(_shortJobTime(job.updatedAt!));
+  }
+  return parts.join(' · ');
+}
+
+String _shortDuration(double seconds) {
+  final total = seconds.round().clamp(0, 359999);
+  final hours = total ~/ 3600;
+  final minutes = total.remainder(3600) ~/ 60;
+  final remaining = total.remainder(60);
+  if (hours > 0) {
+    return '${hours.toString().padLeft(2, '0')}:'
+        '${minutes.toString().padLeft(2, '0')}:'
+        '${remaining.toString().padLeft(2, '0')}';
+  }
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${remaining.toString().padLeft(2, '0')}';
+}
+
+String _shortJobTime(DateTime value) {
+  final local = value.toLocal();
+  final now = DateTime.now();
+  if (local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day) {
+    return _shortTime(local);
+  }
+  return '${local.month.toString().padLeft(2, '0')}/'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
 
 class _StorageTab extends StatelessWidget {
