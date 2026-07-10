@@ -2741,7 +2741,10 @@ class _TimelinePainter extends CustomPainter {
         disabledPattern: !segment.videoEnabled,
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
-        thumbnail: timelineThumbnails[secondsToTimecodeFrame(segment.start)],
+        thumbnails: timelineThumbnailSampleFrames(segment)
+            .map((frame) => timelineThumbnails[frame])
+            .whereType<ui.Image>()
+            .toList(),
       );
       _drawFadeOverlay(canvas, size, segment, placement);
 
@@ -2847,7 +2850,7 @@ class _TimelinePainter extends CustomPainter {
     double? waveformSourceStart,
     double? waveformSourceEnd,
     bool disabledPattern = false,
-    ui.Image? thumbnail,
+    List<ui.Image> thumbnails = const [],
   }) {
     final left = _secondsToX(start, size.width);
     final right = _secondsToX(end, size.width);
@@ -2877,12 +2880,14 @@ class _TimelinePainter extends CustomPainter {
           ],
         ).createShader(rect),
     );
-    if (track == _DragTrack.video && thumbnail != null && rect.width >= 20) {
+    if (track == _DragTrack.video &&
+        thumbnails.isNotEmpty &&
+        rect.width >= 20) {
       _drawVideoThumbnailStrip(
         canvas,
         rrect,
         rect,
-        thumbnail,
+        thumbnails,
         enabled: !disabledPattern,
       );
     }
@@ -2925,7 +2930,7 @@ class _TimelinePainter extends CustomPainter {
       start,
       end,
       track,
-      hasThumbnail: track == _DragTrack.video && thumbnail != null,
+      hasThumbnail: track == _DragTrack.video && thumbnails.isNotEmpty,
     );
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
@@ -2954,13 +2959,20 @@ class _TimelinePainter extends CustomPainter {
     Canvas canvas,
     RRect clip,
     Rect rect,
-    ui.Image image, {
+    List<ui.Image> images, {
     required bool enabled,
   }) {
     final tileWidth = math.max(36.0, rect.height * 16 / 9);
+    final tileCount = math.max(1, (rect.width / tileWidth).ceil());
     canvas.save();
     canvas.clipRRect(clip);
-    for (var left = rect.left; left < rect.right; left += tileWidth) {
+    for (var index = 0; index < tileCount; index++) {
+      final left = rect.left + index * tileWidth;
+      final imageIndex = images.length == 1
+          ? 0
+          : ((index / math.max(1, tileCount - 1)) * (images.length - 1))
+                .round()
+                .clamp(0, images.length - 1);
       paintImage(
         canvas: canvas,
         rect: Rect.fromLTWH(
@@ -2969,7 +2981,7 @@ class _TimelinePainter extends CustomPainter {
           math.min(tileWidth, rect.right - left),
           rect.height,
         ),
-        image: image,
+        image: images[imageIndex],
         fit: BoxFit.cover,
         alignment: Alignment.center,
         opacity: enabled ? 0.82 : 0.28,

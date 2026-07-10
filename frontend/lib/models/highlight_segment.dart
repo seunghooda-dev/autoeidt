@@ -324,14 +324,11 @@ class HighlightSegment {
       transitionType: normalizeClipTransitionType(
         json['transition_type'] ?? json['transitionType'],
       ),
-      transitionDuration:
-          snapSecondsToFrame(
-                (json['transition_duration'] as num?)?.toDouble() ??
-                    (json['transitionDuration'] as num?)?.toDouble() ??
-                    0.0,
-              )
-              .clamp(0.0, 3.0)
-              .toDouble(),
+      transitionDuration: snapSecondsToFrame(
+        (json['transition_duration'] as num?)?.toDouble() ??
+            (json['transitionDuration'] as num?)?.toDouble() ??
+            0.0,
+      ).clamp(0.0, 3.0).toDouble(),
       audioFadeIn:
           (json['audio_fade_in'] as num?)?.toDouble() ??
           (json['audioFadeIn'] as num?)?.toDouble() ??
@@ -424,6 +421,24 @@ double sequenceOutputDuration(List<HighlightSegment> segments) {
     total -= effectiveTransitionOverlap(segments[index - 1], segments[index]);
   }
   return math.max(0.0, total);
+}
+
+List<int> timelineThumbnailSampleFrames(HighlightSegment segment) {
+  final startFrame = secondsToTimecodeFrame(segment.start);
+  final endFrame = math.max(
+    startFrame + 1,
+    secondsToTimecodeFrame(segment.end),
+  );
+  final durationFrames = endFrame - startFrame;
+  if (durationFrames <= timecodeFramesPerSecond * 2) {
+    return [startFrame];
+  }
+  final lastFrame = math.max(startFrame, endFrame - 1);
+  if (durationFrames <= timecodeFramesPerSecond * 8) {
+    return {startFrame, lastFrame}.toList();
+  }
+  final middleFrame = startFrame + durationFrames ~/ 2;
+  return {startFrame, middleFrame, lastFrame}.toList();
 }
 
 class TranscriptSegment {

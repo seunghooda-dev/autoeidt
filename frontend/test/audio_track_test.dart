@@ -12,6 +12,27 @@ import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
 
 void main() {
+  test('timeline thumbnail sampling scales with clip duration at 30p', () {
+    expect(
+      timelineThumbnailSampleFrames(
+        const HighlightSegment(order: 1, start: 10, end: 12, reason: 'short'),
+      ),
+      [300],
+    );
+    expect(
+      timelineThumbnailSampleFrames(
+        const HighlightSegment(order: 1, start: 10, end: 16, reason: 'medium'),
+      ),
+      [300, 479],
+    );
+    expect(
+      timelineThumbnailSampleFrames(
+        const HighlightSegment(order: 1, start: 10, end: 22, reason: 'long'),
+      ),
+      [300, 480, 659],
+    );
+  });
+
   test('highlight segment serializes audio track state', () {
     const segment = HighlightSegment(
       order: 1,

@@ -456,7 +456,7 @@ void main() {
     },
   );
 
-  testWidgets('timeline paints cached video frames inside V1 clips', (
+  testWidgets('timeline paints multiple cached video frames inside V1 clips', (
     tester,
   ) async {
     final recorder = ui.PictureRecorder();
@@ -490,7 +490,11 @@ void main() {
               markOut: null,
               timelineMarkers: const [],
               waveform: const [],
-              timelineThumbnails: {30: thumbnail},
+              timelineThumbnails: {
+                30: thumbnail,
+                195: thumbnail,
+                359: thumbnail,
+              },
               zoom: 1,
               trackHeightScale: 1,
               snappingEnabled: true,

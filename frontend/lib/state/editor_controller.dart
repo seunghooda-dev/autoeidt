@@ -1265,10 +1265,15 @@ class EditorController extends ChangeNotifier {
     if (_isDisposed || revision != _timelineThumbnailRevision) {
       return;
     }
+    if (isPreparingPreview) {
+      _scheduleTimelineThumbnails(delay: const Duration(milliseconds: 900));
+      return;
+    }
     final targets = <int, double>{};
     for (final segment in segments) {
-      final key = secondsToTimecodeFrame(segment.start);
-      targets.putIfAbsent(key, () => segment.start);
+      for (final frame in timelineThumbnailSampleFrames(segment)) {
+        targets.putIfAbsent(frame, () => timecodeFrameToSeconds(frame));
+      }
     }
     timelineThumbnailTargetCount = targets.length;
     final obsoleteKeys = timelineThumbnails.keys
@@ -1296,6 +1301,10 @@ class EditorController extends ChangeNotifier {
       await _ensureLocalEngineForApi();
       for (final target in pending) {
         if (_isDisposed || revision != _timelineThumbnailRevision) {
+          return;
+        }
+        if (isPreparingPreview) {
+          _scheduleTimelineThumbnails(delay: const Duration(milliseconds: 900));
           return;
         }
         try {

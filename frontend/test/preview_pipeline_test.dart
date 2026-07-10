@@ -69,20 +69,24 @@ void main() {
       controller
         ..segments = const [
           HighlightSegment(order: 1, start: 1, end: 3, reason: 'first'),
-          HighlightSegment(order: 2, start: 5, end: 7, reason: 'second'),
+          HighlightSegment(order: 2, start: 5, end: 15, reason: 'second'),
         ]
         ..selectedSegmentOrder = 1;
       controller.updateSegment(controller.segments.first);
 
       await _waitUntil(
-        () => controller.timelineThumbnails.length == 2,
+        () => controller.timelineThumbnails.length == 4,
         describe: () =>
             'times=${api.thumbnailTimes} '
             'loaded=${controller.timelineThumbnails.keys}',
       );
 
-      expect(api.thumbnailTimes, [1, 5]);
-      expect(controller.timelineThumbnails.keys, containsAll([30, 150]));
+      expect(api.thumbnailTimes.take(3), [1, 5, 10]);
+      expect(api.thumbnailTimes.last, closeTo(449 / 30, 0.0001));
+      expect(
+        controller.timelineThumbnails.keys,
+        containsAll([30, 150, 300, 449]),
+      );
       expect(controller.isLoadingTimelineThumbnails, isFalse);
     } finally {
       await controller.videoController?.dispose();
