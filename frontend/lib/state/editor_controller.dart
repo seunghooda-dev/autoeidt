@@ -113,6 +113,11 @@ class EditorController extends ChangeNotifier {
   bool previewMuted = false;
   bool isPreparingPreview = false;
   bool isProbingMedia = false;
+  bool isRefreshingStorage = false;
+  bool isCleaningStorage = false;
+  StorageUsageInfo? storageUsage;
+  StorageCleanupInfo? lastStorageCleanup;
+  String? storageErrorMessage;
   bool _previewUsesProxy = false;
   bool _previewAutoplayRequested = false;
   bool _proxyContinuationPending = false;
@@ -848,6 +853,53 @@ class EditorController extends ChangeNotifier {
 
     engineState = await _engineService.ensureRunning();
     notifyListeners();
+  }
+
+  Future<void> refreshStorageUsage({int retentionHours = 24}) async {
+    if (isRefreshingStorage || isCleaningStorage) {
+      return;
+    }
+    isRefreshingStorage = true;
+    storageErrorMessage = null;
+    notifyListeners();
+    try {
+      await _ensureLocalEngineForApi();
+      storageUsage = await _apiClient.getStorageUsage(
+        activeJobId: jobId,
+        retentionHours: retentionHours,
+      );
+    } catch (error) {
+      storageErrorMessage = '저장공간 정보를 불러오지 못했습니다: $error';
+    } finally {
+      isRefreshingStorage = false;
+      notifyListeners();
+    }
+  }
+
+  Future<StorageCleanupInfo?> cleanupSafeStorage({
+    int retentionHours = 24,
+  }) async {
+    if (isCleaningStorage || isRefreshingStorage) {
+      return null;
+    }
+    isCleaningStorage = true;
+    storageErrorMessage = null;
+    notifyListeners();
+    try {
+      final result = await _apiClient.cleanupSafeStorage(
+        activeJobId: jobId,
+        retentionHours: retentionHours,
+      );
+      lastStorageCleanup = result;
+      storageUsage = result.after;
+      return result;
+    } catch (error) {
+      storageErrorMessage = '안전 캐시 정리에 실패했습니다: $error';
+      return null;
+    } finally {
+      isCleaningStorage = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _ensureLocalEngineForApi() async {

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/job_models.dart';
 import '../state/editor_controller.dart';
 import '../state/workspace_controller.dart';
 
@@ -12,17 +15,25 @@ class WorkspaceToolsPanel extends StatelessWidget {
     final workspace = context.watch<WorkspaceController>();
     final editor = context.watch<EditorController>();
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
+            onTap: (index) {
+              if (index == 3 &&
+                  editor.storageUsage == null &&
+                  !editor.isRefreshingStorage) {
+                unawaited(editor.refreshStorageUsage());
+              }
+            },
             tabs: [
-              Tab(
+              const Tab(
                 icon: Icon(Icons.dashboard_customize_outlined),
                 text: 'Layout',
               ),
-              Tab(icon: Icon(Icons.folder_outlined), text: 'Assets'),
-              Tab(icon: Icon(Icons.history), text: 'History'),
+              const Tab(icon: Icon(Icons.folder_outlined), text: 'Assets'),
+              const Tab(icon: Icon(Icons.history), text: 'History'),
+              const Tab(icon: Icon(Icons.storage_outlined), text: 'Storage'),
             ],
           ),
           Expanded(
@@ -31,6 +42,7 @@ class WorkspaceToolsPanel extends StatelessWidget {
                 _LayoutTab(workspace: workspace),
                 _AssetTab(workspace: workspace, editor: editor),
                 _HistoryTab(workspace: workspace, editor: editor),
+                _StorageTab(editor: editor),
               ],
             ),
           ),
@@ -619,6 +631,224 @@ class _HistoryTab extends StatelessWidget {
       labelController.dispose();
     }
   }
+}
+
+class _StorageTab extends StatelessWidget {
+  const _StorageTab({required this.editor});
+
+  final EditorController editor;
+
+  @override
+  Widget build(BuildContext context) {
+    final usage = editor.storageUsage;
+    if (usage == null) {
+      return Center(
+        child: editor.isRefreshingStorage
+            ? const CircularProgressIndicator()
+            : FilledButton.icon(
+                key: const Key('storage-load-button'),
+                onPressed: editor.refreshStorageUsage,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Load storage'),
+              ),
+      );
+    }
+
+    final reclaimRatio = usage.totalBytes <= 0
+        ? 0.0
+        : (usage.reclaimableBytes / usage.totalBytes)
+              .clamp(0.0, 1.0)
+              .toDouble();
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _formatStorageBytes(usage.totalBytes),
+                    key: const Key('storage-total-value'),
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  Text(
+                    'AutoEdit local data',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            IconButton.outlined(
+              tooltip: 'Refresh storage',
+              onPressed: editor.isRefreshingStorage || editor.isCleaningStorage
+                  ? null
+                  : () => editor.refreshStorageUsage(),
+              icon: editor.isRefreshingStorage
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        LinearProgressIndicator(
+          value: reclaimRatio,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(3),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.cleaning_services_outlined, size: 17),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                '${_formatStorageBytes(usage.reclaimableBytes)} reclaimable',
+                key: const Key('storage-reclaimable-value'),
+              ),
+            ),
+            Text('>${usage.retentionHours}h old'),
+          ],
+        ),
+        const Divider(height: 28),
+        for (final category in usage.categories)
+          _StorageCategoryTile(category: category),
+        if (editor.storageErrorMessage != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            editor.storageErrorMessage!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          key: const Key('storage-clean-button'),
+          onPressed: usage.reclaimableBytes <= 0 || editor.isCleaningStorage
+              ? null
+              : () => _confirmCleanup(context, usage),
+          icon: editor.isCleaningStorage
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.cleaning_services_outlined),
+          label: Text(
+            editor.isCleaningStorage ? 'Cleaning...' : 'Clean safe cache',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(
+              Icons.verified_user_outlined,
+              size: 17,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 7),
+            const Expanded(
+              child: Text('Sources, projects and exports protected'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmCleanup(
+    BuildContext context,
+    StorageUsageInfo usage,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clean local cache?'),
+        content: Text(
+          '${_formatStorageBytes(usage.reclaimableBytes)} of preview and '
+          'completed-analysis cache older than ${usage.retentionHours} hours '
+          'will be removed. Imported sources, projects, current jobs and render '
+          'outputs remain protected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            key: const Key('storage-confirm-clean-button'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.cleaning_services_outlined),
+            label: const Text('Clean cache'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    final result = await editor.cleanupSafeStorage(
+      retentionHours: usage.retentionHours,
+    );
+    if (result != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Freed ${_formatStorageBytes(result.freedBytes)} from '
+            '${result.deletedFiles} cache files.',
+          ),
+        ),
+      );
+    }
+  }
+}
+
+class _StorageCategoryTile extends StatelessWidget {
+  const _StorageCategoryTile({required this.category});
+
+  final StorageCategoryInfo category;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (category.key) {
+      'preview_cache' => Icons.movie_filter_outlined,
+      'analysis_cache' => Icons.analytics_outlined,
+      'source_copies' => Icons.video_library_outlined,
+      'render_outputs' => Icons.output_outlined,
+      _ => Icons.description_outlined,
+    };
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(category.label),
+      subtitle: Text('${category.files} files'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (category.protected) ...[
+            const Icon(Icons.lock_outline, size: 15),
+            const SizedBox(width: 5),
+          ],
+          Text(_formatStorageBytes(category.bytes)),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatStorageBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes < 0 ? 0.0 : bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  final digits = value >= 100 || unit == 0 ? 0 : 1;
+  return '${value.toStringAsFixed(digits)} ${units[unit]}';
 }
 
 class _HistoryPointTile extends StatelessWidget {

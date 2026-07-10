@@ -139,6 +139,102 @@ class MediaProbeInfo {
   }
 }
 
+class StorageCategoryInfo {
+  const StorageCategoryInfo({
+    required this.key,
+    required this.label,
+    required this.bytes,
+    required this.files,
+    required this.reclaimableBytes,
+    required this.protected,
+  });
+
+  final String key;
+  final String label;
+  final int bytes;
+  final int files;
+  final int reclaimableBytes;
+  final bool protected;
+
+  factory StorageCategoryInfo.fromJson(Map<String, dynamic> json) {
+    return StorageCategoryInfo(
+      key: json['key'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      bytes: (json['bytes'] as num?)?.toInt() ?? 0,
+      files: (json['files'] as num?)?.toInt() ?? 0,
+      reclaimableBytes: (json['reclaimable_bytes'] as num?)?.toInt() ?? 0,
+      protected: json['protected'] as bool? ?? false,
+    );
+  }
+}
+
+class StorageUsageInfo {
+  const StorageUsageInfo({
+    required this.dataDir,
+    required this.totalBytes,
+    required this.reclaimableBytes,
+    required this.retentionHours,
+    required this.categories,
+    required this.protectedItems,
+  });
+
+  final String dataDir;
+  final int totalBytes;
+  final int reclaimableBytes;
+  final int retentionHours;
+  final List<StorageCategoryInfo> categories;
+  final List<String> protectedItems;
+
+  factory StorageUsageInfo.fromJson(Map<String, dynamic> json) {
+    final rawCategories = json['categories'] as List<dynamic>? ?? const [];
+    final rawProtected = json['protected_items'] as List<dynamic>? ?? const [];
+    return StorageUsageInfo(
+      dataDir: json['data_dir'] as String? ?? '',
+      totalBytes: (json['total_bytes'] as num?)?.toInt() ?? 0,
+      reclaimableBytes: (json['reclaimable_bytes'] as num?)?.toInt() ?? 0,
+      retentionHours: (json['retention_hours'] as num?)?.toInt() ?? 24,
+      categories: rawCategories
+          .whereType<Map>()
+          .map(
+            (item) =>
+                StorageCategoryInfo.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(),
+      protectedItems: rawProtected.map((item) => item.toString()).toList(),
+    );
+  }
+}
+
+class StorageCleanupInfo {
+  const StorageCleanupInfo({
+    required this.freedBytes,
+    required this.deletedFiles,
+    required this.skippedFiles,
+    required this.before,
+    required this.after,
+  });
+
+  final int freedBytes;
+  final int deletedFiles;
+  final int skippedFiles;
+  final StorageUsageInfo before;
+  final StorageUsageInfo after;
+
+  factory StorageCleanupInfo.fromJson(Map<String, dynamic> json) {
+    return StorageCleanupInfo(
+      freedBytes: (json['freed_bytes'] as num?)?.toInt() ?? 0,
+      deletedFiles: (json['deleted_files'] as num?)?.toInt() ?? 0,
+      skippedFiles: (json['skipped_files'] as num?)?.toInt() ?? 0,
+      before: StorageUsageInfo.fromJson(
+        Map<String, dynamic>.from(json['before'] as Map? ?? const {}),
+      ),
+      after: StorageUsageInfo.fromJson(
+        Map<String, dynamic>.from(json['after'] as Map? ?? const {}),
+      ),
+    );
+  }
+}
+
 class JobStatusResponse {
   const JobStatusResponse({
     required this.jobId,

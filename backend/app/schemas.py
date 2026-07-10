@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TIMELINE_FRAME_RATE = 30.0
 TIMELINE_TIMECODE_MODE = "non_drop"
@@ -285,6 +285,39 @@ class LocalPreviewResponse(BaseModel):
     cached: bool = False
     source_start: float = 0.0
     duration: float = 0.0
+
+
+class StorageCategoryUsage(BaseModel):
+    key: str
+    label: str
+    bytes: int = 0
+    files: int = 0
+    reclaimable_bytes: int = 0
+    protected: bool = False
+
+
+class StorageUsageResponse(BaseModel):
+    data_dir: str
+    total_bytes: int = 0
+    reclaimable_bytes: int = 0
+    retention_hours: int = 24
+    categories: list[StorageCategoryUsage] = Field(default_factory=list)
+    protected_items: list[str] = Field(default_factory=list)
+
+
+class StorageCleanupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active_job_id: str | None = Field(default=None, max_length=64)
+    retention_hours: int = Field(default=24, ge=1, le=720)
+
+
+class StorageCleanupResponse(BaseModel):
+    freed_bytes: int = 0
+    deleted_files: int = 0
+    skipped_files: int = 0
+    before: StorageUsageResponse
+    after: StorageUsageResponse
 
 
 class MediaProbeResponse(BaseModel):

@@ -105,6 +105,36 @@ class ApiClient {
     );
   }
 
+  Future<StorageUsageInfo> getStorageUsage({
+    String? activeJobId,
+    int retentionHours = 24,
+  }) async {
+    final query = <String, Object>{'retention_hours': retentionHours};
+    if (activeJobId != null && activeJobId.isNotEmpty) {
+      query['active_job_id'] = activeJobId;
+    }
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$baseUrl/api/system/storage',
+      queryParameters: query,
+    );
+    return StorageUsageInfo.fromJson(response.data!);
+  }
+
+  Future<StorageCleanupInfo> cleanupSafeStorage({
+    String? activeJobId,
+    int retentionHours = 24,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '$baseUrl/api/system/storage/cleanup',
+      data: {
+        if (activeJobId != null && activeJobId.isNotEmpty)
+          'active_job_id': activeJobId,
+        'retention_hours': retentionHours,
+      },
+    );
+    return StorageCleanupInfo.fromJson(response.data!);
+  }
+
   double _readDouble(Object? value) {
     if (value is num) {
       return value.toDouble();

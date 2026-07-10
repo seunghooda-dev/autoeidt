@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routers.jobs import router as jobs_router
 from app.routers.styles import router as styles_router
+from app.routers.system import router as system_router
 
 
 settings = get_settings()
@@ -20,6 +21,7 @@ app.add_middleware(
 
 app.include_router(jobs_router, prefix=settings.api_prefix)
 app.include_router(styles_router, prefix=settings.api_prefix)
+app.include_router(system_router, prefix=settings.api_prefix)
 
 
 @app.get("/health")
@@ -38,6 +40,7 @@ def health() -> dict[str, object]:
             "broadcast_audio_a1_a2_v2",
             "fast_proxy_preview_v2",
             "fast_proxy_preview_v3",
+            "safe_storage_cleanup_v1",
             "timeline_30p_ndf",
         ],
     }

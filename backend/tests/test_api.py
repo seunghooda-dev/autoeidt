@@ -21,6 +21,7 @@ def test_health_endpoint() -> None:
     assert "broadcast_audio_a1_a2_v2" in payload["features"]
     assert "fast_proxy_preview_v2" in payload["features"]
     assert "fast_proxy_preview_v3" in payload["features"]
+    assert "safe_storage_cleanup_v1" in payload["features"]
     assert "timeline_30p_ndf" in payload["features"]
 
 
