@@ -1984,8 +1984,13 @@ class _PreviewStage extends StatelessWidget {
         child: Column(
           children: [
             _PreviewHeader(
-              timecode: formatSeconds(controller.currentPositionSeconds),
-              duration: formatSeconds(controller.duration),
+              monitorMode: controller.previewMonitorMode,
+              canUseProgram: controller.canUseProgramMonitor,
+              onMonitorChanged: (mode) => unawaited(
+                context.read<EditorController>().setPreviewMonitorMode(mode),
+              ),
+              timecode: formatSeconds(controller.monitorPositionSeconds),
+              duration: formatSeconds(controller.monitorDurationSeconds),
               sourceLabel: controller.previewSourceLabel,
               audioLabel: controller.previewAudioLabel,
             ),
@@ -2032,14 +2037,25 @@ class _PreviewStage extends StatelessWidget {
                                         .togglePlayback(),
                                   )
                                 : null,
+                            positionSeconds: controller.monitorPositionSeconds,
+                            durationSeconds: controller.monitorDurationSeconds,
+                            onSeek: (seconds) => unawaited(
+                              context.read<EditorController>().seekMonitorTo(
+                                seconds,
+                              ),
+                            ),
                             targetAspectRatio: aspect,
-                            focusX: controller.selectedSegment?.focusX ?? 0.5,
-                            focusY: controller.selectedSegment?.focusY ?? 0.42,
+                            focusX:
+                                controller.previewActiveSegment?.focusX ?? 0.5,
+                            focusY:
+                                controller.previewActiveSegment?.focusY ?? 0.42,
                             focusKeyframes:
-                                controller.selectedSegment?.focusKeyframes ??
+                                controller
+                                    .previewActiveSegment
+                                    ?.focusKeyframes ??
                                 const [],
                             segmentStart:
-                                controller.selectedSegment?.start ?? 0,
+                                controller.previewActiveSegment?.start ?? 0,
                             onToggleMute: context
                                 .read<EditorController>()
                                 .togglePreviewMute,
@@ -2896,12 +2912,18 @@ class _WorkspaceTab extends StatelessWidget {
 
 class _PreviewHeader extends StatelessWidget {
   const _PreviewHeader({
+    required this.monitorMode,
+    required this.canUseProgram,
+    required this.onMonitorChanged,
     required this.timecode,
     required this.duration,
     required this.sourceLabel,
     required this.audioLabel,
   });
 
+  final String monitorMode;
+  final bool canUseProgram;
+  final ValueChanged<String> onMonitorChanged;
   final String timecode;
   final String duration;
   final String sourceLabel;
@@ -2920,7 +2942,40 @@ class _PreviewHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const _PanelHeader(title: 'Program', icon: Icons.live_tv_outlined),
+          const Icon(Icons.live_tv_outlined, size: 17),
+          const SizedBox(width: 8),
+          SegmentedButton<String>(
+            key: const Key('preview-monitor-selector'),
+            showSelectedIcon: false,
+            segments: [
+              const ButtonSegment(value: 'source', label: Text('Source')),
+              ButtonSegment(
+                value: 'program',
+                enabled: canUseProgram,
+                label: const Text('Program'),
+              ),
+            ],
+            selected: {monitorMode},
+            onSelectionChanged: (selection) {
+              if (selection.isNotEmpty) {
+                onMonitorChanged(selection.first);
+              }
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: const WidgetStatePropertyAll(Size(0, 28)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 8),
+              ),
+              textStyle: WidgetStatePropertyAll(
+                Theme.of(context).textTheme.labelSmall,
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+              ),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: SingleChildScrollView(

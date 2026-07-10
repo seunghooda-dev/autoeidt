@@ -117,6 +117,7 @@ class EditorController extends ChangeNotifier {
   double previewVolume = 1.0;
   bool previewMuted = false;
   bool isPreparingPreview = false;
+  String previewMonitorMode = 'source';
   bool isProbingMedia = false;
   bool isRefreshingStorage = false;
   bool isCleaningStorage = false;
@@ -131,6 +132,9 @@ class EditorController extends ChangeNotifier {
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
   double _manualPlayheadSeconds = 0;
+  double _programPlayheadSeconds = 0;
+  int? _programSegmentOrder;
+  bool _programCutPending = false;
   static const double _initialProxyPreviewSeconds = 8;
   static const double _seekProxyPreviewSeconds = 30;
   static const Duration _directPreviewInitializationTimeout = Duration(
@@ -139,6 +143,7 @@ class EditorController extends ChangeNotifier {
   static const Duration _proxyPreviewInitializationTimeout = Duration(
     seconds: 8,
   );
+  static const Duration _previewControllerDisposeTimeout = Duration(seconds: 2);
   static const int _avSyncLengthToleranceFrames = 2;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
@@ -550,6 +555,23 @@ class EditorController extends ChangeNotifier {
         controller.value.position.inMilliseconds / 1000;
   }
 
+  bool get canUseProgramMonitor => segments.isNotEmpty;
+  bool get isProgramMonitor =>
+      previewMonitorMode == 'program' && canUseProgramMonitor;
+  double get monitorPositionSeconds =>
+      isProgramMonitor ? _programPlayheadSeconds : currentPositionSeconds;
+  double get monitorDurationSeconds =>
+      isProgramMonitor ? outputDurationSeconds : duration;
+
+  HighlightSegment? get previewActiveSegment {
+    if (!isProgramMonitor) {
+      return selectedSegment;
+    }
+    return _programSpanForOrder(_programSegmentOrder)?.segment ??
+        _programSpanAt(_programPlayheadSeconds)?.segment ??
+        selectedSegment;
+  }
+
   HighlightSegment? get selectedSegment {
     final order = selectedSegmentOrder;
     if (order == null) {
@@ -587,6 +609,10 @@ class EditorController extends ChangeNotifier {
     if (videoController == null) {
       return 'No Preview';
     }
+    if (isProgramMonitor) {
+      final order = previewActiveSegment?.order;
+      return order == null ? 'Program Preview' : 'Program Preview · C$order';
+    }
     return _previewUsesProxy ? 'Proxy Preview' : 'Source Preview';
   }
 
@@ -622,6 +648,73 @@ class EditorController extends ChangeNotifier {
       0,
       (total, segment) => total + segment.outputDuration,
     );
+  }
+
+  int? programSegmentOrderAt(double programSeconds) {
+    return _programSpanAt(programSeconds)?.segment.order;
+  }
+
+  double sourceTimeForProgramPosition(double programSeconds) {
+    final span = _programSpanAt(programSeconds);
+    if (span == null) {
+      return 0;
+    }
+    final localOutput = (programSeconds - span.sequenceStart)
+        .clamp(0.0, span.sequenceEnd - span.sequenceStart)
+        .toDouble();
+    return (span.segment.start + localOutput * span.segment.playbackSpeed)
+        .clamp(span.segment.start, span.segment.end)
+        .toDouble();
+  }
+
+  double programStartForSegment(int order) {
+    return _programSpanForOrder(order)?.sequenceStart ?? 0;
+  }
+
+  _ProgramSpan? _programSpanAt(double programSeconds) {
+    if (segments.isEmpty) {
+      return null;
+    }
+    final clamped = programSeconds
+        .clamp(0.0, math.max(0.0, outputDurationSeconds))
+        .toDouble();
+    var cursor = 0.0;
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index];
+      final end = cursor + math.max(0.0, segment.outputDuration);
+      if (clamped < end - timecodeFrameDurationSeconds / 2 ||
+          index == segments.length - 1) {
+        return _ProgramSpan(
+          segment: segment,
+          index: index,
+          sequenceStart: cursor,
+          sequenceEnd: end,
+        );
+      }
+      cursor = end;
+    }
+    return null;
+  }
+
+  _ProgramSpan? _programSpanForOrder(int? order) {
+    if (order == null) {
+      return null;
+    }
+    var cursor = 0.0;
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index];
+      final end = cursor + math.max(0.0, segment.outputDuration);
+      if (segment.order == order) {
+        return _ProgramSpan(
+          segment: segment,
+          index: index,
+          sequenceStart: cursor,
+          sequenceEnd: end,
+        );
+      }
+      cursor = end;
+    }
+    return null;
   }
 
   double get averageClipScore {
@@ -1016,6 +1109,10 @@ class EditorController extends ChangeNotifier {
     selectedMediaProbe = null;
     isProbingMedia = false;
     isPreparingPreview = false;
+    previewMonitorMode = 'source';
+    _programPlayheadSeconds = 0;
+    _programSegmentOrder = null;
+    _programCutPending = false;
     _previewAutoplayRequested = false;
     _proxyContinuationPending = false;
     jobId = null;
@@ -5908,6 +6005,82 @@ class EditorController extends ChangeNotifier {
     return localSeconds.clamp(0.0, durationSeconds).toDouble();
   }
 
+  Future<void> setPreviewMonitorMode(String mode) async {
+    if (mode != 'source' && mode != 'program') {
+      return;
+    }
+    if (mode == 'program' && !canUseProgramMonitor) {
+      return;
+    }
+    if (previewMonitorMode == mode) {
+      return;
+    }
+    _stopReverseShuttleTimer();
+    final controller = videoController;
+    if (controller != null && controller.value.isInitialized) {
+      await controller.pause();
+      await controller.setPlaybackSpeed(1.0);
+    }
+    playbackShuttleDirection = 0;
+    playbackShuttleRate = 1.0;
+    _previewAutoplayRequested = false;
+    _programCutPending = false;
+    previewMonitorMode = mode;
+    if (mode == 'program') {
+      final selectedSpan = _programSpanForOrder(selectedSegmentOrder);
+      final target =
+          selectedSpan?.sequenceStart ??
+          _programPlayheadSeconds.clamp(0.0, outputDurationSeconds).toDouble();
+      await _seekProgramTo(target, autoplay: false);
+    }
+    notifyListeners();
+  }
+
+  Future<void> seekMonitorTo(double seconds, {bool autoplay = false}) async {
+    if (isProgramMonitor) {
+      await _seekProgramTo(seconds, autoplay: autoplay);
+      return;
+    }
+    await seekTo(seconds, autoplay: autoplay);
+  }
+
+  Future<void> _seekProgramTo(
+    double programSeconds, {
+    required bool autoplay,
+  }) async {
+    final total = outputDurationSeconds;
+    if (segments.isEmpty || total <= 0) {
+      return;
+    }
+    final clamped = programSeconds.clamp(0.0, total).toDouble();
+    final span = _programSpanAt(clamped);
+    if (span == null) {
+      return;
+    }
+    _programPlayheadSeconds = clamped;
+    _programSegmentOrder = span.segment.order;
+    selectedSegmentOrder = span.segment.order;
+    final sourceSeconds = sourceTimeForProgramPosition(clamped);
+    await seekTo(sourceSeconds, autoplay: false);
+    final controller = videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      if (autoplay) {
+        _previewAutoplayRequested = true;
+        playbackShuttleDirection = 1;
+        playbackShuttleRate = 1.0;
+      }
+      notifyListeners();
+      return;
+    }
+    await controller.setPlaybackSpeed(span.segment.playbackSpeed);
+    if (autoplay) {
+      await controller.play();
+      playbackShuttleDirection = 1;
+      playbackShuttleRate = 1.0;
+    }
+    notifyListeners();
+  }
+
   Future<void> seekTo(double seconds, {bool autoplay = true}) async {
     var controller = videoController;
     final clamped = _clampTime(seconds);
@@ -5942,6 +6115,10 @@ class EditorController extends ChangeNotifier {
 
   Future<void> togglePlayback() async {
     _stopReverseShuttleTimer();
+    if (isProgramMonitor) {
+      await _toggleProgramPlayback();
+      return;
+    }
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
       final path = selectedFile?.path;
@@ -5974,6 +6151,57 @@ class EditorController extends ChangeNotifier {
     }
     playbackShuttleRate = 1.0;
     notifyListeners();
+  }
+
+  Future<void> _toggleProgramPlayback() async {
+    final controller = videoController;
+    if (controller != null &&
+        controller.value.isInitialized &&
+        controller.value.isPlaying) {
+      await controller.pause();
+      _previewAutoplayRequested = false;
+      playbackShuttleDirection = 0;
+      playbackShuttleRate = 1.0;
+      notifyListeners();
+      return;
+    }
+    var target = _programPlayheadSeconds;
+    if (target >= outputDurationSeconds - timecodeFrameDurationSeconds) {
+      target = 0;
+    }
+    await _seekProgramTo(target, autoplay: true);
+  }
+
+  Future<void> _advanceProgramPlayback() async {
+    if (_programCutPending || !isProgramMonitor) {
+      return;
+    }
+    final current = _programSpanForOrder(_programSegmentOrder);
+    if (current == null) {
+      return;
+    }
+    _programCutPending = true;
+    try {
+      if (current.index >= segments.length - 1) {
+        final controller = videoController;
+        if (controller != null && controller.value.isInitialized) {
+          await controller.pause();
+        }
+        _programPlayheadSeconds = outputDurationSeconds;
+        playbackShuttleDirection = 0;
+        playbackShuttleRate = 1.0;
+        notifyListeners();
+        return;
+      }
+      final next = segments[current.index + 1];
+      final nextStart = current.sequenceEnd;
+      _programSegmentOrder = next.order;
+      selectedSegmentOrder = next.order;
+      _programPlayheadSeconds = nextStart;
+      await _seekProgramTo(nextStart, autoplay: true);
+    } finally {
+      _programCutPending = false;
+    }
   }
 
   Future<bool> _continueProxyPlaybackIfNeeded() async {
@@ -6013,6 +6241,13 @@ class EditorController extends ChangeNotifier {
       _proxyContinuationPending = false;
     }
     final nextController = videoController;
+    final programSegment = previewActiveSegment;
+    if (isProgramMonitor &&
+        programSegment != null &&
+        nextController != null &&
+        nextController.value.isInitialized) {
+      await nextController.setPlaybackSpeed(programSegment.playbackSpeed);
+    }
     final continued =
         nextController != null &&
         !identical(nextController, previousController) &&
@@ -6048,7 +6283,10 @@ class EditorController extends ChangeNotifier {
     playbackShuttleRate = nextRate;
     final controller = videoController;
     if (controller != null && controller.value.isInitialized) {
-      await controller.setPlaybackSpeed(nextRate);
+      final sourceRate = isProgramMonitor
+          ? (previewActiveSegment?.playbackSpeed ?? 1.0) * nextRate
+          : nextRate;
+      await controller.setPlaybackSpeed(sourceRate);
       await controller.play();
     }
     notifyListeners();
@@ -6096,6 +6334,17 @@ class EditorController extends ChangeNotifier {
     _reverseShuttleTimer = Timer.periodic(const Duration(milliseconds: 120), (
       _,
     ) {
+      if (isProgramMonitor) {
+        final next = (_programPlayheadSeconds - 0.12 * rate)
+            .clamp(0.0, outputDurationSeconds)
+            .toDouble();
+        if (next <= 0) {
+          unawaited(shuttlePause());
+          return;
+        }
+        unawaited(_seekProgramTo(next, autoplay: false));
+        return;
+      }
       final next = _clampTime(currentPositionSeconds - 0.12 * rate);
       if (next <= 0) {
         unawaited(shuttlePause());
@@ -6276,7 +6525,7 @@ class EditorController extends ChangeNotifier {
         await _initializeProxyPreview(path);
       }
     } finally {
-      await pendingController?.dispose();
+      await _disposePreviewControllerSafely(pendingController);
       if (revision == _previewRevision && selectedFile?.path == path) {
         isPreparingPreview = false;
         notifyListeners();
@@ -6351,13 +6600,25 @@ class EditorController extends ChangeNotifier {
       final localPreviewFile = localPreviewPath == null
           ? null
           : io.File(localPreviewPath);
-      pendingController =
-          localPreviewFile != null && await localPreviewFile.exists()
-          ? VideoPlayerController.file(localPreviewFile)
-          : VideoPlayerController.networkUrl(Uri.parse(preview.url));
-      await pendingController.initialize().timeout(
-        _proxyPreviewInitializationTimeout,
-      );
+      if (localPreviewFile != null && await localPreviewFile.exists()) {
+        pendingController = VideoPlayerController.file(localPreviewFile);
+        try {
+          await pendingController.initialize().timeout(
+            _proxyPreviewInitializationTimeout,
+          );
+        } catch (_) {
+          await _disposePreviewControllerSafely(pendingController);
+          pendingController = null;
+        }
+      }
+      if (pendingController == null) {
+        pendingController = VideoPlayerController.networkUrl(
+          Uri.parse(preview.url),
+        );
+        await pendingController.initialize().timeout(
+          _proxyPreviewInitializationTimeout,
+        );
+      }
       await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;
@@ -6405,7 +6666,7 @@ class EditorController extends ChangeNotifier {
         playbackShuttleRate = 1.0;
       }
     } finally {
-      await pendingController?.dispose();
+      await _disposePreviewControllerSafely(pendingController);
       if (revision == _previewRevision && selectedFile?.path == path) {
         isPreparingPreview = false;
         notifyListeners();
@@ -6421,7 +6682,20 @@ class EditorController extends ChangeNotifier {
     _previewSourceDurationSeconds = null;
     if (current != null) {
       current.removeListener(_handleVideoTick);
-      await current.dispose();
+      await _disposePreviewControllerSafely(current);
+    }
+  }
+
+  Future<void> _disposePreviewControllerSafely(
+    VideoPlayerController? controller,
+  ) async {
+    if (controller == null) {
+      return;
+    }
+    try {
+      await controller.dispose().timeout(_previewControllerDisposeTimeout);
+    } catch (_) {
+      // A failed native player must not leave the editor in a loading state.
     }
   }
 
@@ -6440,15 +6714,38 @@ class EditorController extends ChangeNotifier {
     if (controller == null || !controller.value.isInitialized) {
       return;
     }
-    final seconds = currentPositionSeconds;
-    _manualPlayheadSeconds = seconds;
+    final sourceSeconds = currentPositionSeconds;
+    _manualPlayheadSeconds = sourceSeconds;
     final isPlaying = controller.value.isPlaying;
+    if (isProgramMonitor) {
+      final span = _programSpanForOrder(_programSegmentOrder);
+      if (span != null) {
+        final localSource = (sourceSeconds - span.segment.start)
+            .clamp(0.0, span.segment.duration)
+            .toDouble();
+        _programPlayheadSeconds =
+            (span.sequenceStart + localSource / span.segment.playbackSpeed)
+                .clamp(span.sequenceStart, span.sequenceEnd)
+                .toDouble();
+        final sourceCutTolerance =
+            timecodeFrameDurationSeconds *
+            math.max(1.0, span.segment.playbackSpeed);
+        if (isPlaying &&
+            sourceSeconds >= span.segment.end - sourceCutTolerance &&
+            !_programCutPending) {
+          _programPlayheadSeconds = span.sequenceEnd;
+          unawaited(_advanceProgramPlayback());
+        }
+      }
+    }
     if (_previewUsesProxy &&
         !isPlaying &&
         playbackShuttleDirection == 1 &&
-        !isPreparingPreview) {
+        !isPreparingPreview &&
+        !_programCutPending) {
       unawaited(_continueProxyPlaybackIfNeeded());
     }
+    final seconds = monitorPositionSeconds;
     if ((seconds - _lastNotifiedPosition).abs() >=
             timecodeFrameDurationSeconds ||
         isPlaying != _lastNotifiedPlaying) {
@@ -8212,6 +8509,10 @@ class EditorController extends ChangeNotifier {
     }
     duration = project.duration;
     _manualPlayheadSeconds = 0;
+    previewMonitorMode = 'source';
+    _programPlayheadSeconds = 0;
+    _programSegmentOrder = null;
+    _programCutPending = false;
     segments = _reorderSegments(project.segments);
     transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
@@ -8749,6 +9050,20 @@ class ShortsCandidate {
       selected: selected ?? this.selected,
     );
   }
+}
+
+class _ProgramSpan {
+  const _ProgramSpan({
+    required this.segment,
+    required this.index,
+    required this.sequenceStart,
+    required this.sequenceEnd,
+  });
+
+  final HighlightSegment segment;
+  final int index;
+  final double sequenceStart;
+  final double sequenceEnd;
 }
 
 class _EditorSnapshot {

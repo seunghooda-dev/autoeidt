@@ -16,6 +16,9 @@ class VideoPreview extends StatelessWidget {
     this.loading = false,
     this.playWhenReady = false,
     this.onTogglePlayback,
+    this.positionSeconds,
+    this.durationSeconds,
+    this.onSeek,
     this.targetAspectRatio,
     this.focusX = 0.5,
     this.focusY = 0.42,
@@ -30,6 +33,9 @@ class VideoPreview extends StatelessWidget {
   final bool loading;
   final bool playWhenReady;
   final VoidCallback? onTogglePlayback;
+  final double? positionSeconds;
+  final double? durationSeconds;
+  final ValueChanged<double>? onSeek;
   final double? targetAspectRatio;
   final double focusX;
   final double focusY;
@@ -67,10 +73,10 @@ class VideoPreview extends StatelessWidget {
         child: ValueListenableBuilder<VideoPlayerValue>(
           valueListenable: player,
           builder: (context, value, _) {
-            final positionSeconds = value.position.inMilliseconds / 1000;
+            final sourcePositionSeconds = value.position.inMilliseconds / 1000;
             final trackedFocus = _reframeFocusAt(
               focusKeyframes,
-              positionSeconds - segmentStart,
+              sourcePositionSeconds - segmentStart,
               fallbackX: focusX,
               fallbackY: focusY,
             );
@@ -107,6 +113,9 @@ class VideoPreview extends StatelessWidget {
                       muted: muted,
                       onToggleMute: onToggleMute,
                       onTogglePlayback: onTogglePlayback,
+                      positionSeconds: positionSeconds,
+                      durationSeconds: durationSeconds,
+                      onSeek: onSeek,
                       compact: outputAspectRatio < 1,
                     ),
                   ),
@@ -316,6 +325,9 @@ class _VideoControls extends StatelessWidget {
     required this.muted,
     required this.onToggleMute,
     required this.onTogglePlayback,
+    required this.positionSeconds,
+    required this.durationSeconds,
+    required this.onSeek,
     required this.compact,
   });
 
@@ -324,6 +336,9 @@ class _VideoControls extends StatelessWidget {
   final bool muted;
   final VoidCallback? onToggleMute;
   final VoidCallback? onTogglePlayback;
+  final double? positionSeconds;
+  final double? durationSeconds;
+  final ValueChanged<double>? onSeek;
   final bool compact;
 
   @override
@@ -331,11 +346,13 @@ class _VideoControls extends StatelessWidget {
     return ValueListenableBuilder<VideoPlayerValue>(
       valueListenable: controller,
       builder: (context, value, _) {
-        final durationSeconds = value.duration.inMilliseconds / 1000;
-        final positionSeconds = value.position.inMilliseconds / 1000;
-        final sliderValue = durationSeconds <= 0
+        final displayedDuration =
+            durationSeconds ?? value.duration.inMilliseconds / 1000;
+        final displayedPosition =
+            positionSeconds ?? value.position.inMilliseconds / 1000;
+        final sliderValue = displayedDuration <= 0
             ? 0.0
-            : positionSeconds.clamp(0.0, durationSeconds).toDouble();
+            : displayedPosition.clamp(0.0, displayedDuration).toDouble();
 
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -364,11 +381,15 @@ class _VideoControls extends StatelessWidget {
                   child: Slider(
                     value: sliderValue,
                     min: 0,
-                    max: durationSeconds <= 0 ? 1 : durationSeconds,
+                    max: displayedDuration <= 0 ? 1 : displayedDuration,
                     onChanged: (seconds) {
-                      controller.seekTo(
-                        Duration(milliseconds: (seconds * 1000).round()),
-                      );
+                      if (onSeek != null) {
+                        onSeek!(seconds);
+                      } else {
+                        controller.seekTo(
+                          Duration(milliseconds: (seconds * 1000).round()),
+                        );
+                      }
                     },
                   ),
                 ),
@@ -386,9 +407,10 @@ class _VideoControls extends StatelessWidget {
                 SizedBox(
                   width: compact ? 94 : 236,
                   child: Text(
+                    key: const Key('preview-time-display'),
                     compact
-                        ? formatSeconds(positionSeconds)
-                        : '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)} · ${(muted ? 0 : volume * 100).round()}%',
+                        ? formatSeconds(displayedPosition)
+                        : '${formatSeconds(displayedPosition)} / ${formatSeconds(displayedDuration)} · ${(muted ? 0 : volume * 100).round()}%',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,

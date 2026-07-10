@@ -50,6 +50,40 @@ void main() {
     expect(find.text('Import'), findsWidgets);
   });
 
+  testWidgets('source and program monitors expose distinct sequence time', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 10, end: 12, reason: 'first'),
+        HighlightSegment(order: 2, start: 30, end: 33, reason: 'second'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('preview-monitor-selector')), findsOneWidget);
+    expect(controller.previewMonitorMode, 'source');
+    await tester.tap(find.text('Program').first);
+    await tester.pumpAndSettle();
+
+    expect(controller.previewMonitorMode, 'program');
+    expect(controller.monitorDurationSeconds, 5);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets('Ctrl+S invokes project save and shows dirty project title', (
     tester,
   ) async {
