@@ -133,6 +133,11 @@ class HighlightSegment(BaseModel):
     color_brightness: float = 0.0
     color_contrast: float = 1.0
     color_saturation: float = 1.0
+    focus_x: float = 0.5
+    focus_y: float = 0.42
+    focus_confidence: float = 0.0
+    focus_keyframes: list[dict[str, float]] = Field(default_factory=list)
+    topic_id: int = 0
     audio_start: float | None = None
     audio_end: float | None = None
     audio_muted: bool = False
@@ -200,6 +205,37 @@ class HighlightSegment(BaseModel):
     @classmethod
     def color_saturation_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 2.0))
+
+    @field_validator("focus_x", "focus_y", "focus_confidence")
+    @classmethod
+    def focus_value_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @field_validator("focus_keyframes", mode="before")
+    @classmethod
+    def focus_keyframes_must_be_safe(cls, value: Any) -> list[dict[str, float]]:
+        if not isinstance(value, list):
+            return []
+        output: list[dict[str, float]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            try:
+                output.append(
+                    {
+                        "time": max(0.0, float(item.get("time", 0.0))),
+                        "x": max(0.0, min(float(item.get("x", 0.5)), 1.0)),
+                        "y": max(0.0, min(float(item.get("y", 0.42)), 1.0)),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        return output[:48]
+
+    @field_validator("topic_id")
+    @classmethod
+    def topic_id_must_be_safe(cls, value: int) -> int:
+        return max(0, int(value))
 
     @field_validator("score")
     @classmethod

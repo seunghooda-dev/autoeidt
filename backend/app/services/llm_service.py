@@ -351,6 +351,8 @@ def _parse_json_array(text: str) -> list[dict[str, Any]]:
 def analyze_with_openai(
     transcript: list[dict[str, Any]],
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
     if not settings.openai_api_key:
@@ -383,6 +385,8 @@ def analyze_with_openai(
         _parse_json_array(content),
         transcript,
         style_profile,
+        silence_ranges=silence_ranges,
+        scene_points=scene_points,
     )
 
 
@@ -390,6 +394,8 @@ def fallback_highlights(
     transcript: list[dict[str, Any]],
     duration: float,
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
     if _is_fallback_transcript(transcript):
@@ -397,6 +403,8 @@ def fallback_highlights(
             duration,
             settings.target_highlight_seconds_min,
             settings.target_highlight_seconds_max,
+            silence_ranges=silence_ranges,
+            scene_points=scene_points,
         )
     return select_highlights_with_skills(
         transcript,
@@ -404,6 +412,8 @@ def fallback_highlights(
         settings.target_highlight_seconds_min,
         settings.target_highlight_seconds_max,
         style_profile,
+        silence_ranges=silence_ranges,
+        scene_points=scene_points,
     )
 
 
@@ -466,11 +476,30 @@ def analyze_highlights(
     transcript: list[dict[str, Any]],
     duration: float,
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
     if settings.use_openai_llm and settings.openai_api_key:
         try:
-            return analyze_with_openai(transcript, style_profile)
+            return analyze_with_openai(
+                transcript,
+                style_profile,
+                silence_ranges=silence_ranges,
+                scene_points=scene_points,
+            )
         except Exception:
-            return fallback_highlights(transcript, duration, style_profile)
-    return fallback_highlights(transcript, duration, style_profile)
+            return fallback_highlights(
+                transcript,
+                duration,
+                style_profile,
+                silence_ranges=silence_ranges,
+                scene_points=scene_points,
+            )
+    return fallback_highlights(
+        transcript,
+        duration,
+        style_profile,
+        silence_ranges=silence_ranges,
+        scene_points=scene_points,
+    )

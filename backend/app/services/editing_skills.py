@@ -570,6 +570,8 @@ def score_window(
     window: TranscriptWindow,
     skills: list[EditingSkill] | None = None,
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> TranscriptWindow:
     active_skills = skills or [*BUILT_IN_SKILLS, *load_external_skills()]
     base_score = min(window.duration / 12.0, 3.5)
@@ -595,6 +597,7 @@ def score_window(
         if signal.reason not in window.reasons:
             window.reasons.append(signal.reason)
 
+    _apply_audio_visual_score(window, silence_ranges, scene_points)
     _apply_style_profile_score(window, style_profile)
 
     if not window.tags:
@@ -602,6 +605,65 @@ def score_window(
     if not window.reasons:
         window.reasons.append("문맥이 이어지는 후보 구간")
     return window
+
+
+def _range_value(item: Any, key: str) -> float:
+    value = item.get(key, 0.0) if isinstance(item, dict) else getattr(item, key, 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _apply_audio_visual_score(
+    window: TranscriptWindow,
+    silence_ranges: list[Any] | None,
+    scene_points: list[float] | None,
+) -> None:
+    if silence_ranges is not None:
+        silence_seconds = 0.0
+        for silence in silence_ranges:
+            start = _range_value(silence, "start")
+            end = _range_value(silence, "end")
+            silence_seconds += max(0.0, min(window.end, end) - max(window.start, start))
+        speech_ratio = 1.0 - min(1.0, silence_seconds / window.duration)
+        if speech_ratio >= 0.72:
+            window.score += 1.5
+            window.tags.append("음성밀도")
+            window.reasons.append("대화가 끊기지 않아 짧은 영상의 전달력이 높음")
+        elif speech_ratio < 0.30:
+            window.score -= 2.8
+            window.risks.append("저음성")
+        elif speech_ratio < 0.48:
+            window.score -= 1.0
+            window.risks.append("음성공백")
+
+    if scene_points is None:
+        return
+    points = [
+        float(point)
+        for point in scene_points
+        if window.start <= float(point) <= window.end
+    ]
+    scene_rate = len(points) / window.duration * 60.0
+    if 0.8 <= scene_rate <= 12.0:
+        window.score += 1.0
+        window.tags.append("화면활성")
+        window.reasons.append("화면 변화가 적당해 시청 흐름이 안정적임")
+    elif scene_rate > 24.0:
+        window.score -= 0.9
+        window.risks.append("화면과밀")
+    elif not points and window.duration >= 40:
+        window.score -= 0.25
+
+    boundary_distance = min(
+        [abs(point - window.start) for point in scene_points]
+        + [abs(point - window.end) for point in scene_points]
+        + [999.0]
+    )
+    if boundary_distance <= 1.25:
+        window.score += 0.45
+        window.tags.append("컷경계")
 
 
 def _style_float(
@@ -1068,6 +1130,8 @@ def select_highlights_with_skills(
     target_min_seconds: float,
     target_max_seconds: float,
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     effective_min_seconds = min(target_min_seconds, max(20.0, duration * 0.35))
     effective_max_seconds = min(
@@ -1093,7 +1157,13 @@ def select_highlights_with_skills(
     window_ideal = _style_float(style_profile, "target_segment_seconds_ideal", 42.0)
     window_max = _style_float(style_profile, "target_segment_seconds_max", 58.0)
     candidates = [
-        score_window(window, skills, style_profile)
+        score_window(
+            window,
+            skills,
+            style_profile,
+            silence_ranges=silence_ranges,
+            scene_points=scene_points,
+        )
         for window in build_windows(
             transcript,
             min_seconds=window_min,
@@ -1114,6 +1184,8 @@ def select_highlights_with_skills(
                 ),
                 skills,
                 style_profile,
+                silence_ranges=silence_ranges,
+                scene_points=scene_points,
             )
         ]
 
@@ -1184,6 +1256,8 @@ def enrich_highlights_with_skill_scores(
     highlights: list[dict[str, Any]],
     transcript: list[dict[str, Any]],
     style_profile: dict[str, Any] | None = None,
+    silence_ranges: list[Any] | None = None,
+    scene_points: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     skills = [*BUILT_IN_SKILLS, *load_external_skills()]
@@ -1200,6 +1274,8 @@ def enrich_highlights_with_skill_scores(
             TranscriptWindow(start=start, end=end, items=items, text=text),
             skills,
             style_profile,
+            silence_ranges=silence_ranges,
+            scene_points=scene_points,
         )
         item = {**highlight}
         item.setdefault("script", script_preview(window))
@@ -1211,3 +1287,97 @@ def enrich_highlights_with_skill_scores(
         item.setdefault("source", "editorial-llm" if any(tag in window.tags for tag in NEWS_STRUCTURE_TAGS) else "llm")
         enriched.append(item)
     return enriched
+
+
+def consolidate_overlapping_highlights(
+    highlights: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Collapse overlapping recommendations into one non-duplicated source range."""
+    ordered = sorted(
+        ({**item} for item in highlights),
+        key=lambda item: (float(item.get("start", 0.0)), float(item.get("end", 0.0))),
+    )
+    consolidated: list[dict[str, Any]] = []
+    for candidate in ordered:
+        start = float(candidate.get("start", 0.0))
+        end = float(candidate.get("end", start))
+        if end <= start:
+            continue
+        if not consolidated or start >= float(consolidated[-1].get("end", 0.0)) - 0.001:
+            consolidated.append(candidate)
+            continue
+
+        current = consolidated[-1]
+        current_start = float(current.get("start", 0.0))
+        current_end = float(current.get("end", current_start))
+        current_score = float(current.get("score", 0.0))
+        candidate_score = float(candidate.get("score", 0.0))
+        primary = candidate if candidate_score > current_score else current
+        secondary = current if primary is candidate else candidate
+        merged = {**primary}
+        merged["start"] = min(current_start, start)
+        merged["end"] = max(current_end, end)
+        if bool(merged.get("audio_linked", True)):
+            merged["audio_start"] = merged["start"]
+            merged["audio_end"] = merged["end"]
+        primary_script = str(primary.get("script", "")).strip()
+        secondary_script = str(secondary.get("script", "")).strip()
+        if secondary_script and secondary_script not in primary_script:
+            merged["script"] = " ".join(
+                part for part in [primary_script, secondary_script] if part
+            )
+        tags: list[str] = []
+        for tag in [*current.get("tags", []), *candidate.get("tags", [])]:
+            normalized = str(tag).strip()
+            if normalized and normalized not in tags:
+                tags.append(normalized)
+        merged["tags"] = tags
+        reason = str(primary.get("reason", "")).strip()
+        merged["reason"] = (
+            f"{reason} / 중복 추천 구간 통합" if reason else "중복 추천 구간 통합"
+        )
+        merged["score"] = max(current_score, candidate_score)
+        consolidated[-1] = merged
+
+    return consolidated
+
+
+def assign_highlight_topics(
+    highlights: list[dict[str, Any]],
+    max_gap_seconds: float = 180.0,
+) -> list[dict[str, Any]]:
+    ordered = sorted(
+        ({**item} for item in highlights),
+        key=lambda item: float(item.get("start", 0.0)),
+    )
+    if not ordered:
+        return []
+    topic_id = 1
+    previous = ordered[0]
+    previous["topic_id"] = topic_id
+    output = [previous]
+    for candidate in ordered[1:]:
+        gap = max(
+            0.0,
+            float(candidate.get("start", 0.0)) - float(previous.get("end", 0.0)),
+        )
+        previous_tokens = text_tokens(
+            f"{previous.get('script', '')} {previous.get('reason', '')}"
+        )
+        candidate_tokens = text_tokens(
+            f"{candidate.get('script', '')} {candidate.get('reason', '')}"
+        )
+        union = previous_tokens | candidate_tokens
+        similarity = len(previous_tokens & candidate_tokens) / len(union) if union else 0.0
+        lexical_break = (
+            gap > 75.0
+            and len(previous_tokens) >= 4
+            and len(candidate_tokens) >= 4
+            and similarity < 0.015
+        )
+        if gap > max_gap_seconds or lexical_break:
+            topic_id += 1
+        candidate["topic_id"] = topic_id
+        output.append(candidate)
+        previous = candidate
+    return output

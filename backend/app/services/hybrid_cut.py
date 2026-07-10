@@ -161,6 +161,11 @@ def refine_highlights_with_hybrid_cut(
                     "color_brightness": float(highlight.get("color_brightness", 0.0)),
                     "color_contrast": float(highlight.get("color_contrast", 1.0)),
                     "color_saturation": float(highlight.get("color_saturation", 1.0)),
+                    "focus_x": float(highlight.get("focus_x", 0.5)),
+                    "focus_y": float(highlight.get("focus_y", 0.42)),
+                    "focus_confidence": float(highlight.get("focus_confidence", 0.0)),
+                    "focus_keyframes": list(highlight.get("focus_keyframes", [])),
+                    "topic_id": int(highlight.get("topic_id", 0) or 0),
                     "audio_pan": float(highlight.get("audio_pan", 0.0)),
                     "audio_normalize": bool(highlight.get("audio_normalize", False)),
                     "audio_channel_1_enabled": bool(

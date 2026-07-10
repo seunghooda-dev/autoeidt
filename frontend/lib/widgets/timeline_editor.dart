@@ -319,19 +319,22 @@ class _TimelineLayout {
           : scale;
 
   final double scale;
-  double get videoTop => 42;
-  double get laneHeight => 28 * scale;
-  double get audio1Top => videoTop + laneHeight + 16;
-  double get audio2Top => audio1Top + laneHeight + 8;
-  double get footerTop => audio2Top + laneHeight + 8;
-  double get canvasHeight => footerTop + 36;
+  double get rulerHeight => 30;
+  double get videoTop => rulerHeight + 2;
+  double get laneHeight => 38 * scale;
+  double get laneGap => 2;
+  double get audio1Top => videoTop + laneHeight + laneGap;
+  double get audio2Top => audio1Top + laneHeight + laneGap;
+  double get footerTop => audio2Top + laneHeight + 4;
+  double get canvasHeight => footerTop + 28;
   double get trackBottom => audio2Top + laneHeight;
 }
 
 class _TimelineEditorState extends State<TimelineEditor> {
+  static const double _trackHeaderWidth = 172;
   static const double _snapHitWidth = 10;
   static const double _handleHitWidth = 16;
-  static const double _handleVisualWidth = 4;
+  static const double _handleVisualWidth = 2;
   static const double _minSegmentSeconds = 1.0;
 
   int? _activeIndex;
@@ -379,63 +382,114 @@ class _TimelineEditorState extends State<TimelineEditor> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        _lastViewportWidth = constraints.maxWidth;
-        final width = constraints.maxWidth * widget.zoom;
         final layout = _layout;
-        return Listener(
-          onPointerSignal: _handlePointerSignal,
-          child: Scrollbar(
-            controller: _scrollController,
-            thumbVisibility: widget.zoom > 1.0,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (details) => _tap(details.localPosition, width),
-                onSecondaryTapDown: (details) =>
-                    _showContextMenu(details, width),
-                onPanStart: (details) =>
-                    _startDrag(details.localPosition, width),
-                onPanUpdate: (details) =>
-                    _updateDrag(details.localPosition.dx, width),
-                onPanEnd: (_) => _finishDrag(),
-                onPanCancel: _finishDrag,
-                child: SizedBox(
-                  width: width,
-                  height: layout.canvasHeight,
-                  child: CustomPaint(
-                    painter: _TimelinePainter(
-                      layout: layout,
-                      duration: widget.duration,
-                      segments: widget.segments,
-                      playheadSeconds: widget.playheadSeconds,
-                      selectedSegmentOrder: widget.selectedSegmentOrder,
-                      markIn: widget.markIn,
-                      markOut: widget.markOut,
-                      timelineMarkers: widget.timelineMarkers,
-                      waveform: widget.waveform,
-                      activeIndex: _activeIndex,
-                      activeEdge: _activeEdge,
-                      activeTrack: _activeTrack,
-                      videoTrackLocked: widget.videoTrackLocked,
-                      audioTrack1Locked:
-                          widget.audioTrackLocked || widget.audioTrack1Locked,
-                      audioTrack2Locked:
-                          widget.audioTrackLocked || widget.audioTrack2Locked,
-                      colorScheme: Theme.of(context).colorScheme,
-                    ),
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
-                      child: Padding(
-                        padding: EdgeInsets.only(top: layout.footerTop),
+        final viewportWidth = math.max(
+          120.0,
+          constraints.maxWidth - _trackHeaderWidth - 1,
+        );
+        _lastViewportWidth = viewportWidth;
+        final width = viewportWidth * widget.zoom;
+        return SizedBox(
+          height: layout.canvasHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: _trackHeaderWidth,
+                child: _TimelineTrackHeaders(
+                  layout: layout,
+                  segments: widget.segments,
+                  videoTargeted: widget.videoTrackTargeted,
+                  audio1Targeted: widget.audioTrack1Targeted,
+                  audio2Targeted: widget.audioTrack2Targeted,
+                  videoLocked: widget.videoTrackLocked,
+                  audio1Locked:
+                      widget.audioTrackLocked || widget.audioTrack1Locked,
+                  audio2Locked:
+                      widget.audioTrackLocked || widget.audioTrack2Locked,
+                  onToggleVideoTarget: widget.onToggleVideoTarget,
+                  onToggleAudio1Target: widget.onToggleAudio1Target,
+                  onToggleAudio2Target: widget.onToggleAudio2Target,
+                  onToggleVideoLock: widget.onToggleVideoLock,
+                  onToggleAudio1Lock: widget.onToggleAudio1Lock,
+                  onToggleAudio2Lock: widget.onToggleAudio2Lock,
+                  onToggleAudio1: widget.onToggleAllAudioChannel1,
+                  onToggleAudio2: widget.onToggleAllAudioChannel2,
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              Expanded(
+                key: const Key('timeline-scroll-area'),
+                child: Listener(
+                  onPointerSignal: _handlePointerSignal,
+                  child: Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: widget.zoom > 1.0,
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      scrollDirection: Axis.horizontal,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: (details) =>
+                            _tap(details.localPosition, width),
+                        onSecondaryTapDown: (details) =>
+                            _showContextMenu(details, width),
+                        onPanStart: (details) =>
+                            _startDrag(details.localPosition, width),
+                        onPanUpdate: (details) =>
+                            _updateDrag(details.localPosition.dx, width),
+                        onPanEnd: (_) => _finishDrag(),
+                        onPanCancel: _finishDrag,
                         child: SizedBox(
                           width: width,
-                          child: Text(
-                            '원본 ${formatSeconds(widget.duration)}  |  출력 ${formatSeconds(_totalOutputSeconds())}  |  V1/A1/A2 분리 ${_detachedAudioCount()}개',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelMedium,
+                          height: layout.canvasHeight,
+                          child: CustomPaint(
+                            painter: _TimelinePainter(
+                              layout: layout,
+                              duration: widget.duration,
+                              segments: widget.segments,
+                              playheadSeconds: widget.playheadSeconds,
+                              selectedSegmentOrder: widget.selectedSegmentOrder,
+                              markIn: widget.markIn,
+                              markOut: widget.markOut,
+                              timelineMarkers: widget.timelineMarkers,
+                              waveform: widget.waveform,
+                              activeIndex: _activeIndex,
+                              activeEdge: _activeEdge,
+                              activeTrack: _activeTrack,
+                              videoTrackLocked: widget.videoTrackLocked,
+                              audioTrack1Locked:
+                                  widget.audioTrackLocked ||
+                                  widget.audioTrack1Locked,
+                              audioTrack2Locked:
+                                  widget.audioTrackLocked ||
+                                  widget.audioTrack2Locked,
+                              colorScheme: Theme.of(context).colorScheme,
+                            ),
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  top: layout.footerTop,
+                                  left: 6,
+                                ),
+                                child: SizedBox(
+                                  width: math.max(0, width - 12),
+                                  child: Text(
+                                    'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Detached A/V ${_detachedAudioCount()}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelSmall,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -443,7 +497,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         );
       },
@@ -1748,6 +1802,332 @@ class _TimelineEditorState extends State<TimelineEditor> {
   }
 }
 
+class _TimelineTrackHeaders extends StatelessWidget {
+  const _TimelineTrackHeaders({
+    required this.layout,
+    required this.segments,
+    required this.videoTargeted,
+    required this.audio1Targeted,
+    required this.audio2Targeted,
+    required this.videoLocked,
+    required this.audio1Locked,
+    required this.audio2Locked,
+    required this.onToggleVideoTarget,
+    required this.onToggleAudio1Target,
+    required this.onToggleAudio2Target,
+    required this.onToggleVideoLock,
+    required this.onToggleAudio1Lock,
+    required this.onToggleAudio2Lock,
+    required this.onToggleAudio1,
+    required this.onToggleAudio2,
+  });
+
+  final _TimelineLayout layout;
+  final List<HighlightSegment> segments;
+  final bool videoTargeted;
+  final bool audio1Targeted;
+  final bool audio2Targeted;
+  final bool videoLocked;
+  final bool audio1Locked;
+  final bool audio2Locked;
+  final VoidCallback? onToggleVideoTarget;
+  final VoidCallback? onToggleAudio1Target;
+  final VoidCallback? onToggleAudio2Target;
+  final VoidCallback? onToggleVideoLock;
+  final VoidCallback? onToggleAudio1Lock;
+  final VoidCallback? onToggleAudio2Lock;
+  final VoidCallback? onToggleAudio1;
+  final VoidCallback? onToggleAudio2;
+
+  bool get _audio1Enabled =>
+      segments.isEmpty ||
+      segments.any(
+        (segment) => !segment.audioMuted && segment.audioChannel1Enabled,
+      );
+
+  bool get _audio2Enabled =>
+      segments.isEmpty ||
+      segments.any(
+        (segment) => !segment.audioMuted && segment.audioChannel2Enabled,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return KeyedSubtree(
+      key: const Key('timeline-track-headers'),
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: colorScheme.surfaceContainerHighest),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: layout.rulerHeight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  border: Border(
+                    bottom: BorderSide(color: colorScheme.outline),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.view_timeline_outlined,
+                      size: 15,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'SEQUENCE 01',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '30p',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _TrackHeaderLane(
+              key: const Key('track-header-v1'),
+              top: layout.videoTop,
+              height: layout.laneHeight,
+              patchLabel: 'V1',
+              trackLabel: 'Video 1',
+              accent: _TimelinePainter._videoClipColor,
+              targeted: videoTargeted,
+              locked: videoLocked,
+              mediaEnabled: true,
+              mediaIcon: Icons.videocam_outlined,
+              mediaTooltip: '비디오 트랙',
+              onToggleTarget: onToggleVideoTarget,
+              onToggleLock: onToggleVideoLock,
+            ),
+            _TrackHeaderLane(
+              key: const Key('track-header-a1'),
+              top: layout.audio1Top,
+              height: layout.laneHeight,
+              patchLabel: 'A1',
+              trackLabel: 'Audio 1',
+              accent: _TimelinePainter._audioClipColor,
+              targeted: audio1Targeted,
+              locked: audio1Locked,
+              mediaEnabled: _audio1Enabled,
+              mediaIcon: _audio1Enabled
+                  ? Icons.volume_up_outlined
+                  : Icons.volume_off_outlined,
+              mediaTooltip: _audio1Enabled ? 'A1 전체 비활성화' : 'A1 전체 활성화',
+              onToggleTarget: onToggleAudio1Target,
+              onToggleLock: onToggleAudio1Lock,
+              onToggleMedia: audio1Locked ? null : onToggleAudio1,
+            ),
+            _TrackHeaderLane(
+              key: const Key('track-header-a2'),
+              top: layout.audio2Top,
+              height: layout.laneHeight,
+              patchLabel: 'A2',
+              trackLabel: 'Audio 2',
+              accent: _TimelinePainter._audioClipColor,
+              targeted: audio2Targeted,
+              locked: audio2Locked,
+              mediaEnabled: _audio2Enabled,
+              mediaIcon: _audio2Enabled
+                  ? Icons.volume_up_outlined
+                  : Icons.volume_off_outlined,
+              mediaTooltip: _audio2Enabled ? 'A2 전체 비활성화' : 'A2 전체 활성화',
+              onToggleTarget: onToggleAudio2Target,
+              onToggleLock: onToggleAudio2Lock,
+              onToggleMedia: audio2Locked ? null : onToggleAudio2,
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              top: layout.footerTop + 5,
+              child: Text(
+                'V1 / A1 / A2  ·  30p NDF',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackHeaderLane extends StatelessWidget {
+  const _TrackHeaderLane({
+    super.key,
+    required this.top,
+    required this.height,
+    required this.patchLabel,
+    required this.trackLabel,
+    required this.accent,
+    required this.targeted,
+    required this.locked,
+    required this.mediaEnabled,
+    required this.mediaIcon,
+    required this.mediaTooltip,
+    required this.onToggleTarget,
+    required this.onToggleLock,
+    this.onToggleMedia,
+  });
+
+  final double top;
+  final double height;
+  final String patchLabel;
+  final String trackLabel;
+  final Color accent;
+  final bool targeted;
+  final bool locked;
+  final bool mediaEnabled;
+  final IconData mediaIcon;
+  final String mediaTooltip;
+  final VoidCallback? onToggleTarget;
+  final VoidCallback? onToggleLock;
+  final VoidCallback? onToggleMedia;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: top,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: targeted ? 0.10 : 0.035),
+          border: Border(
+            left: BorderSide(
+              color: targeted ? accent : Colors.transparent,
+              width: 3,
+            ),
+            bottom: BorderSide(
+              color: colorScheme.outline.withValues(alpha: 0.70),
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(5, 2, 4, 2),
+          child: Row(
+            children: [
+              Tooltip(
+                message: '$patchLabel 편집 타깃',
+                child: InkWell(
+                  onTap: onToggleTarget,
+                  borderRadius: BorderRadius.circular(2),
+                  child: Container(
+                    width: 30,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: targeted
+                          ? accent.withValues(alpha: 0.88)
+                          : colorScheme.surface,
+                      border: Border.all(
+                        color: targeted ? accent : colorScheme.outline,
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: Text(
+                      patchLabel,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: targeted
+                            ? const Color(0xFF11140F)
+                            : colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  trackLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: locked
+                        ? colorScheme.onSurfaceVariant
+                        : colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _TrackHeaderIconButton(
+                tooltip: mediaTooltip,
+                icon: mediaIcon,
+                active: mediaEnabled,
+                onPressed: onToggleMedia,
+              ),
+              _TrackHeaderIconButton(
+                tooltip: locked ? '트랙 잠금 해제' : '트랙 잠금',
+                icon: locked ? Icons.lock : Icons.lock_open,
+                active: locked,
+                onPressed: onToggleLock,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackHeaderIconButton extends StatelessWidget {
+  const _TrackHeaderIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 26,
+      height: 26,
+      child: IconButton(
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 15,
+          color: active ? colorScheme.primary : colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
 class _TimelinePainter extends CustomPainter {
   const _TimelinePainter({
     required this.layout,
@@ -1770,10 +2150,10 @@ class _TimelinePainter extends CustomPainter {
 
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
-  static const Color _videoClipColor = Color(0xFFA7F3A1);
-  static const Color _videoClipActiveColor = Color(0xFFC6F77B);
-  static const Color _audioClipColor = Color(0xFFFFBD7A);
-  static const Color _audioClipActiveColor = Color(0xFFFFD49C);
+  static const Color _videoClipColor = Color(0xFF79C98D);
+  static const Color _videoClipActiveColor = Color(0xFF9BE3A9);
+  static const Color _audioClipColor = Color(0xFFE7A66A);
+  static const Color _audioClipActiveColor = Color(0xFFF4BE84);
   static const Color _clipTextColor = Color(0xFF11140F);
 
   final _TimelineLayout layout;
@@ -1795,31 +2175,10 @@ class _TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(5);
-    final trackPaint = Paint()..color = colorScheme.surfaceContainerHighest;
-    _drawTrack(canvas, size, layout.videoTop, radius, trackPaint);
-    _drawTrack(canvas, size, layout.audio1Top, radius, trackPaint);
-    _drawTrack(canvas, size, layout.audio2Top, radius, trackPaint);
-    _drawLaneLabel(
-      canvas,
-      videoTrackLocked ? 'V1 LOCK' : 'V1',
-      layout.videoTop,
-      _videoClipColor,
-    );
-    _drawLaneLabel(
-      canvas,
-      audioTrack1Locked ? 'A1 LOCK' : 'A1',
-      layout.audio1Top,
-      _audioClipColor,
-    );
-    _drawLaneLabel(
-      canvas,
-      audioTrack2Locked ? 'A2 LOCK' : 'A2',
-      layout.audio2Top,
-      _audioClipColor,
-    );
-
-    _drawWaveform(canvas, size);
+    final radius = Radius.circular(2);
+    _drawTrack(canvas, size, layout.videoTop, radius, _videoClipColor);
+    _drawTrack(canvas, size, layout.audio1Top, radius, _audioClipColor);
+    _drawTrack(canvas, size, layout.audio2Top, radius, _audioClipColor);
     _drawInOutRange(canvas, size);
     _drawTicks(canvas, size);
     _drawSegments(canvas, size, radius);
@@ -1832,11 +2191,18 @@ class _TimelinePainter extends CustomPainter {
     Size size,
     double top,
     Radius radius,
-    Paint paint,
+    Color accent,
   ) {
     final rect = Rect.fromLTWH(0, top, size.width, layout.laneHeight);
     final track = RRect.fromRectAndRadius(rect, radius);
-    canvas.drawRRect(track, paint);
+    canvas.drawRRect(
+      track,
+      Paint()
+        ..color = Color.alphaBlend(
+          accent.withValues(alpha: 0.025),
+          colorScheme.surfaceContainerHighest,
+        ),
+    );
     canvas.drawRRect(
       track,
       Paint()
@@ -1844,78 +2210,25 @@ class _TimelinePainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            colorScheme.onSurface.withValues(alpha: 0.05),
-            colorScheme.surface.withValues(alpha: 0.12),
+            colorScheme.onSurface.withValues(alpha: 0.025),
+            colorScheme.surface.withValues(alpha: 0.06),
           ],
         ).createShader(rect),
     );
     canvas.drawRRect(
       track,
       Paint()
-        ..color = colorScheme.outline.withValues(alpha: 0.55)
+        ..color = colorScheme.outline.withValues(alpha: 0.62)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.7,
     );
     canvas.drawLine(
-      Offset(44, top + layout.laneHeight / 2),
+      Offset(0, top + layout.laneHeight / 2),
       Offset(size.width, top + layout.laneHeight / 2),
       Paint()
-        ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.10)
+        ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.06)
         ..strokeWidth = 1,
     );
-  }
-
-  void _drawLaneLabel(Canvas canvas, String label, double top, Color color) {
-    final width = label.length > 2 ? 54.0 : 30.0;
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(8, top + 6, width, layout.laneHeight - 12),
-      Radius.circular(5),
-    );
-    canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.92));
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: _clipTextColor.withValues(alpha: 0.95),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        8 + width / 2 - textPainter.width / 2,
-        top + layout.laneHeight / 2 - textPainter.height / 2,
-      ),
-    );
-  }
-
-  void _drawWaveform(Canvas canvas, Size size) {
-    if (waveform.isEmpty) {
-      return;
-    }
-    final wavePaint = Paint()
-      ..color = colorScheme.onSurfaceVariant.withValues(alpha: 0.50)
-      ..strokeWidth = 1;
-    final step = size.width / waveform.length;
-    final centers = <double>[
-      layout.audio1Top + layout.laneHeight / 2,
-      layout.audio2Top + layout.laneHeight / 2,
-    ];
-    for (var index = 0; index < waveform.length; index++) {
-      final x = index * step;
-      final peak = waveform[index].clamp(0.0, 1.0).toDouble();
-      final halfHeight = math.max(1.0, peak * layout.laneHeight / 2);
-      for (final centerY in centers) {
-        canvas.drawLine(
-          Offset(x, centerY - halfHeight),
-          Offset(x, centerY + halfHeight),
-          wavePaint,
-        );
-      }
-    }
   }
 
   void _drawInOutRange(Canvas canvas, Size size) {
@@ -1937,18 +2250,22 @@ class _TimelinePainter extends CustomPainter {
     );
     canvas.drawRRect(
       rangeRect,
-      Paint()..color = colorScheme.tertiary.withValues(alpha: 0.18),
+      Paint()..color = colorScheme.tertiary.withValues(alpha: 0.07),
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(left, layout.videoTop - 5, math.max(2, right - left), 3),
+      Paint()..color = colorScheme.tertiary.withValues(alpha: 0.88),
     );
   }
 
   void _drawTicks(Canvas canvas, Size size) {
-    final rulerRect = Rect.fromLTWH(0, 0, size.width, 26);
+    final rulerRect = Rect.fromLTWH(0, 0, size.width, layout.rulerHeight);
     canvas.drawRect(
       rulerRect,
       Paint()..color = colorScheme.surface.withValues(alpha: 0.78),
     );
     canvas.drawRect(
-      Rect.fromLTWH(0, 24, size.width, 1),
+      Rect.fromLTWH(0, layout.rulerHeight - 1, size.width, 1),
       Paint()..color = colorScheme.outline.withValues(alpha: 0.75),
     );
 
@@ -1974,7 +2291,7 @@ class _TimelinePainter extends CustomPainter {
               0.001 ||
           normalizedSeconds == 0 ||
           normalizedSeconds == duration;
-      final top = isMajor ? 24.0 : 29.0;
+      final top = isMajor ? layout.rulerHeight - 6 : layout.rulerHeight - 2;
       canvas.drawLine(
         Offset(x, top),
         Offset(x, isMajor ? layout.trackBottom + 6 : 38),
@@ -2250,43 +2567,29 @@ class _TimelinePainter extends CustomPainter {
     if (track == _DragTrack.video) {
       _drawVideoPresence(canvas, rect);
     } else {
-      _drawAudioPresence(canvas, rect);
+      _drawAudioPresence(canvas, rect, start, end);
     }
     _drawClipTimecodeLabel(canvas, rect, label, start, end, track);
+    final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
       rrect,
       Paint()
-        ..color = border.withValues(alpha: handlesActive ? 0.86 : 0.42)
+        ..color = effectiveBorder.withValues(alpha: handlesActive ? 1.0 : 0.48)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = handlesActive ? 1.1 : 0.7,
+        ..strokeWidth = handlesActive ? 1.5 : 0.7,
     );
 
-    final handlePaint = Paint()
-      ..color = (handlesActive ? border : colorScheme.onSurfaceVariant)
-          .withValues(alpha: handlesActive ? 0.95 : 0.72);
-    final handleInnerPaint = Paint()
-      ..color = colorScheme.surface.withValues(alpha: 0.82)
-      ..strokeWidth = 0.8;
-    final handleBorder = Paint()
-      ..color = colorScheme.surface.withValues(alpha: 0.72)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    for (final handleX in [left, right]) {
-      final handleRect = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(handleX, top + layout.laneHeight / 2),
-          width: _handleVisualWidth,
-          height: layout.laneHeight + 4,
-        ),
-        Radius.circular(2),
-      );
-      canvas.drawRRect(handleRect, handlePaint);
-      canvas.drawRRect(handleRect, handleBorder);
-      canvas.drawLine(
-        Offset(handleX, top + 5),
-        Offset(handleX, top + layout.laneHeight - 5),
-        handleInnerPaint,
-      );
+    if (handlesActive) {
+      final handlePaint = Paint()
+        ..color = colorScheme.primary
+        ..strokeWidth = _handleVisualWidth;
+      for (final handleX in [left, right]) {
+        canvas.drawLine(
+          Offset(handleX, top),
+          Offset(handleX, top + layout.laneHeight),
+          handlePaint,
+        );
+      }
     }
   }
 
@@ -2297,32 +2600,43 @@ class _TimelinePainter extends CustomPainter {
     final paint = Paint()
       ..color = _clipTextColor.withValues(alpha: 0.18)
       ..strokeWidth = 0.8;
-    final top = rect.top + 4;
-    final bottom = rect.top + 10;
-    for (var x = rect.left + 14; x < rect.right - 4; x += 18) {
+    final top = rect.bottom - 9;
+    final bottom = rect.bottom - 3;
+    for (var x = rect.left + 12; x < rect.right - 4; x += 16) {
       canvas.drawLine(Offset(x, top), Offset(x, bottom), paint);
     }
   }
 
-  void _drawAudioPresence(Canvas canvas, Rect rect) {
+  void _drawAudioPresence(Canvas canvas, Rect rect, double start, double end) {
     if (rect.width < 18) {
       return;
     }
-    final paint = Paint()
-      ..color = _clipTextColor.withValues(alpha: 0.22)
-      ..strokeWidth = 1;
-    final centerY = rect.center.dy;
+    final centerY = rect.center.dy + 3;
     canvas.drawLine(
       Offset(rect.left + 7, centerY),
       Offset(rect.right - 7, centerY),
-      paint..color = _clipTextColor.withValues(alpha: 0.12),
+      Paint()
+        ..color = _clipTextColor.withValues(alpha: 0.12)
+        ..strokeWidth = 0.8,
     );
     final wavePaint = Paint()
-      ..color = _clipTextColor.withValues(alpha: 0.22)
-      ..strokeWidth = 0.9;
-    for (var x = rect.left + 12; x < rect.right - 6; x += 12) {
-      final phase = ((x - rect.left) / 12).round();
-      final halfHeight = phase.isEven ? 4.0 : 7.0;
+      ..color = _clipTextColor.withValues(alpha: 0.34)
+      ..strokeWidth = 0.8;
+    final step = math.max(2.0, rect.width / 180);
+    for (var x = rect.left + 6; x < rect.right - 5; x += step) {
+      final ratio = ((x - rect.left) / math.max(1.0, rect.width))
+          .clamp(0.0, 1.0)
+          .toDouble();
+      final sourceSeconds = start + (end - start) * ratio;
+      final peak = waveform.isEmpty || duration <= 0
+          ? 0.32 + 0.18 * math.sin(ratio * math.pi * 24).abs()
+          : waveform[(sourceSeconds / duration * (waveform.length - 1))
+                    .round()
+                    .clamp(0, waveform.length - 1)
+                    .toInt()]
+                .clamp(0.0, 1.0)
+                .toDouble();
+      final halfHeight = math.max(1.0, peak * (rect.height * 0.34));
       canvas.drawLine(
         Offset(x, centerY - halfHeight),
         Offset(x, centerY + halfHeight),
@@ -2343,18 +2657,41 @@ class _TimelinePainter extends CustomPainter {
       return;
     }
     final timeText = '${formatSeconds(start)} - ${formatSeconds(end)}';
-    final text = rect.width >= 190
-        ? '$label  $timeText'
-        : rect.width >= 112
-        ? '${track == _DragTrack.video ? 'V' : 'A'}  ${formatSeconds(start)}'
-        : label.split(' ').first;
-    final textPainter = TextPainter(
+    final compactLabel = rect.width >= 92 ? label : label.split(' ').first;
+    final labelPainter = TextPainter(
       text: TextSpan(
-        text: text,
+        text: compactLabel,
         style: TextStyle(
           color: _clipTextColor.withValues(alpha: 0.92),
-          fontSize: rect.width >= 112 ? 9 : 8,
+          fontSize: rect.width >= 92 ? 9 : 8,
           fontWeight: FontWeight.w800,
+        ),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: math.max(0, rect.width - 12));
+    labelPainter.paint(
+      canvas,
+      Offset(
+        rect.left + 6,
+        rect.height >= 30
+            ? rect.top + 3
+            : rect.center.dy - labelPainter.height / 2,
+      ),
+    );
+    if (rect.height < 30 || rect.width < 96) {
+      return;
+    }
+    final timePainter = TextPainter(
+      text: TextSpan(
+        text: rect.width >= 190
+            ? timeText
+            : formatSeconds(track == _DragTrack.video ? start : end),
+        style: TextStyle(
+          color: _clipTextColor.withValues(alpha: 0.76),
+          fontSize: 8,
+          fontWeight: FontWeight.w600,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
@@ -2362,9 +2699,9 @@ class _TimelinePainter extends CustomPainter {
       ellipsis: '…',
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: math.max(0, rect.width - 12));
-    textPainter.paint(
+    timePainter.paint(
       canvas,
-      Offset(rect.left + 6, rect.center.dy - textPainter.height / 2),
+      Offset(rect.left + 6, rect.bottom - timePainter.height - 2),
     );
   }
 

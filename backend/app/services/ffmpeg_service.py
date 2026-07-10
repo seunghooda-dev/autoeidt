@@ -604,6 +604,111 @@ def _segment_color_saturation(segment: dict) -> float:
     return max(0.0, min(float(segment.get("color_saturation", 1.0)), 2.0))
 
 
+def _segment_focus_x(segment: dict) -> float:
+    return max(0.0, min(float(segment.get("focus_x", 0.5)), 1.0))
+
+
+def _segment_focus_y(segment: dict) -> float:
+    return max(0.0, min(float(segment.get("focus_y", 0.42)), 1.0))
+
+
+def _segment_focus_keyframes(
+    segment: dict,
+    axis: str,
+    fallback: float,
+) -> list[tuple[float, float]]:
+    speed = _segment_playback_speed(segment)
+    points: list[tuple[float, float]] = []
+    for item in segment.get("focus_keyframes", []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            seconds = max(0.0, float(item.get("time", 0.0))) / speed
+            value = max(0.0, min(float(item.get(axis, fallback)), 1.0))
+        except (TypeError, ValueError):
+            continue
+        points.append((seconds, value))
+    points.sort(key=lambda item: item[0])
+    return points[:48]
+
+
+def _focus_track_expression(
+    points: list[tuple[float, float]],
+    fallback: float,
+) -> str:
+    if not points:
+        return f"{fallback:.6f}"
+    if len(points) == 1:
+        return f"{points[0][1]:.6f}"
+
+    expression = f"{points[-1][1]:.6f}"
+    for index in range(len(points) - 2, -1, -1):
+        left_time, left_value = points[index]
+        right_time, right_value = points[index + 1]
+        midpoint = (left_time + right_time) / 2.0
+        transition_half = min(0.12, max(0.03, (right_time - left_time) / 6.0))
+        transition_start = max(left_time, midpoint - transition_half)
+        transition_end = min(right_time, midpoint + transition_half)
+        transition_duration = max(0.001, transition_end - transition_start)
+        transition = (
+            f"{left_value:.6f}+({right_value - left_value:.6f})*"
+            f"clip((t-{transition_start:.6f})/{transition_duration:.6f},0,1)"
+        )
+        expression = (
+            f"if(lt(t,{transition_start:.6f}),{left_value:.6f},"
+            f"if(lt(t,{transition_end:.6f}),{transition},{expression}))"
+        )
+    return expression
+
+
+def _portrait_reframe_filters(segment: dict) -> list[str]:
+    focus_x = _segment_focus_x(segment)
+    focus_y = _segment_focus_y(segment)
+    focus_x_expression = _focus_track_expression(
+        _segment_focus_keyframes(segment, "x", focus_x),
+        focus_x,
+    )
+    focus_y_expression = _focus_track_expression(
+        _segment_focus_keyframes(segment, "y", focus_y),
+        focus_y,
+    )
+    tracked_x = [
+        value
+        for _, value in _segment_focus_keyframes(segment, "x", focus_x)
+    ] or [focus_x]
+    extend_edges = min(tracked_x) < 0.18 or max(tracked_x) > 0.82
+    if not extend_edges:
+        crop_x = f"max(0,min(iw-ow,iw*({focus_x_expression})-ow/2))"
+        crop_y = f"max(0,min(ih-oh,ih*({focus_y_expression})-oh*0.38))"
+        return [
+            "crop=w='min(iw,ih*9/16)':h='min(ih,iw*16/9)':"
+            f"x='{crop_x}':y='{crop_y}'",
+            "scale=1080:1920",
+            "setsar=1",
+        ]
+
+    filters = ["scale=1080:1920:force_original_aspect_ratio=increase"]
+    filters.extend(
+        [
+            "pad=iw+2160:ih:1080:0:color=black",
+            "fillborders=left=1080:right=1080:mode=smear",
+        ]
+    )
+    crop_x = (
+        "max(0,min(iw-1080,"
+        f"1080+(iw-2160)*({focus_x_expression})-540))"
+    )
+    # Keep the detected face near the upper third while preserving headroom.
+    crop_y = f"max(0,min(ih-1920,ih*({focus_y_expression})-730))"
+    filters.extend(
+        [
+        f"crop=1080:1920:x='{crop_x}':y='{crop_y}'",
+        "setsar=1",
+        ]
+    )
+    return filters
+
+
 def _atempo_filters(speed: float) -> list[str]:
     factors: list[float] = []
     remaining = speed
@@ -828,14 +933,17 @@ def _render_reencode_with_video_args(
     filters: list[str] = []
     concat_inputs: list[str] = []
     audio_stream_count = _audio_stream_count(video_path)
+    source_starts = [float(segment["start"]) for segment in segments]
+    source_starts.extend(_segment_audio_start(segment) for segment in segments)
+    input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)
     for index, segment in enumerate(segments):
-        start = float(segment["start"])
-        end = float(segment["end"])
+        start = float(segment["start"]) - input_seek
+        end = float(segment["end"]) - input_seek
         video_duration = max(0.000001, end - start)
         speed = _segment_playback_speed(segment)
         output_duration = max(0.000001, video_duration / speed)
-        audio_start = _segment_audio_start(segment)
-        audio_end = _segment_audio_end(segment)
+        audio_start = _segment_audio_start(segment) - input_seek
+        audio_end = _segment_audio_end(segment) - input_seek
         if audio_end <= audio_start:
             audio_start = start
             audio_end = end
@@ -849,7 +957,6 @@ def _render_reencode_with_video_args(
         video_steps = [
             f"[0:v]trim=start={start:.6f}:end={end:.6f}",
             f"setpts=(PTS-STARTPTS)/{speed:.6f}",
-            "format=yuv420p",
         ]
         brightness = _segment_color_brightness(segment)
         contrast = _segment_color_contrast(segment)
@@ -865,6 +972,9 @@ def _render_reencode_with_video_args(
             )
         if not _segment_video_enabled(segment):
             video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+        if aspect_ratio == "9:16":
+            video_steps.extend(_portrait_reframe_filters(segment))
+        video_steps.append("format=yuv420p")
         video_fade_in = _segment_video_fade_in(segment, output_duration)
         video_fade_out = _segment_video_fade_out(segment, output_duration)
         if video_fade_in > 0:
@@ -920,10 +1030,7 @@ def _render_reencode_with_video_args(
 
     video_chain = "[basev]"
     if aspect_ratio == "9:16":
-        filter_complex += (
-            ";[basev]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,setsar=1[framedv]"
-        )
+        filter_complex += ";[basev]setsar=1[framedv]"
         video_chain = "[framedv]"
     elif aspect_ratio == "1:1":
         filter_complex += (
@@ -959,6 +1066,8 @@ def _render_reencode_with_video_args(
         [
             "ffmpeg",
             "-y",
+            "-ss",
+            f"{input_seek:.6f}",
             "-i",
             str(video_path),
             "-filter_complex",

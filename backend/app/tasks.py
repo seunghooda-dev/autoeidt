@@ -20,8 +20,13 @@ from app.services.hybrid_cut import (
     refine_highlights_with_hybrid_cut,
     silence_ranges_to_dicts,
 )
-from app.services.editing_skills import align_highlights_to_transcript_boundaries
+from app.services.editing_skills import (
+    align_highlights_to_transcript_boundaries,
+    assign_highlight_topics,
+    consolidate_overlapping_highlights,
+)
 from app.services.llm_service import analyze_highlights, fallback_review_highlights
+from app.services.smart_reframe import analyze_highlight_framing
 from app.services.reference_style import (
     analyze_reference_video,
     build_style_profile,
@@ -170,6 +175,11 @@ def _write_batch_render_manifest(
                             )
                         ),
                         "playback_speed": segment.get("playback_speed", 1.0),
+                        "focus_x": segment.get("focus_x", 0.5),
+                        "focus_y": segment.get("focus_y", 0.42),
+                        "focus_confidence": segment.get("focus_confidence", 0.0),
+                        "focus_keyframes": segment.get("focus_keyframes", []),
+                        "topic_id": segment.get("topic_id", 0),
                         "reason": segment.get("reason", ""),
                         "script": segment.get("script", ""),
                         "tags": segment.get("tags", []),
@@ -397,6 +407,36 @@ def _normalize_highlights(
         color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
         color_contrast = max(0.5, min(float(item.get("color_contrast", 1.0)), 1.8))
         color_saturation = max(0.0, min(float(item.get("color_saturation", 1.0)), 2.0))
+        focus_x = max(0.0, min(float(item.get("focus_x", 0.5)), 1.0))
+        focus_y = max(0.0, min(float(item.get("focus_y", 0.42)), 1.0))
+        focus_confidence = max(
+            0.0,
+            min(float(item.get("focus_confidence", 0.0)), 1.0),
+        )
+        focus_keyframes: list[dict[str, float]] = []
+        for keyframe in item.get("focus_keyframes", []):
+            if not isinstance(keyframe, dict):
+                continue
+            try:
+                focus_keyframes.append(
+                    {
+                        "time": round(
+                            max(0.0, float(keyframe.get("time", 0.0))),
+                            4,
+                        ),
+                        "x": round(
+                            max(0.0, min(float(keyframe.get("x", focus_x)), 1.0)),
+                            4,
+                        ),
+                        "y": round(
+                            max(0.0, min(float(keyframe.get("y", focus_y)), 1.0)),
+                            4,
+                        ),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        topic_id = max(0, int(item.get("topic_id", 0) or 0))
         audio_fade_in = max(0.0, min(float(item.get("audio_fade_in", 0.0)), 10.0))
         audio_fade_out = max(0.0, min(float(item.get("audio_fade_out", 0.0)), 10.0))
         audio_channel_1_enabled = bool(item.get("audio_channel_1_enabled", True))
@@ -419,6 +459,11 @@ def _normalize_highlights(
                 "color_brightness": round(color_brightness, 3),
                 "color_contrast": round(color_contrast, 3),
                 "color_saturation": round(color_saturation, 3),
+                "focus_x": round(focus_x, 4),
+                "focus_y": round(focus_y, 4),
+                "focus_confidence": round(focus_confidence, 4),
+                "focus_keyframes": focus_keyframes[:48],
+                "topic_id": topic_id,
                 "audio_start": normalized_audio_start,
                 "audio_end": normalized_audio_end,
                 "audio_muted": bool(item.get("audio_muted", False)),
@@ -432,7 +477,7 @@ def _normalize_highlights(
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),
                 "score": round(score, 2),
-                "tags": tags[:6],
+                "tags": tags[:8],
             }
         )
     normalized.sort(key=lambda item: item["order"] if preserve_order else item["start"])
@@ -557,6 +602,30 @@ def _build_protected_silences_for_analysis(
         ]
 
 
+def _analyze_framing_for_analysis(
+    video_path: Path,
+    highlights: list[dict[str, Any]],
+    analysis_warnings: list[str],
+) -> list[dict[str, Any]]:
+    try:
+        return analyze_highlight_framing(video_path, highlights)
+    except Exception as exc:
+        analysis_warnings.append(
+            "화자 중심 구도 분석에 실패해 중앙 구도로 렌더링합니다. "
+            f"원인: {exc}"
+        )
+        return [
+            {
+                **highlight,
+                "focus_x": float(highlight.get("focus_x", 0.5)),
+                "focus_y": float(highlight.get("focus_y", 0.42)),
+                "focus_confidence": 0.0,
+                "focus_keyframes": [],
+            }
+            for highlight in highlights
+        ]
+
+
 def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
     settings = get_settings()
     try:
@@ -633,26 +702,13 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             task,
             job_id,
             JobStatus.processing,
-            "analyzing_highlights",
-            68,
-            "하이라이트 분석 중",
+            "detecting_silence",
+            62,
+            "침묵 구간 탐지 중",
             transcript=transcript,
             captions=captions,
             waveform=waveform,
             analysis_warnings=analysis_warnings,
-        )
-        raw_highlights = _normalize_highlights(
-            analyze_highlights(transcript, duration, style_profile),
-            duration,
-        )
-
-        _set_task_state(
-            task,
-            job_id,
-            JobStatus.processing,
-            "detecting_silence",
-            78,
-            "침묵 구간 탐지 중",
         )
         silence_aggressiveness = 0.6
         if isinstance(style_profile, dict):
@@ -678,14 +734,34 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
             job_id,
             JobStatus.processing,
             "checking_visual_changes",
-            88,
-            "시각적 변화 보호 구간 확인 중",
+            74,
+            "장면 변화 분석 중",
             silences=silence_ranges_to_dicts(silence_ranges),
         )
         scene_points = _detect_scene_points_for_analysis(
             video_path,
             settings.scene_change_threshold,
             analysis_warnings,
+        )
+
+        _set_task_state(
+            task,
+            job_id,
+            JobStatus.processing,
+            "analyzing_highlights",
+            84,
+            "음성·화면·문맥 종합 분석 중",
+            scene_count=len(scene_points),
+        )
+        raw_highlights = _normalize_highlights(
+            analyze_highlights(
+                transcript,
+                duration,
+                style_profile,
+                silence_ranges=silence_ranges,
+                scene_points=scene_points,
+            ),
+            duration,
         )
         if transcript and all(
             item.get("source") == "fallback_stt" for item in transcript
@@ -721,6 +797,23 @@ def analyze_video_job(job_id: str, task: Any | None = None) -> dict[str, Any]:
         if not refined:
             refined = raw_highlights
         refined = align_highlights_to_transcript_boundaries(refined, transcript)
+        refined = consolidate_overlapping_highlights(refined)
+        refined = assign_highlight_topics(refined)
+        refined = _normalize_highlights(refined, duration)
+
+        _set_task_state(
+            task,
+            job_id,
+            JobStatus.processing,
+            "tracking_speakers",
+            94,
+            "화자 중심 세로 구도 분석 중",
+        )
+        refined = _analyze_framing_for_analysis(
+            video_path,
+            refined,
+            analysis_warnings,
+        )
         refined = _normalize_highlights(refined, duration)
 
         _set_task_state(

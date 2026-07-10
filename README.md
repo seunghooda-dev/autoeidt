@@ -52,8 +52,12 @@ Windows 실행 파일 빌드에는 Visual Studio의 `Desktop development with C+
 
 OpenAI API 키가 없어도 데스크톱 엔진은 `faster-whisper` 로컬 STT를 우선 시도합니다.
 처음 실행 시 모델 파일을 내려받으며, 이후에는 PC CPU/GPU로 음성 인식을 수행합니다.
-기본 무료 모드는 `LOCAL_WHISPER_MODEL=tiny`, `LOCAL_WHISPER_DEVICE=cpu`, `LOCAL_WHISPER_COMPUTE_TYPE=int8`입니다.
-정확도가 더 필요하면 `small` 또는 `medium`으로 올릴 수 있지만 처리 시간과 메모리 사용량이 늘어납니다.
+기본 무료 모드는 방송 음성 정확도를 위해 `LOCAL_WHISPER_MODEL=auto`,
+`LOCAL_WHISPER_DEVICE=auto`, `LOCAL_WHISPER_COMPUTE_TYPE=auto`,
+`LOCAL_WHISPER_LANGUAGE=ko`를 사용합니다. NVIDIA GPU를 감지하면 GPU를 우선 사용하고,
+실행 환경이 맞지 않으면 CPU `int8`로 자동 복구합니다. `auto`는 PC에 완전히 설치된
+`medium`/`small` 모델을 우선 사용하고, 없으면 `small`을 한 번 다운로드합니다.
+메모리가 부족한 PC에서는 `base` 또는 `tiny`로 낮출 수 있습니다.
 OpenAI 키가 있으면 OpenAI STT/LLM을 우선 사용하고, 키가 없으면 로컬 STT와 내장 편집
 스킬 엔진으로 동작합니다.
 

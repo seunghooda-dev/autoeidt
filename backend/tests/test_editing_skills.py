@@ -1,6 +1,8 @@
 from app.services.editing_skills import (
     TranscriptWindow,
     align_highlights_to_transcript_boundaries,
+    assign_highlight_topics,
+    consolidate_overlapping_highlights,
     enrich_highlights_with_skill_scores,
     score_window,
     select_highlights_with_skills,
@@ -332,3 +334,86 @@ def test_story_arc_engine_tags_complete_shorts_flow() -> None:
     assert "구독 좋아요" not in joined_text
     assert {"Story:Hook", "Story:Evidence", "Story:Impact", "Story:Resolution"} <= joined_tags
     assert any(item["reason"].startswith("Hook 단계") for item in highlights)
+
+
+def test_audio_visual_signals_reward_dense_speech_and_moderate_scene_change() -> None:
+    window = score_window(
+        TranscriptWindow(
+            start=10.0,
+            end=40.0,
+            items=[{"text": "핵심 발표"}],
+            text="정부 공식 발표의 핵심 결과와 피해 대응을 설명합니다",
+            source_duration=120.0,
+        ),
+        silence_ranges=[{"start": 18.0, "end": 20.0}],
+        scene_points=[11.0, 24.0, 38.9],
+    )
+
+    assert "음성밀도" in window.tags
+    assert "화면활성" in window.tags
+    assert "컷경계" in window.tags
+    assert window.score > 8
+
+
+def test_overlapping_recommendations_are_consolidated_without_duplicate_time() -> None:
+    consolidated = consolidate_overlapping_highlights(
+        [
+            {
+                "start": 10.0,
+                "end": 31.0,
+                "reason": "hook",
+                "script": "첫 번째 설명",
+                "score": 8.0,
+                "tags": ["Story:Hook"],
+            },
+            {
+                "start": 28.0,
+                "end": 44.0,
+                "reason": "evidence",
+                "script": "두 번째 설명",
+                "score": 9.0,
+                "tags": ["Story:Evidence"],
+            },
+            {
+                "start": 70.0,
+                "end": 90.0,
+                "reason": "impact",
+                "score": 7.0,
+                "tags": ["Story:Impact"],
+            },
+        ]
+    )
+
+    assert [(item["start"], item["end"]) for item in consolidated] == [
+        (10.0, 44.0),
+        (70.0, 90.0),
+    ]
+    assert {"Story:Hook", "Story:Evidence"} <= set(consolidated[0]["tags"])
+    assert "중복 추천 구간 통합" in consolidated[0]["reason"]
+
+
+def test_topic_assignment_splits_distant_or_lexically_unrelated_highlights() -> None:
+    topics = assign_highlight_topics(
+        [
+            {
+                "start": 0.0,
+                "end": 30.0,
+                "script": "허브 정원에서 라벤더 향과 식물 효능을 소개합니다",
+                "reason": "허브 소개",
+            },
+            {
+                "start": 90.0,
+                "end": 120.0,
+                "script": "라벤더와 허브를 차로 마시는 방법을 설명합니다",
+                "reason": "허브 활용",
+            },
+            {
+                "start": 340.0,
+                "end": 370.0,
+                "script": "대학교 교육 기관의 학점 인정 제도를 설명합니다",
+                "reason": "교육 제도",
+            },
+        ]
+    )
+
+    assert [item["topic_id"] for item in topics] == [1, 1, 2]

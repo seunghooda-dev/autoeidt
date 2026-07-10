@@ -2400,6 +2400,52 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void setSelectedFocusX(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        focusX: value.clamp(0.0, 1.0).toDouble(),
+        focusConfidence: 0,
+        focusKeyframes: const [],
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedFocusY(double value) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        focusY: value.clamp(0.0, 1.0).toDouble(),
+        focusConfidence: 0,
+        focusKeyframes: const [],
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void resetSelectedFocus() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        focusX: 0.5,
+        focusY: 0.42,
+        focusConfidence: 0,
+        focusKeyframes: const [],
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void resetSelectedColor() {
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked) {
@@ -4567,6 +4613,13 @@ class EditorController extends ChangeNotifier {
         tagText.contains('대응') ||
         _containsAny(scriptText, const ['대응', '결론', '다음', '앞으로']);
     final issues = <String>[];
+    final topicIds = input
+        .map((segment) => segment.topicId)
+        .where((topicId) => topicId > 0)
+        .toSet();
+    if (topicIds.length > 1) {
+      issues.add('Mixed topics');
+    }
     if (strategyKind == 'risk' && !roles.contains('risk')) {
       issues.add('Missing risk');
     } else if (strategyKind != 'risk' && !hasHook) {
@@ -5845,6 +5898,20 @@ class EditorController extends ChangeNotifier {
     final colorBrightness = segment.colorBrightness.clamp(-0.3, 0.3).toDouble();
     final colorContrast = segment.colorContrast.clamp(0.5, 1.8).toDouble();
     final colorSaturation = segment.colorSaturation.clamp(0.0, 2.0).toDouble();
+    final focusX = segment.focusX.clamp(0.0, 1.0).toDouble();
+    final focusY = segment.focusY.clamp(0.0, 1.0).toDouble();
+    final focusConfidence = segment.focusConfidence.clamp(0.0, 1.0).toDouble();
+    final focusKeyframes =
+        segment.focusKeyframes
+            .map(
+              (keyframe) => ReframeKeyframe(
+                time: keyframe.time.clamp(0.0, end - start).toDouble(),
+                x: keyframe.x.clamp(0.0, 1.0).toDouble(),
+                y: keyframe.y.clamp(0.0, 1.0).toDouble(),
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.time.compareTo(b.time));
     final audioChannel1Enabled =
         segment.audioChannel1Enabled || !segment.audioChannel2Enabled;
     final audioChannel2Enabled = segment.audioChannel2Enabled;
@@ -5855,6 +5922,11 @@ class EditorController extends ChangeNotifier {
       colorBrightness: colorBrightness,
       colorContrast: colorContrast,
       colorSaturation: colorSaturation,
+      focusX: focusX,
+      focusY: focusY,
+      focusConfidence: focusConfidence,
+      focusKeyframes: focusKeyframes,
+      topicId: math.max(0, segment.topicId),
       audioChannel1Enabled: audioChannel1Enabled,
       audioChannel2Enabled: audioChannel2Enabled,
     );
@@ -7017,7 +7089,13 @@ class EditorController extends ChangeNotifier {
     required double maxSeconds,
   }) {
     final available =
-        segments.where((segment) => !used.contains(segment.order)).toList()
+        segments
+            .where(
+              (segment) =>
+                  !used.contains(segment.order) &&
+                  (seed.topicId <= 0 || segment.topicId == seed.topicId),
+            )
+            .toList()
           ..sort((a, b) => a.start.compareTo(b.start));
     final seedIndex = available.indexWhere(
       (segment) => segment.order == seed.order,
@@ -7848,6 +7926,7 @@ class ShortsCandidate {
       'Weak ending',
       'Story order',
       'Early CTA',
+      'Mixed topics',
     }.contains,
   );
 

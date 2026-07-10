@@ -17,6 +17,24 @@ double? _jsonOptionalTimelineSeconds(Object? value) {
   return _jsonTimelineSeconds(value);
 }
 
+class ReframeKeyframe {
+  const ReframeKeyframe({required this.time, required this.x, required this.y});
+
+  final double time;
+  final double x;
+  final double y;
+
+  factory ReframeKeyframe.fromJson(Map<String, dynamic> json) {
+    return ReframeKeyframe(
+      time: (json['time'] as num?)?.toDouble() ?? 0,
+      x: (json['x'] as num?)?.toDouble() ?? 0.5,
+      y: (json['y'] as num?)?.toDouble() ?? 0.42,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'time': time, 'x': x, 'y': y};
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,
@@ -31,6 +49,11 @@ class HighlightSegment {
     this.colorBrightness = 0.0,
     this.colorContrast = 1.0,
     this.colorSaturation = 1.0,
+    this.focusX = 0.5,
+    this.focusY = 0.42,
+    this.focusConfidence = 0.0,
+    this.focusKeyframes = const [],
+    this.topicId = 0,
     this.audioStart,
     this.audioEnd,
     this.audioMuted = false,
@@ -59,6 +82,11 @@ class HighlightSegment {
   final double colorBrightness;
   final double colorContrast;
   final double colorSaturation;
+  final double focusX;
+  final double focusY;
+  final double focusConfidence;
+  final List<ReframeKeyframe> focusKeyframes;
+  final int topicId;
   final double? audioStart;
   final double? audioEnd;
   final bool audioMuted;
@@ -95,6 +123,11 @@ class HighlightSegment {
     double? colorBrightness,
     double? colorContrast,
     double? colorSaturation,
+    double? focusX,
+    double? focusY,
+    double? focusConfidence,
+    List<ReframeKeyframe>? focusKeyframes,
+    int? topicId,
     double? audioStart,
     double? audioEnd,
     bool? audioMuted,
@@ -123,6 +156,11 @@ class HighlightSegment {
       colorBrightness: colorBrightness ?? this.colorBrightness,
       colorContrast: colorContrast ?? this.colorContrast,
       colorSaturation: colorSaturation ?? this.colorSaturation,
+      focusX: focusX ?? this.focusX,
+      focusY: focusY ?? this.focusY,
+      focusConfidence: focusConfidence ?? this.focusConfidence,
+      focusKeyframes: focusKeyframes ?? this.focusKeyframes,
+      topicId: topicId ?? this.topicId,
       audioStart: audioStart ?? this.audioStart,
       audioEnd: audioEnd ?? this.audioEnd,
       audioMuted: audioMuted ?? this.audioMuted,
@@ -172,6 +210,26 @@ class HighlightSegment {
           (json['color_saturation'] as num?)?.toDouble() ??
           (json['colorSaturation'] as num?)?.toDouble() ??
           1.0,
+      focusX:
+          (json['focus_x'] as num?)?.toDouble() ??
+          (json['focusX'] as num?)?.toDouble() ??
+          0.5,
+      focusY:
+          (json['focus_y'] as num?)?.toDouble() ??
+          (json['focusY'] as num?)?.toDouble() ??
+          0.42,
+      focusConfidence:
+          (json['focus_confidence'] as num?)?.toDouble() ??
+          (json['focusConfidence'] as num?)?.toDouble() ??
+          0.0,
+      focusKeyframes: (json['focus_keyframes'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ReframeKeyframe.fromJson)
+          .toList(),
+      topicId:
+          (json['topic_id'] as num?)?.toInt() ??
+          (json['topicId'] as num?)?.toInt() ??
+          0,
       audioStart:
           _jsonOptionalTimelineSeconds(json['audio_start']) ??
           _jsonOptionalTimelineSeconds(json['audioStart']),
@@ -243,6 +301,13 @@ class HighlightSegment {
       'color_brightness': colorBrightness,
       'color_contrast': colorContrast,
       'color_saturation': colorSaturation,
+      'focus_x': focusX,
+      'focus_y': focusY,
+      'focus_confidence': focusConfidence,
+      'focus_keyframes': focusKeyframes
+          .map((keyframe) => keyframe.toJson())
+          .toList(),
+      'topic_id': topicId,
       'audio_start': snapSecondsToFrame(effectiveAudioStart),
       'audio_end': snapSecondsToFrame(effectiveAudioEnd),
       'audio_muted': audioMuted,

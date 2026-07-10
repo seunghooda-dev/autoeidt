@@ -25,6 +25,68 @@ void main() {
     expect(find.text('Import'), findsWidgets);
   });
 
+  testWidgets(
+    'timeline keeps professional track headers fixed and interactive',
+    (tester) async {
+      var videoTargetToggles = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 900,
+              height: 240,
+              child: TimelineEditor(
+                duration: 120,
+                segments: const [
+                  HighlightSegment(
+                    order: 1,
+                    start: 10,
+                    end: 40,
+                    reason: 'test',
+                  ),
+                ],
+                playheadSeconds: 20,
+                selectedSegmentOrder: 1,
+                markIn: null,
+                markOut: null,
+                timelineMarkers: const [],
+                waveform: const [0.1, 0.7, 0.4, 0.9],
+                zoom: 2,
+                trackHeightScale: 1,
+                snappingEnabled: true,
+                videoTrackTargeted: true,
+                audioTrack1Targeted: true,
+                audioTrack2Targeted: true,
+                videoTrackLocked: false,
+                audioTrackLocked: false,
+                audioTrack1Locked: false,
+                audioTrack2Locked: false,
+                razorTool: false,
+                onSegmentChanged: (_) {},
+                onScrub: (_) {},
+                onSegmentSelected: (_) {},
+                onToggleVideoTarget: () => videoTargetToggles += 1,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('timeline-track-headers')), findsOneWidget);
+      expect(find.byKey(const Key('track-header-v1')), findsOneWidget);
+      expect(find.byKey(const Key('track-header-a1')), findsOneWidget);
+      expect(find.byKey(const Key('track-header-a2')), findsOneWidget);
+      expect(find.text('SEQUENCE 01'), findsOneWidget);
+      expect(find.text('Video 1'), findsOneWidget);
+      expect(find.text('Audio 1'), findsOneWidget);
+      expect(find.text('Audio 2'), findsOneWidget);
+
+      await tester.tap(find.text('V1'));
+      await tester.pump();
+      expect(videoTargetToggles, 1);
+    },
+  );
+
   testWidgets('registered keyboard shortcuts mutate editor state', (
     tester,
   ) async {
@@ -781,7 +843,7 @@ void main() {
     await tester.pump();
 
     final timelineBox = tester.renderObject<RenderBox>(
-      find.byType(TimelineEditor).first,
+      find.byKey(const Key('timeline-scroll-area')),
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
     final markerNearX = timelineBox.size.width * 20.4 / controller.duration;
@@ -796,7 +858,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final updatedTimelineBox = tester.renderObject<RenderBox>(
-      find.byType(TimelineEditor).first,
+      find.byKey(const Key('timeline-scroll-area')),
     );
     final updatedTimelineTopLeft = updatedTimelineBox.localToGlobal(
       Offset.zero,
@@ -847,10 +909,11 @@ void main() {
     await tester.pump();
 
     final timelineBox = tester.renderObject<RenderBox>(
-      find.byType(TimelineEditor).first,
+      find.byKey(const Key('timeline-scroll-area')),
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
-    final menuPoint = timelineTopLeft + const Offset(170, 98);
+    final menuPoint =
+        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 98);
 
     await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
@@ -953,10 +1016,11 @@ void main() {
     await tester.pump();
 
     final timelineBox = tester.renderObject<RenderBox>(
-      find.byType(TimelineEditor).first,
+      find.byKey(const Key('timeline-scroll-area')),
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
-    final menuPoint = timelineTopLeft + const Offset(170, 98);
+    final menuPoint =
+        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 98);
 
     await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();

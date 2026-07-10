@@ -13,6 +13,14 @@ def test_highlight_segment_accepts_track_controls() -> None:
         color_brightness=1,
         color_contrast=5,
         color_saturation=5,
+        focus_x=2,
+        focus_y=-1,
+        focus_confidence=4,
+        focus_keyframes=[
+            {"time": -2, "x": 4, "y": -1},
+            {"time": 3, "x": 0.7, "y": 0.3},
+        ],
+        topic_id=-3,
         audio_volume=3,
         audio_pan=-2,
         audio_normalize=True,
@@ -25,6 +33,11 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.color_brightness == 0.3
     assert segment.color_contrast == 1.8
     assert segment.color_saturation == 2.0
+    assert segment.focus_x == 1.0
+    assert segment.focus_y == 0.0
+    assert segment.focus_confidence == 1.0
+    assert segment.focus_keyframes[0] == {"time": 0.0, "x": 1.0, "y": 0.0}
+    assert segment.topic_id == 0
     assert segment.audio_volume == 2.0
     assert segment.audio_pan == -1.0
     assert segment.audio_normalize is True

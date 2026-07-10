@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/highlight_segment.dart';
 import 'time_format.dart';
 
 class VideoPreview extends StatelessWidget {
@@ -10,12 +13,22 @@ class VideoPreview extends StatelessWidget {
     required this.volume,
     required this.muted,
     this.onToggleMute,
+    this.targetAspectRatio,
+    this.focusX = 0.5,
+    this.focusY = 0.42,
+    this.focusKeyframes = const [],
+    this.segmentStart = 0,
   });
 
   final VideoPlayerController? controller;
   final double volume;
   final bool muted;
   final VoidCallback? onToggleMute;
+  final double? targetAspectRatio;
+  final double focusX;
+  final double focusY;
+  final List<ReframeKeyframe> focusKeyframes;
+  final double segmentStart;
 
   @override
   Widget build(BuildContext context) {
@@ -39,15 +52,24 @@ class VideoPreview extends StatelessWidget {
       );
     }
 
+    final sourceAspectRatio = player.value.aspectRatio == 0
+        ? 16 / 9
+        : player.value.aspectRatio;
+    final outputAspectRatio = targetAspectRatio ?? sourceAspectRatio;
     return ClipRRect(
       borderRadius: BorderRadius.circular(2),
       child: AspectRatio(
-        aspectRatio: player.value.aspectRatio == 0
-            ? 16 / 9
-            : player.value.aspectRatio,
+        aspectRatio: outputAspectRatio,
         child: ValueListenableBuilder<VideoPlayerValue>(
           valueListenable: player,
           builder: (context, value, _) {
+            final positionSeconds = value.position.inMilliseconds / 1000;
+            final trackedFocus = _reframeFocusAt(
+              focusKeyframes,
+              positionSeconds - segmentStart,
+              fallbackX: focusX,
+              fallbackY: focusY,
+            );
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
@@ -56,7 +78,12 @@ class VideoPreview extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  VideoPlayer(player),
+                  _ReframedVideo(
+                    controller: player,
+                    cropToFill: outputAspectRatio < 1,
+                    focusX: trackedFocus.$1,
+                    focusY: trackedFocus.$2,
+                  ),
                   if (!value.isPlaying) _PausedOverlay(controller: player),
                   Positioned(
                     left: 12,
@@ -67,6 +94,7 @@ class VideoPreview extends StatelessWidget {
                       volume: volume,
                       muted: muted,
                       onToggleMute: onToggleMute,
+                      compact: outputAspectRatio < 1,
                     ),
                   ),
                 ],
@@ -75,6 +103,114 @@ class VideoPreview extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+(double, double) _reframeFocusAt(
+  List<ReframeKeyframe> keyframes,
+  double seconds, {
+  required double fallbackX,
+  required double fallbackY,
+}) {
+  if (keyframes.isEmpty) {
+    return (fallbackX, fallbackY);
+  }
+  final ordered = [...keyframes]..sort((a, b) => a.time.compareTo(b.time));
+  if (seconds <= ordered.first.time) {
+    return (ordered.first.x, ordered.first.y);
+  }
+  for (var index = 0; index < ordered.length - 1; index++) {
+    final left = ordered[index];
+    final right = ordered[index + 1];
+    if (seconds > right.time) {
+      continue;
+    }
+    final midpoint = (left.time + right.time) / 2;
+    final transitionHalf = math.min(
+      0.12,
+      math.max(0.03, (right.time - left.time) / 6),
+    );
+    final transitionStart = math.max(left.time, midpoint - transitionHalf);
+    final transitionEnd = math.min(right.time, midpoint + transitionHalf);
+    if (seconds <= transitionStart) {
+      return (left.x, left.y);
+    }
+    if (seconds >= transitionEnd) {
+      return (right.x, right.y);
+    }
+    final ratio =
+        ((seconds - transitionStart) /
+                math.max(0.001, transitionEnd - transitionStart))
+            .clamp(0.0, 1.0)
+            .toDouble();
+    return (
+      left.x + (right.x - left.x) * ratio,
+      left.y + (right.y - left.y) * ratio,
+    );
+  }
+  return (ordered.last.x, ordered.last.y);
+}
+
+class _ReframedVideo extends StatelessWidget {
+  const _ReframedVideo({
+    required this.controller,
+    required this.cropToFill,
+    required this.focusX,
+    required this.focusY,
+  });
+
+  final VideoPlayerController controller;
+  final bool cropToFill;
+  final double focusX;
+  final double focusY;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = controller.value.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return VideoPlayer(controller);
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var alignment = Alignment.center;
+        if (cropToFill &&
+            constraints.maxWidth.isFinite &&
+            constraints.maxHeight.isFinite) {
+          final scale = math.max(
+            constraints.maxWidth / size.width,
+            constraints.maxHeight / size.height,
+          );
+          final scaledWidth = size.width * scale;
+          final scaledHeight = size.height * scale;
+          final overflowX = math.max(0.0, scaledWidth - constraints.maxWidth);
+          final overflowY = math.max(0.0, scaledHeight - constraints.maxHeight);
+          final cropX =
+              (focusX.clamp(0.0, 1.0) * scaledWidth - constraints.maxWidth / 2)
+                  .clamp(0.0, overflowX)
+                  .toDouble();
+          final cropY =
+              (focusY.clamp(0.0, 1.0) * scaledHeight -
+                      constraints.maxHeight * 0.38)
+                  .clamp(0.0, overflowY)
+                  .toDouble();
+          alignment = Alignment(
+            overflowX <= 0 ? 0 : cropX / overflowX * 2 - 1,
+            overflowY <= 0 ? 0 : cropY / overflowY * 2 - 1,
+          );
+        }
+        return ClipRect(
+          child: FittedBox(
+            fit: cropToFill ? BoxFit.cover : BoxFit.contain,
+            alignment: alignment,
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: VideoPlayer(controller),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -117,12 +253,14 @@ class _VideoControls extends StatelessWidget {
     required this.volume,
     required this.muted,
     required this.onToggleMute,
+    required this.compact,
   });
 
   final VideoPlayerController controller;
   final double volume;
   final bool muted;
   final VoidCallback? onToggleMute;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -178,9 +316,11 @@ class _VideoControls extends StatelessWidget {
                   ),
                 ),
                 SizedBox(
-                  width: 236,
+                  width: compact ? 94 : 236,
                   child: Text(
-                    '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)} · ${(muted ? 0 : volume * 100).round()}%',
+                    compact
+                        ? formatSeconds(positionSeconds)
+                        : '${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)} · ${(muted ? 0 : volume * 100).round()}%',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,

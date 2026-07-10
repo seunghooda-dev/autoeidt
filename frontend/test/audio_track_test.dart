@@ -22,6 +22,14 @@ void main() {
       colorBrightness: 0.1,
       colorContrast: 1.2,
       colorSaturation: 1.3,
+      focusX: 0.72,
+      focusY: 0.31,
+      focusConfidence: 0.84,
+      focusKeyframes: [
+        ReframeKeyframe(time: 0, x: 0.72, y: 0.31),
+        ReframeKeyframe(time: 4, x: 0.84, y: 0.34),
+      ],
+      topicId: 3,
       audioStart: 12,
       audioEnd: 22,
       audioMuted: true,
@@ -45,6 +53,11 @@ void main() {
     expect(json['color_brightness'], 0.1);
     expect(json['color_contrast'], 1.2);
     expect(json['color_saturation'], 1.3);
+    expect(json['focus_x'], 0.72);
+    expect(json['focus_y'], 0.31);
+    expect(json['focus_confidence'], 0.84);
+    expect((json['focus_keyframes'] as List).length, 2);
+    expect(json['topic_id'], 3);
     expect(json['audio_start'], 12);
     expect(json['audio_end'], 22);
     expect(json['audio_muted'], isTrue);
@@ -67,6 +80,12 @@ void main() {
     expect(restored.colorBrightness, 0.1);
     expect(restored.colorContrast, 1.2);
     expect(restored.colorSaturation, 1.3);
+    expect(restored.focusX, 0.72);
+    expect(restored.focusY, 0.31);
+    expect(restored.focusConfidence, 0.84);
+    expect(restored.focusKeyframes.length, 2);
+    expect(restored.focusKeyframes.last.x, 0.84);
+    expect(restored.topicId, 3);
     expect(restored.effectiveAudioStart, 12);
     expect(restored.effectiveAudioEnd, 22);
     expect(restored.audioMuted, isTrue);
@@ -2475,6 +2494,83 @@ void main() {
           lessThan(0.72),
         );
       }
+    }
+  });
+
+  test('multi shorts candidates never mix backend topic groups', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 900
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 45,
+          reason: '허브 핵심',
+          score: 9,
+          tags: ['Story:Hook'],
+          topicId: 1,
+        ),
+        HighlightSegment(
+          order: 2,
+          start: 50,
+          end: 100,
+          reason: '허브 근거',
+          score: 8,
+          tags: ['Story:Evidence'],
+          topicId: 1,
+        ),
+        HighlightSegment(
+          order: 3,
+          start: 105,
+          end: 150,
+          reason: '허브 결론',
+          score: 7,
+          tags: ['Story:Resolution'],
+          topicId: 1,
+        ),
+        HighlightSegment(
+          order: 4,
+          start: 500,
+          end: 545,
+          reason: '교육 핵심',
+          score: 9,
+          tags: ['Story:Hook'],
+          topicId: 2,
+        ),
+        HighlightSegment(
+          order: 5,
+          start: 550,
+          end: 600,
+          reason: '교육 근거',
+          score: 8,
+          tags: ['Story:Evidence'],
+          topicId: 2,
+        ),
+        HighlightSegment(
+          order: 6,
+          start: 605,
+          end: 650,
+          reason: '교육 결론',
+          score: 7,
+          tags: ['Story:Resolution'],
+          topicId: 2,
+        ),
+      ];
+
+    controller.buildMultiShortsCandidates(
+      maxCandidates: 6,
+      minSeconds: 90,
+      maxSeconds: 160,
+    );
+
+    expect(controller.shortsCandidates, isNotEmpty);
+    for (final candidate in controller.shortsCandidates) {
+      final topics = candidate.segments
+          .map((segment) => segment.topicId)
+          .where((topicId) => topicId > 0)
+          .toSet();
+      expect(topics.length, lessThanOrEqualTo(1));
+      expect(candidate.issues, isNot(contains('Mixed topics')));
     }
   });
 

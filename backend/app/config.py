@@ -20,9 +20,19 @@ class Settings(BaseSettings):
     use_openai_whisper: bool = True
     use_openai_llm: bool = True
     use_local_whisper: bool = True
-    local_whisper_model: str = "tiny"
-    local_whisper_device: str = "cpu"
-    local_whisper_compute_type: str = "int8"
+    local_whisper_model: str = "auto"
+    local_whisper_device: str = "auto"
+    local_whisper_compute_type: str = "auto"
+    local_whisper_language: str | None = "ko"
+    local_whisper_initial_prompt: str = (
+        "한국어 방송 원고입니다. 인명, 지명, 기관명, 숫자, 단위를 정확히 "
+        "표기하고 문장부호를 자연스럽게 사용하세요."
+    )
+    local_whisper_hotwords: str = (
+        "정부 국회 법원 검찰 경찰 소방 당국 위원회 공식 발표 보고서 "
+        "인터뷰 현장 취재 기자 앵커 피해 대응 조사"
+    )
+    local_whisper_beam_size: int = 3
 
     target_highlight_seconds_min: int = 180
     target_highlight_seconds_max: int = 240

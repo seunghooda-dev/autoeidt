@@ -46,6 +46,9 @@ def test_render_reencode_forces_30p_non_drop_output(
     assert _command_value(command, "-map_metadata") == "-1"
     assert _command_value(command, "-map_chapters") == "-1"
     assert _command_value(command, "-write_tmcd") == "0"
+    assert _command_value(command, "-ss") == "8.000000"
+    assert "trim=start=2.000000:end=4.000000" in filter_complex
+    assert "atrim=start=2.000000:end=4.000000" in filter_complex
 
 
 def test_legacy_stream_copy_path_is_normalized_to_30p_non_drop(

@@ -39,7 +39,7 @@ class ClipInspector extends StatelessWidget {
             ),
             Text(
               selected.score > 0
-                  ? '${selected.source} · ${selected.score.toStringAsFixed(1)}'
+                  ? '${selected.topicId > 0 ? 'T${selected.topicId} · ' : ''}${selected.source} · ${selected.score.toStringAsFixed(1)}'
                   : selected.source,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -140,6 +140,39 @@ class ClipInspector extends StatelessWidget {
             icon: const Icon(Icons.speed, size: 18),
             label: const Text('Fit In/Out'),
           ),
+        ),
+        const SizedBox(height: 8),
+        _FocusStatus(
+          confidence: selected.focusConfidence,
+          onReset: controller.videoTrackLocked
+              ? null
+              : editor.resetSelectedFocus,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          icon: Icons.align_horizontal_center,
+          label: 'Reframe X',
+          value: selected.focusX.clamp(0.0, 1.0).toDouble(),
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(selected.focusX * 100).round()}%',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedFocusX,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          icon: Icons.align_vertical_center,
+          label: 'Reframe Y',
+          value: selected.focusY.clamp(0.0, 1.0).toDouble(),
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(selected.focusY * 100).round()}%',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedFocusY,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -346,6 +379,53 @@ class ClipInspector extends StatelessWidget {
               : editor.setSelectedAudioFadeOut,
         ),
       ],
+    );
+  }
+}
+
+class _FocusStatus extends StatelessWidget {
+  const _FocusStatus({required this.confidence, required this.onReset});
+
+  final double confidence;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final tracked = confidence > 0.01;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        border: Border.all(color: colorScheme.outline),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            tracked ? Icons.face_retouching_natural : Icons.center_focus_strong,
+            size: 17,
+            color: tracked ? colorScheme.primary : colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              tracked
+                  ? 'Speaker track ${(confidence * 100).round()}%'
+                  : 'Manual / center framing',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          IconButton(
+            tooltip: '구도 중앙 초기화',
+            onPressed: onReset,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.center_focus_strong, size: 17),
+          ),
+        ],
+      ),
     );
   }
 }

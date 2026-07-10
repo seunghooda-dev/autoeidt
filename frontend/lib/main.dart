@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'state/editor_controller.dart';
+import 'state/workspace_controller.dart';
 import 'widgets/ai_director_panel.dart';
 import 'widgets/caption_editor.dart';
 import 'widgets/clip_inspector.dart';
@@ -17,12 +18,16 @@ import 'widgets/time_format.dart';
 import 'widgets/timeline_editor.dart';
 import 'widgets/timeline_marker_panel.dart';
 import 'widgets/video_preview.dart';
+import 'widgets/workspace_tools_panel.dart';
 
 void main() {
   VideoPlayerMediaKit.ensureInitialized(windows: true);
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => EditorController(enableProjectRecovery: true),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => EditorController(enableProjectRecovery: true)),
+        ChangeNotifierProvider(create: (_) => WorkspaceController()),
+      ],
       child: const HighlightEditorApp(),
     ),
   );
@@ -466,6 +471,7 @@ class _DesktopEditorShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workspace = context.watch<WorkspaceController>();
     return Column(
       children: [
         const _TopBar(),
@@ -473,7 +479,7 @@ class _DesktopEditorShell extends StatelessWidget {
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
+                    children: [
               SizedBox(width: 56, child: _WorkspaceRail()),
               _VerticalRule(),
               Expanded(
@@ -483,16 +489,16 @@ class _DesktopEditorShell extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SizedBox(width: 320, child: _MediaPanel()),
+                          SizedBox(width: workspace.mediaWidth, child: _MediaPanel()),
                           _VerticalRule(),
                           Expanded(child: _PreviewStage()),
                           _VerticalRule(),
-                          SizedBox(width: 372, child: _InspectorPanel()),
+                          SizedBox(width: workspace.inspectorWidth, child: _InspectorPanel()),
                         ],
                       ),
                     ),
                     _HorizontalRule(),
-                    SizedBox(height: 342, child: _TimelinePanel()),
+                    SizedBox(height: workspace.timelineHeight, child: _TimelinePanel()),
                   ],
                 ),
               ),
@@ -598,6 +604,21 @@ class _TopBar extends StatelessWidget {
             const _WorkspaceTab(label: 'Captions'),
             const _WorkspaceTab(label: 'Export'),
             const SizedBox(width: 10),
+            IconButton.outlined(
+              tooltip: 'Workspace, assets, history',
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => Dialog(
+                  child: SizedBox(
+                    width: 460,
+                    height: 620,
+                    child: const WorkspaceToolsPanel(),
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.dashboard_customize_outlined),
+            ),
+            const SizedBox(width: 6),
             IconButton.outlined(
               tooltip: '되돌리기',
               onPressed: controller.canUndo
@@ -1055,7 +1076,11 @@ class _PreviewStage extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    const aspect = 16 / 9;
+                    final aspect = switch (controller.exportAspectRatio) {
+                      '9:16' => 9 / 16,
+                      '1:1' => 1.0,
+                      _ => 16 / 9,
+                    };
                     var width = constraints.maxWidth;
                     var height = width / aspect;
                     if (height > constraints.maxHeight) {
@@ -1080,6 +1105,14 @@ class _PreviewStage extends StatelessWidget {
                             controller: controller.videoController,
                             volume: controller.previewVolume,
                             muted: controller.previewMuted,
+                            targetAspectRatio: aspect,
+                            focusX: controller.selectedSegment?.focusX ?? 0.5,
+                            focusY: controller.selectedSegment?.focusY ?? 0.42,
+                            focusKeyframes:
+                                controller.selectedSegment?.focusKeyframes ??
+                                const [],
+                            segmentStart:
+                                controller.selectedSegment?.start ?? 0,
                             onToggleMute: context
                                 .read<EditorController>()
                                 .togglePreviewMute,
@@ -1107,7 +1140,6 @@ class _TimelinePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
     final editor = context.read<EditorController>();
-    final selected = controller.selectedSegment;
     final timelineContent = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1140,135 +1172,19 @@ class _TimelinePanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       _TrackControlButton(
-                        label: 'T V1',
-                        icon: Icons.track_changes,
-                        tooltip: controller.videoTrackTargeted
-                            ? 'V1 편집 타깃 끄기 (Ctrl+1)'
-                            : 'V1 편집 타깃 켜기 (Ctrl+1)',
-                        selected: controller.videoTrackTargeted,
-                        onPressed: editor.toggleVideoTrackTarget,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: 'T A1',
-                        icon: Icons.track_changes,
-                        tooltip: controller.audioTrack1Targeted
-                            ? 'A1 편집 타깃 끄기 (Ctrl+2)'
-                            : 'A1 편집 타깃 켜기 (Ctrl+2)',
-                        selected: controller.audioTrack1Targeted,
-                        onPressed: editor.toggleAudioTrack1Target,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: 'T A2',
-                        icon: Icons.track_changes,
-                        tooltip: controller.audioTrack2Targeted
-                            ? 'A2 편집 타깃 끄기 (Ctrl+3)'
-                            : 'A2 편집 타깃 켜기 (Ctrl+3)',
-                        selected: controller.audioTrack2Targeted,
-                        onPressed: editor.toggleAudioTrack2Target,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: controller.videoTrackLocked ? 'V1 Locked' : 'V1',
-                        icon: controller.videoTrackLocked
-                            ? Icons.lock
-                            : Icons.lock_open,
-                        tooltip: controller.videoTrackLocked
-                            ? 'V1 영상 트랙 잠금 해제'
-                            : 'V1 영상 트랙 잠금',
-                        selected: controller.videoTrackLocked,
-                        onPressed: editor.toggleVideoTrackLock,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: controller.audioTrackLockLabel,
-                        icon: controller.allAudioTracksEditLocked
-                            ? Icons.lock
-                            : Icons.lock_open,
-                        tooltip: controller.allAudioTracksEditLocked
-                            ? 'A1/A2 오디오 트랙 잠금 해제'
-                            : 'A1/A2 오디오 트랙 잠금',
-                        selected: controller.allAudioTracksEditLocked,
-                        onPressed: editor.toggleAudioTrackLock,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: controller.audioTrack1Locked
-                            ? 'A1 Locked'
-                            : 'A1 Lock',
-                        icon: controller.audioTrack1Locked
-                            ? Icons.lock
-                            : Icons.lock_open,
-                        tooltip: controller.audioTrack1Locked
-                            ? 'A1 오디오 트랙 잠금 해제 (Ctrl+Alt+2)'
-                            : 'A1 오디오 트랙 잠금 (Ctrl+Alt+2)',
-                        selected: controller.audioTrack1Locked,
-                        onPressed: editor.toggleAudioTrack1Lock,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: controller.audioTrack2Locked
-                            ? 'A2 Locked'
-                            : 'A2 Lock',
-                        icon: controller.audioTrack2Locked
-                            ? Icons.lock
-                            : Icons.lock_open,
-                        tooltip: controller.audioTrack2Locked
-                            ? 'A2 오디오 트랙 잠금 해제 (Ctrl+Alt+3)'
-                            : 'A2 오디오 트랙 잠금 (Ctrl+Alt+3)',
-                        selected: controller.audioTrack2Locked,
-                        onPressed: editor.toggleAudioTrack2Lock,
-                      ),
-                      const SizedBox(width: 6),
-                      _TrackControlButton(
-                        label: controller.allAudioMuted
-                            ? 'A1/A2 Muted'
-                            : 'A1/A2 Mix',
-                        icon: controller.allAudioMuted
-                            ? Icons.volume_off_outlined
-                            : Icons.volume_up_outlined,
-                        tooltip: controller.allAudioMuted
-                            ? 'A1/A2 전체 음소거 해제'
-                            : 'A1/A2 전체 음소거',
-                        selected: controller.allAudioMuted,
-                        onPressed: editor.toggleAllAudioMute,
+                        label: controller.timelineTrackHeightLabel,
+                        icon: Icons.height,
+                        tooltip: '트랙 높이 변경 (Alt+- / Alt+=)',
+                        selected: controller.timelineTrackHeightScale > 1.05,
+                        onPressed: editor.cycleTimelineTrackHeight,
                       ),
                       const SizedBox(width: 6),
                       _AudioTrackBusMenu(
                         controller: controller,
                         editor: editor,
                       ),
-                      if (selected != null) ...[
-                        const SizedBox(width: 6),
-                        _TrackControlButton(
-                          label: selected.audioChannel1Enabled
-                              ? 'A1 On'
-                              : 'A1 Off',
-                          icon: selected.audioChannel1Enabled
-                              ? Icons.check_box_outlined
-                              : Icons.check_box_outline_blank,
-                          tooltip: selected.audioChannel1Enabled
-                              ? '선택 클립 A1 채널 비활성화'
-                              : '선택 클립 A1 채널 활성화',
-                          selected: selected.audioChannel1Enabled,
-                          onPressed: editor.toggleSelectedAudioChannel1,
-                        ),
-                        const SizedBox(width: 6),
-                        _TrackControlButton(
-                          label: selected.audioChannel2Enabled
-                              ? 'A2 On'
-                              : 'A2 Off',
-                          icon: selected.audioChannel2Enabled
-                              ? Icons.check_box_outlined
-                              : Icons.check_box_outline_blank,
-                          tooltip: selected.audioChannel2Enabled
-                              ? '선택 클립 A2 채널 비활성화'
-                              : '선택 클립 A2 채널 활성화',
-                          selected: selected.audioChannel2Enabled,
-                          onPressed: editor.toggleSelectedAudioChannel2,
-                        ),
-                      ],
+                      const SizedBox(width: 6),
+                      const _SmallPill(label: '30p NDF'),
                       const SizedBox(width: 6),
                       _SmallPill(
                         label:
