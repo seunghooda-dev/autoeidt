@@ -66,6 +66,7 @@ class EditorController extends ChangeNotifier {
   bool isRendering = false;
   bool hasRecoverySnapshot = false;
   DateTime? recoverySnapshotSavedAt;
+  List<ProjectRecoverySnapshot> recoveryVersions = [];
   String? errorMessage;
   double duration = 0;
   List<HighlightSegment> segments = [];
@@ -1390,9 +1391,11 @@ class EditorController extends ChangeNotifier {
       final snapshot = await _recoveryService.readSnapshot();
       hasRecoverySnapshot = snapshot != null;
       recoverySnapshotSavedAt = snapshot?.savedAt;
+      recoveryVersions = await _recoveryService.listVersions();
     } catch (_) {
       hasRecoverySnapshot = false;
       recoverySnapshotSavedAt = null;
+      recoveryVersions = [];
     }
     notifyListeners();
   }
@@ -1411,36 +1414,98 @@ class EditorController extends ChangeNotifier {
         return;
       }
 
-      if (hasRecoverableProject) {
-        _commitHistory();
-      }
-      errorMessage = null;
-      isUploading = false;
-      isRendering = false;
-      isProbingMedia = false;
-      isPreparingPreview = false;
-      uploadProgress = 0;
-      selectedMediaProbe = null;
-      await _disposeVideoController();
-      _applyProject(snapshot.project, keepJob: false, resetHistory: false);
-      hasRecoverySnapshot = true;
-      recoverySnapshotSavedAt = snapshot.savedAt;
-      _lastRecoveryPayload = jsonEncode(snapshot.project.toJson());
-
-      if (initializePreview && !kIsWeb && sourceMediaIsLinked) {
-        unawaited(_initializeLocalPreview(sourceMediaPath!));
-        unawaited(probeSelectedMedia());
-      } else if (initializePreview && jobId != null) {
-        try {
-          await _initializePreview(jobId!);
-        } catch (_) {
-          await _disposeVideoController();
-        }
-      }
+      await _restoreRecoverySnapshot(snapshot, initializePreview);
     } catch (error) {
       errorMessage = '자동 저장본 복구 실패: $error';
     }
     notifyListeners();
+  }
+
+  Future<void> createManualRecoverySnapshot({String? label}) async {
+    if (!_projectRecoveryEnabled || !hasRecoverableProject) {
+      return;
+    }
+    try {
+      final project = projectState;
+      final snapshot = await _recoveryService.saveProject(
+        project,
+        label: label,
+        manual: true,
+      );
+      _lastRecoveryPayload = jsonEncode(project.toJson());
+      hasRecoverySnapshot = true;
+      recoverySnapshotSavedAt = snapshot.savedAt;
+      recoveryVersions = await _recoveryService.listVersions();
+      errorMessage = null;
+    } catch (error) {
+      errorMessage = '수동 복구 버전 저장 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> restoreRecoveryVersion(
+    String id, {
+    bool initializePreview = true,
+  }) async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    try {
+      final snapshot = await _recoveryService.readVersion(id);
+      if (snapshot == null) {
+        errorMessage = '선택한 복구 버전을 찾을 수 없습니다.';
+      } else {
+        await _restoreRecoverySnapshot(snapshot, initializePreview);
+      }
+    } catch (error) {
+      errorMessage = '복구 버전 불러오기 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteRecoveryVersion(String id) async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    try {
+      await _recoveryService.deleteVersion(id);
+      recoveryVersions = await _recoveryService.listVersions();
+    } catch (error) {
+      errorMessage = '복구 버전 삭제 실패: $error';
+    }
+    notifyListeners();
+  }
+
+  Future<void> _restoreRecoverySnapshot(
+    ProjectRecoverySnapshot snapshot,
+    bool initializePreview,
+  ) async {
+    if (hasRecoverableProject) {
+      _commitHistory();
+    }
+    errorMessage = null;
+    isUploading = false;
+    isRendering = false;
+    isProbingMedia = false;
+    isPreparingPreview = false;
+    uploadProgress = 0;
+    selectedMediaProbe = null;
+    await _disposeVideoController();
+    _applyProject(snapshot.project, keepJob: false, resetHistory: false);
+    hasRecoverySnapshot = true;
+    recoverySnapshotSavedAt = snapshot.savedAt;
+    _lastRecoveryPayload = jsonEncode(snapshot.project.toJson());
+
+    if (initializePreview && !kIsWeb && sourceMediaIsLinked) {
+      unawaited(_initializeLocalPreview(sourceMediaPath!));
+      unawaited(probeSelectedMedia());
+    } else if (initializePreview && jobId != null) {
+      try {
+        await _initializePreview(jobId!);
+      } catch (_) {
+        await _disposeVideoController();
+      }
+    }
   }
 
   Future<void> clearRecoverySnapshot() async {
@@ -1451,6 +1516,7 @@ class EditorController extends ChangeNotifier {
       await _recoveryService.clearSnapshot();
       hasRecoverySnapshot = false;
       recoverySnapshotSavedAt = null;
+      recoveryVersions = [];
       _lastRecoveryPayload = null;
     } catch (error) {
       errorMessage = '자동 저장본 삭제 실패: $error';
@@ -7664,6 +7730,7 @@ class EditorController extends ChangeNotifier {
       }
       hasRecoverySnapshot = true;
       recoverySnapshotSavedAt = snapshot.savedAt;
+      recoveryVersions = await _recoveryService.listVersions();
       super.notifyListeners();
     } catch (_) {
       // Recovery must never interrupt editing.

@@ -488,6 +488,58 @@ class _HistoryTab extends StatelessWidget {
         Row(
           children: [
             Text(
+              'Saved versions',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: editor.hasRecoverableProject
+                  ? () => _createSnapshotDialog(context)
+                  : null,
+              icon: const Icon(Icons.add, size: 17),
+              label: const Text('Snapshot'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (editor.recoveryVersions.isEmpty)
+          const ListTile(
+            dense: true,
+            leading: Icon(Icons.cloud_off_outlined),
+            title: Text('No saved versions yet'),
+          )
+        else
+          for (final version in editor.recoveryVersions)
+            ListTile(
+              dense: true,
+              leading: Icon(
+                version.isManual ? Icons.bookmark : Icons.cloud_done_outlined,
+              ),
+              title: Text(version.label),
+              subtitle: Text(
+                '${version.project.segments.length} clips · '
+                '${_shortTime(version.savedAt)}',
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Restore this version',
+                    onPressed: () => editor.restoreRecoveryVersion(version.id),
+                    icon: const Icon(Icons.restore, size: 19),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete this version',
+                    onPressed: () => editor.deleteRecoveryVersion(version.id),
+                    icon: const Icon(Icons.delete_outline, size: 19),
+                  ),
+                ],
+              ),
+            ),
+        const Divider(height: 28),
+        Row(
+          children: [
+            Text(
               'Edit timeline',
               style: Theme.of(context).textTheme.titleSmall,
             ),
@@ -525,6 +577,47 @@ class _HistoryTab extends StatelessWidget {
             ),
       ],
     );
+  }
+
+  Future<void> _createSnapshotDialog(BuildContext context) async {
+    final labelController = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Create project snapshot'),
+          content: TextField(
+            controller: labelController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Version label',
+              hintText: 'Before final trim',
+            ),
+            onSubmitted: (value) {
+              editor.createManualRecoverySnapshot(label: value);
+              Navigator.pop(dialogContext);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                editor.createManualRecoverySnapshot(
+                  label: labelController.text,
+                );
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      labelController.dispose();
+    }
   }
 }
 

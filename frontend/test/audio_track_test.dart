@@ -245,7 +245,10 @@ void main() {
 
       final saved = await service.saveProject(project);
       expect(saved.savedAt, DateTime.utc(2026, 1, 2, 3, 4, 5));
+      expect(saved.label, 'Auto Save');
+      expect(saved.isManual, isFalse);
       expect(await service.hasSnapshot(), isTrue);
+      expect(await service.listVersions(), hasLength(1));
 
       final snapshot = await service.readSnapshot();
       expect(snapshot, isNotNull);
@@ -253,8 +256,102 @@ void main() {
       expect(snapshot.project.segments.single.end, 42);
       expect(snapshot.project.markIn, 10);
 
+      final manualProject = ProjectState(
+        name: project.name,
+        duration: project.duration,
+        segments: const [
+          HighlightSegment(
+            order: 1,
+            start: 10,
+            end: 55,
+            reason: 'extended hook',
+          ),
+        ],
+        captions: project.captions,
+        waveform: project.waveform,
+        markIn: project.markIn,
+        markOut: 55,
+      );
+      final manual = await service.saveProject(
+        manualProject,
+        label: 'Before final export',
+        manual: true,
+      );
+      final versions = await service.listVersions();
+      expect(versions, hasLength(2));
+      expect(versions.first.id, manual.id);
+      expect(versions.first.label, 'Before final export');
+      expect(versions.first.isManual, isTrue);
+
+      final selectedVersion = await service.readVersion(manual.id);
+      expect(selectedVersion, isNotNull);
+      expect(selectedVersion!.project.segments.single.end, 55);
+
+      await service.deleteVersion(saved.id);
+      expect(await service.listVersions(), hasLength(1));
+
       await service.clearSnapshot();
       expect(await service.hasSnapshot(), isFalse);
+      expect(await service.listVersions(), isEmpty);
+    },
+  );
+
+  test(
+    'project recovery retains twenty autosaves without pruning snapshots',
+    () async {
+      final directory = await io.Directory.systemTemp.createTemp(
+        'autoedit_recovery_rotation_test',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+
+      var tick = 0;
+      final service = ProjectRecoveryService(
+        directory: directory,
+        clock: () => DateTime.utc(2026, 1, 2).add(Duration(seconds: tick++)),
+      );
+      await service.saveProject(
+        const ProjectState(
+          name: 'Pinned manual version',
+          duration: 120,
+          segments: [],
+          captions: [],
+          waveform: [],
+        ),
+        label: 'Pinned manual version',
+        manual: true,
+      );
+      for (var index = 0; index < 23; index += 1) {
+        await service.saveProject(
+          ProjectState(
+            name: 'Version $index',
+            duration: 120,
+            segments: [
+              HighlightSegment(
+                order: 1,
+                start: index.toDouble(),
+                end: index + 10.0,
+                reason: 'version $index',
+              ),
+            ],
+            captions: const [],
+            waveform: const [],
+          ),
+        );
+      }
+
+      final versions = await service.listVersions();
+      final automatic = versions.where((version) => !version.isManual).toList();
+      expect(automatic, hasLength(20));
+      expect(automatic.first.project.name, 'Version 22');
+      expect(automatic.last.project.name, 'Version 3');
+      expect(
+        versions.where((version) => version.isManual).single.label,
+        'Pinned manual version',
+      );
     },
   );
 
@@ -323,6 +420,22 @@ void main() {
     expect(restored.duration, 180);
     expect(restored.segments.single.end, 75);
     expect(restored.markIn, 30);
+
+    await restored.createManualRecoverySnapshot(label: 'Approved rough cut');
+    final manual = restored.recoveryVersions.first;
+    expect(manual.label, 'Approved rough cut');
+    expect(manual.isManual, isTrue);
+
+    restored.updateSegment(restored.segments.single.copyWith(end: 90));
+    expect(restored.segments.single.end, 90);
+    await restored.restoreRecoveryVersion(manual.id, initializePreview: false);
+    expect(restored.segments.single.end, 75);
+
+    await restored.deleteRecoveryVersion(manual.id);
+    expect(
+      restored.recoveryVersions.any((version) => version.id == manual.id),
+      isFalse,
+    );
 
     controller.dispose();
     restored.dispose();
