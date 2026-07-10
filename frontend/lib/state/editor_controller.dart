@@ -858,19 +858,29 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> pickVideo() async {
+    final files = await pickMediaAssets(allowMultiple: false);
+    if (files.isEmpty) {
+      return;
+    }
+    await openMediaFile(files.first);
+  }
+
+  Future<List<PlatformFile>> pickMediaAssets({
+    bool allowMultiple = true,
+  }) async {
     errorMessage = null;
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: '원본 영상 가져오기',
       type: kIsWeb ? FileType.video : FileType.custom,
       allowedExtensions: kIsWeb ? null : supportedVideoExtensions,
-      allowMultiple: false,
+      allowMultiple: allowMultiple,
       withData: kIsWeb,
-      withReadStream: !kIsWeb,
+      withReadStream: false,
     );
     if (result == null || result.files.isEmpty) {
-      return;
+      return const [];
     }
-    await openMediaFile(result.files.single);
+    return result.files;
   }
 
   Future<void> openMediaPath(String path) async {

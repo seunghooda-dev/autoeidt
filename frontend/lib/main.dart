@@ -1355,10 +1355,18 @@ class _ToolbarDivider extends StatelessWidget {
 class _MediaPanel extends StatelessWidget {
   const _MediaPanel();
 
+  static const _baseFolders = [
+    'All',
+    'Unsorted',
+    'Footage',
+    'Audio',
+    'Graphics',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
-    final workspace = context.read<WorkspaceController>();
+    final workspace = context.watch<WorkspaceController>();
     final selectedFile = controller.selectedFile;
     final selectedPath = selectedFile?.path;
     if (selectedFile != null &&
@@ -1369,123 +1377,552 @@ class _MediaPanel extends StatelessWidget {
         workspace.addAsset(name: selectedFile.name, path: selectedPath);
       });
     }
+    final folders = [
+      ..._baseFolders,
+      for (final folder
+          in workspace.assets.map((asset) => asset.folder).toSet())
+        if (!_baseFolders.contains(folder)) folder,
+    ];
+    final visibleAssets = workspace.filteredAssets;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _PanelHeader(
-            title: 'Project Media',
-            icon: Icons.perm_media_outlined,
+          Row(
+            children: [
+              const Expanded(
+                child: _PanelHeader(
+                  title: 'Project Media',
+                  icon: Icons.perm_media_outlined,
+                ),
+              ),
+              IconButton.outlined(
+                key: const Key('media-bin-import'),
+                tooltip: 'Import media to bin',
+                onPressed: controller.isUploading
+                    ? null
+                    : () => _importAssets(context),
+                icon: const Icon(Icons.add, size: 19),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          const _EngineStatus(),
-          const SizedBox(height: 10),
-          const StatusPanel(),
-          if (controller.selectedFile != null) ...[
-            const SizedBox(height: 10),
-            _ImportedMediaTile(controller: controller),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('media-bin-search'),
+            onChanged: workspace.setAssetSearchQuery,
+            decoration: const InputDecoration(
+              isDense: true,
+              prefixIcon: Icon(Icons.search, size: 19),
+              hintText: 'Search media',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  key: const Key('media-bin-folder'),
+                  initialValue: folders.contains(workspace.assetFolder)
+                      ? workspace.assetFolder
+                      : 'All',
+                  isExpanded: true,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.folder_outlined, size: 18),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final folder in folders)
+                      DropdownMenuItem(value: folder, child: Text(folder)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      workspace.selectAssetFolder(value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.outlined(
+                key: const Key('media-bin-favorites'),
+                tooltip: 'Favorites only',
+                isSelected: workspace.favoriteAssetsOnly,
+                onPressed: workspace.toggleFavoriteAssetsOnly,
+                icon: Icon(
+                  workspace.favoriteAssetsOnly ? Icons.star : Icons.star_border,
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 7, bottom: 5),
+            child: Text(
+              '${visibleAssets.length} of ${workspace.assets.length} items',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: visibleAssets.isEmpty
+                ? _MediaBinEmpty(onImport: () => _importAssets(context))
+                : ListView.builder(
+                    key: const Key('media-bin-list'),
+                    itemCount: visibleAssets.length,
+                    itemBuilder: (context, index) {
+                      final asset = visibleAssets[index];
+                      final active = controller.sourceMediaPath == asset.path;
+                      return _MediaAssetTile(
+                        asset: asset,
+                        active: active,
+                        onOpen: asset.isOffline
+                            ? null
+                            : () =>
+                                  _activateMediaAssetPath(context, asset.path),
+                        onFavorite: () => workspace.toggleAssetFavorite(asset),
+                        onRelink: asset.isOffline
+                            ? () => _relinkAsset(context, asset, active: active)
+                            : null,
+                        onSecondaryTap: (position) => _showAssetMenu(
+                          context,
+                          asset,
+                          position,
+                          active: active,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          if (controller.isUploading ||
+              controller.isProbingMedia ||
+              controller.isPreparingPreview ||
+              controller.job?.status == 'processing' ||
+              controller.errorMessage != null) ...[
+            const SizedBox(height: 7),
+            _MediaActivityStrip(controller: controller),
           ],
-          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _importAssets(BuildContext context) async {
+    final editor = context.read<EditorController>();
+    final workspace = context.read<WorkspaceController>();
+    final files = await editor.pickMediaAssets();
+    if (!context.mounted || files.isEmpty) {
+      return;
+    }
+    for (final file in files) {
+      final path = file.path;
+      if (path != null && path.isNotEmpty) {
+        workspace.addAsset(name: file.name, path: path);
+      }
+    }
+    if (editor.selectedFile == null) {
+      final first = files.first;
+      final path = first.path;
+      if (path != null && path.isNotEmpty) {
+        await editor.openMediaFile(first);
+      }
+    }
+  }
+
+  Future<void> _showAssetMenu(
+    BuildContext context,
+    AssetEntry asset,
+    Offset position, {
+    required bool active,
+  }) async {
+    final workspace = context.read<WorkspaceController>();
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'open',
+          enabled: !asset.isOffline && !active,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.play_circle_outline),
+            title: Text('Open as source'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'favorite',
+          child: ListTile(
+            dense: true,
+            leading: Icon(asset.favorite ? Icons.star : Icons.star_border),
+            title: Text(asset.favorite ? 'Remove favorite' : 'Add favorite'),
+          ),
+        ),
+        if (asset.isOffline)
+          const PopupMenuItem(
+            value: 'relink',
+            child: ListTile(
+              dense: true,
+              leading: Icon(Icons.link),
+              title: Text('Relink media'),
+            ),
+          ),
+        for (final folder in _baseFolders.skip(1))
+          PopupMenuItem(
+            value: 'folder:$folder',
+            enabled: asset.folder != folder,
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: Text('Move to $folder'),
+            ),
+          ),
+        PopupMenuItem(
+          value: 'remove',
+          enabled: !active,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.delete_outline),
+            title: Text('Remove from bin'),
+          ),
+        ),
+      ],
+    );
+    if (!context.mounted || action == null) {
+      return;
+    }
+    if (action == 'open') {
+      await _activateMediaAssetPath(context, asset.path);
+    } else if (action == 'relink') {
+      await _relinkAsset(context, asset, active: active);
+    } else if (action == 'favorite') {
+      workspace.toggleAssetFavorite(asset);
+    } else if (action == 'remove') {
+      workspace.removeAsset(asset);
+    } else if (action.startsWith('folder:')) {
+      workspace.setAssetFolder(asset, action.substring('folder:'.length));
+    }
+  }
+
+  Future<void> _relinkAsset(
+    BuildContext context,
+    AssetEntry asset, {
+    required bool active,
+  }) async {
+    final editor = context.read<EditorController>();
+    final workspace = context.read<WorkspaceController>();
+    if (active) {
+      await editor.relinkSourceMedia();
+      if (!context.mounted) {
+        return;
+      }
+      final replacement = editor.selectedFile;
+      final path = replacement?.path;
+      if (replacement != null && path != null && path.isNotEmpty) {
+        workspace.relinkAsset(asset, name: replacement.name, path: path);
+      }
+      return;
+    }
+    final files = await editor.pickMediaAssets(allowMultiple: false);
+    if (!context.mounted || files.isEmpty) {
+      return;
+    }
+    final replacement = files.first;
+    final path = replacement.path;
+    if (path != null && path.isNotEmpty) {
+      workspace.relinkAsset(asset, name: replacement.name, path: path);
+    }
+  }
+}
+
+class _MediaBinEmpty extends StatelessWidget {
+  const _MediaBinEmpty({required this.onImport});
+
+  final VoidCallback onImport;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.video_library_outlined,
+            size: 30,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 8),
+          const Text('No media in this bin'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onImport,
+            icon: const Icon(Icons.add, size: 17),
+            label: const Text('Import'),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ImportedMediaTile extends StatelessWidget {
-  const _ImportedMediaTile({required this.controller});
+class _MediaAssetTile extends StatelessWidget {
+  const _MediaAssetTile({
+    required this.asset,
+    required this.active,
+    required this.onOpen,
+    required this.onFavorite,
+    required this.onRelink,
+    required this.onSecondaryTap,
+  });
+
+  final AssetEntry asset;
+  final bool active;
+  final VoidCallback? onOpen;
+  final VoidCallback onFavorite;
+  final VoidCallback? onRelink;
+  final ValueChanged<Offset> onSecondaryTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final offline = asset.isOffline;
+    final accent = offline
+        ? colorScheme.error
+        : active
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
+    final tile = GestureDetector(
+      onTap: onOpen,
+      onSecondaryTapDown: (details) => onSecondaryTap(details.globalPosition),
+      child: Container(
+        key: Key('media-asset-${asset.path}'),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+        decoration: BoxDecoration(
+          color: active
+              ? colorScheme.primary.withValues(alpha: 0.11)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.30),
+          border: Border.all(
+            color: active
+                ? colorScheme.primary.withValues(alpha: 0.72)
+                : offline
+                ? colorScheme.error.withValues(alpha: 0.55)
+                : colorScheme.outline.withValues(alpha: 0.72),
+          ),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 30,
+              child: Icon(
+                offline ? Icons.link_off : _assetIcon(asset.name),
+                color: accent,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    asset.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: offline ? colorScheme.error : null,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    offline
+                        ? 'Offline · ${asset.folder}'
+                        : active
+                        ? 'Active source · ${asset.folder}'
+                        : asset.folder,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelSmall?.copyWith(color: accent),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+              tooltip: asset.favorite ? 'Remove favorite' : 'Add favorite',
+              onPressed: onFavorite,
+              icon: Icon(
+                asset.favorite ? Icons.star : Icons.star_border,
+                size: 18,
+                color: asset.favorite ? colorScheme.tertiary : null,
+              ),
+            ),
+            if (offline)
+              IconButton(
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+                padding: EdgeInsets.zero,
+                tooltip: 'Relink media',
+                onPressed: onRelink,
+                icon: const Icon(Icons.link, size: 18),
+              )
+            else
+              Icon(
+                Icons.drag_indicator,
+                size: 17,
+                color: colorScheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+      ),
+    );
+    if (offline) {
+      return tile;
+    }
+    return Draggable<String>(
+      data: asset.path,
+      feedback: Material(
+        color: Colors.transparent,
+        child: SizedBox(width: 270, child: Opacity(opacity: 0.94, child: tile)),
+      ),
+      childWhenDragging: Opacity(opacity: 0.42, child: tile),
+      child: MouseRegion(cursor: SystemMouseCursors.click, child: tile),
+    );
+  }
+
+  IconData _assetIcon(String name) {
+    final extension = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : '';
+    if (const {'wav', 'mp3', 'aac', 'flac', 'm4a'}.contains(extension)) {
+      return Icons.graphic_eq;
+    }
+    if (const {'png', 'jpg', 'jpeg', 'webp', 'gif'}.contains(extension)) {
+      return Icons.image_outlined;
+    }
+    return Icons.movie_outlined;
+  }
+}
+
+class _MediaActivityStrip extends StatelessWidget {
+  const _MediaActivityStrip({required this.controller});
 
   final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
-    final file = controller.selectedFile;
-    if (file == null) {
-      return const SizedBox.shrink();
-    }
     final colorScheme = Theme.of(context).colorScheme;
-    final duration = controller.timelineSourceDuration;
-    final path = controller.sourceMediaPath;
-    final hasPath = path != null && path.isNotEmpty;
-    final needsRelink = controller.sourceMediaNeedsRelink;
-    final subtitle = needsRelink
-        ? 'Offline media · Relink required'
-        : duration > 0
-        ? 'Drag to timeline · ${formatSeconds(duration)}'
-        : 'Drag to timeline';
-    final tile = Container(
-      padding: const EdgeInsets.all(10),
+    final failed = controller.errorMessage != null;
+    final progress = controller.isUploading
+        ? controller.uploadProgress
+        : ((controller.job?.progress ?? 0) / 100).clamp(0.0, 1.0);
+    return Container(
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        color: failed
+            ? colorScheme.errorContainer.withValues(alpha: 0.20)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
         border: Border.all(
-          color: needsRelink ? colorScheme.error : colorScheme.outline,
+          color: failed ? colorScheme.error : colorScheme.outline,
         ),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(5),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(
-            needsRelink ? Icons.link_off : Icons.movie_creation_outlined,
-            color: needsRelink ? colorScheme.error : colorScheme.primary,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  file.name,
-                  maxLines: 1,
+          Row(
+            children: [
+              Icon(
+                failed ? Icons.error_outline : Icons.sync,
+                size: 16,
+                color: failed ? colorScheme.error : colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  controller.statusText,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge,
+                  style: Theme.of(context).textTheme.labelSmall,
                 ),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: needsRelink
-                        ? colorScheme.error
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (hasPath)
-                  Text(
-                    path,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-          if (needsRelink)
-            OutlinedButton.icon(
-              onPressed: context.read<EditorController>().relinkSourceMedia,
-              icon: const Icon(Icons.link, size: 16),
-              label: const Text('Relink'),
-            )
-          else
-            Icon(Icons.drag_indicator, color: colorScheme.onSurfaceVariant),
+          if (!failed) ...[
+            const SizedBox(height: 6),
+            LinearProgressIndicator(value: progress > 0 ? progress : null),
+          ],
         ],
       ),
     );
+  }
+}
 
-    if (needsRelink) {
-      return tile;
+enum _ProjectSwitchAction { save, discard }
+
+Future<bool> _confirmProjectSwitch(BuildContext context) async {
+  final editor = context.read<EditorController>();
+  if (!editor.hasUnsavedProjectChanges) {
+    return true;
+  }
+  final action = await showDialog<_ProjectSwitchAction>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Unsaved project'),
+      content: Text('Save changes to ${editor.projectName} before switching?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(dialogContext, _ProjectSwitchAction.discard),
+          child: const Text('Switch without saving'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.pop(dialogContext, _ProjectSwitchAction.save),
+          child: const Text('Save and switch'),
+        ),
+      ],
+    ),
+  );
+  if (!context.mounted || action == null) {
+    return false;
+  }
+  if (action == _ProjectSwitchAction.save) {
+    await editor.saveProjectFile();
+    return !editor.hasUnsavedProjectChanges;
+  }
+  return true;
+}
+
+Future<void> _activateMediaAssetPath(
+  BuildContext context,
+  String path, {
+  bool analyze = false,
+}) async {
+  final editor = context.read<EditorController>();
+  if (editor.sourceMediaPath != path) {
+    if (!await _confirmProjectSwitch(context) || !context.mounted) {
+      return;
     }
-    return Draggable<String>(
-      data: 'selected-media',
-      feedback: Material(
-        color: Colors.transparent,
-        child: SizedBox(width: 280, child: Opacity(opacity: 0.92, child: tile)),
-      ),
-      childWhenDragging: Opacity(opacity: 0.42, child: tile),
-      child: tile,
-    );
+    await editor.openMediaPath(path);
+  }
+  if (analyze && editor.canStartUpload) {
+    await editor.dropSelectedFileOnTimeline();
   }
 }
 
@@ -1672,13 +2109,17 @@ class _TimelineDropTarget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<EditorController>();
-    final editor = context.read<EditorController>();
+    final workspace = context.watch<WorkspaceController>();
     return DragTarget<String>(
-      onWillAcceptWithDetails: (details) =>
-          details.data == 'selected-media' && controller.canStartUpload,
-      onAcceptWithDetails: (_) {
-        editor.dropSelectedFileOnTimeline();
+      onWillAcceptWithDetails: (details) {
+        return workspace.assets.any(
+          (asset) => asset.path == details.data && !asset.isOffline,
+        );
+      },
+      onAcceptWithDetails: (details) {
+        unawaited(
+          _activateMediaAssetPath(context, details.data, analyze: true),
+        );
       },
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;

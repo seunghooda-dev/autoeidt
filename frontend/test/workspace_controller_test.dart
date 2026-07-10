@@ -55,6 +55,25 @@ void main() {
     expect(workspace.filteredAssets.single.favorite, isTrue);
   });
 
+  test('offline assets can be relinked without duplicate bin entries', () {
+    final workspace = WorkspaceController(persist: false);
+    workspace.addAsset(name: 'offline.mxf', path: r'C:\media\offline.mxf');
+    workspace.addAsset(name: 'replacement.mxf', path: r'D:\news\online.mxf');
+    final offline = workspace.assets.first;
+
+    workspace.relinkAsset(
+      offline,
+      name: 'online.mxf',
+      path: r'D:\news\online.mxf',
+    );
+
+    expect(workspace.assets, hasLength(1));
+    expect(workspace.assets.single, same(offline));
+    expect(workspace.assets.single.name, 'online.mxf');
+    expect(workspace.assets.single.path, r'D:\news\online.mxf');
+    expect(workspace.snapshots.first.label, 'Asset relinked');
+  });
+
   test('history keeps newest snapshots first and caps its size', () {
     final workspace = WorkspaceController(persist: false);
     for (var index = 0; index < 45; index++) {

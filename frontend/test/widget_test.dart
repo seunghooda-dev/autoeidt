@@ -1,3 +1,5 @@
+import 'dart:io' as io;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +13,7 @@ import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:provider/provider.dart';
 
 import 'package:highlight_editor_app/state/editor_controller.dart';
+import 'package:highlight_editor_app/state/workspace_controller.dart';
 
 void main() {
   testWidgets('renders editor dashboard', (tester) async {
@@ -59,6 +62,153 @@ void main() {
     expect(controller.saveInvocations, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
+  });
+
+  testWidgets('project media bin filters and organizes local assets', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    late io.Directory directory;
+    late String newsPath;
+    late String interviewPath;
+    late String offlinePath;
+    await tester.runAsync(() async {
+      directory = await io.Directory.systemTemp.createTemp(
+        'autoedit_media_bin_test',
+      );
+      newsPath =
+          '${directory.path}${io.Platform.pathSeparator}evening_news.mxf';
+      interviewPath =
+          '${directory.path}${io.Platform.pathSeparator}interview.mp4';
+      offlinePath =
+          '${directory.path}${io.Platform.pathSeparator}missing_broll.mov';
+      await io.File(newsPath).writeAsBytes([0]);
+      await io.File(interviewPath).writeAsBytes([0]);
+    });
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final workspace = WorkspaceController(persist: false)
+      ..addAsset(name: 'evening_news.mxf', path: newsPath)
+      ..addAsset(name: 'interview.mp4', path: interviewPath)
+      ..addAsset(name: 'missing_broll.mov', path: offlinePath);
+    workspace.setAssetFolder(workspace.assets[1], 'Footage');
+    final controller = EditorController(autoStartEngine: false);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: MaterialApp(
+          home: EditorDashboard(workspaceController: workspace),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('media-bin-search')), findsOneWidget);
+    expect(find.text('evening_news.mxf'), findsOneWidget);
+    expect(find.text('interview.mp4'), findsOneWidget);
+    expect(find.text('Offline · Unsorted'), findsOneWidget);
+    expect(find.byTooltip('Relink media'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('media-bin-search')),
+      'interview',
+    );
+    await tester.pump();
+    expect(find.text('interview.mp4'), findsOneWidget);
+    expect(find.text('evening_news.mxf'), findsNothing);
+    expect(find.text('1 of 3 items'), findsOneWidget);
+
+    final interviewTile = find.byKey(Key('media-asset-$interviewPath'));
+    await tester.tap(
+      find.descendant(
+        of: interviewTile,
+        matching: find.byTooltip('Add favorite'),
+      ),
+    );
+    await tester.enterText(find.byKey(const Key('media-bin-search')), '');
+    await tester.tap(find.byKey(const Key('media-bin-favorites')));
+    await tester.pump();
+    expect(find.text('interview.mp4'), findsOneWidget);
+    expect(find.text('missing_broll.mov'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('media-bin-favorites')));
+    await tester.pump();
+    await tester.tapAt(
+      tester.getCenter(find.byKey(Key('media-asset-$newsPath'))),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Move to Footage'), findsOneWidget);
+    await tester.tap(find.text('Move to Footage'));
+    await tester.pumpAndSettle();
+    expect(workspace.assets.first.folder, 'Footage');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    workspace.dispose();
+  });
+
+  testWidgets('media bin confirms before replacing an unsaved project', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    late io.Directory directory;
+    late String nextPath;
+    await tester.runAsync(() async {
+      directory = await io.Directory.systemTemp.createTemp(
+        'autoedit_media_switch_test',
+      );
+      nextPath = '${directory.path}${io.Platform.pathSeparator}next_source.mp4';
+      await io.File(nextPath).writeAsBytes([0]);
+    });
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+    final workspace = WorkspaceController(persist: false)
+      ..addAsset(name: 'next_source.mp4', path: nextPath);
+    final controller = _MediaBinEditorController()
+      ..duration = 60
+      ..segments = const [
+        HighlightSegment(order: 1, start: 5, end: 20, reason: 'rough cut'),
+      ]
+      ..selectedSegmentOrder = 1;
+    controller.updateSegment(controller.segments.single.copyWith(end: 24));
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: MaterialApp(
+          home: EditorDashboard(workspaceController: workspace),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(Key('media-asset-$nextPath')));
+    await tester.pumpAndSettle();
+    expect(find.text('Unsaved project'), findsOneWidget);
+    expect(controller.openedPath, isNull);
+
+    await tester.tap(find.text('Switch without saving'));
+    await tester.pumpAndSettle();
+    expect(controller.openedPath, nextPath);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    workspace.dispose();
   });
 
   testWidgets(
@@ -1151,6 +1301,17 @@ class _ShortcutSaveEditorController extends EditorController {
   @override
   Future<void> saveProjectFile() async {
     saveInvocations += 1;
+  }
+}
+
+class _MediaBinEditorController extends EditorController {
+  _MediaBinEditorController() : super(autoStartEngine: false);
+
+  String? openedPath;
+
+  @override
+  Future<void> openMediaPath(String path) async {
+    openedPath = path;
   }
 }
 

@@ -75,8 +75,8 @@ class AssetEntry {
     Set<String>? tags,
   }) : tags = Set<String>.of(tags ?? const {});
 
-  final String name;
-  final String path;
+  String name;
+  String path;
   String folder;
   bool favorite;
   final Set<String> tags;
@@ -292,6 +292,25 @@ class WorkspaceController extends ChangeNotifier {
   void removeAsset(AssetEntry asset) {
     assets.remove(asset);
     record('Asset removed', asset.name);
+  }
+
+  void relinkAsset(
+    AssetEntry asset, {
+    required String name,
+    required String path,
+  }) {
+    final normalizedPath = path.trim();
+    if (normalizedPath.isEmpty || !assets.contains(asset)) {
+      return;
+    }
+    assets.removeWhere(
+      (candidate) =>
+          !identical(candidate, asset) && candidate.path == normalizedPath,
+    );
+    final previousPath = asset.path;
+    asset.name = name.trim().isEmpty ? asset.name : name.trim();
+    asset.path = normalizedPath;
+    record('Asset relinked', '${asset.name}: $previousPath -> $normalizedPath');
   }
 
   void setAssetFolder(AssetEntry asset, String folder) {
