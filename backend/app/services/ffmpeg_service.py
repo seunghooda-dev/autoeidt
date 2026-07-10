@@ -259,6 +259,24 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
 
 
 def probe_media_info(video_path: Path) -> dict[str, Any]:
+    resolved = video_path.resolve(strict=True)
+    stat = resolved.stat()
+    return dict(
+        _probe_media_info_cached(
+            str(resolved),
+            stat.st_size,
+            stat.st_mtime_ns,
+        )
+    )
+
+
+@lru_cache(maxsize=64)
+def _probe_media_info_cached(
+    resolved_path: str,
+    _size: int,
+    _mtime_ns: int,
+) -> dict[str, Any]:
+    video_path = Path(resolved_path)
     result = _run(
         [
             "ffprobe",
@@ -299,7 +317,7 @@ def create_preview_proxy(
     audio_channel_counts = _audio_channel_counts(resolved, audio_stream_count)
     audio_layout_signature = "-".join(str(count) for count in audio_channel_counts)
     cache_identity = (
-        f"preview-v6|program-audio-a1-a2-{audio_layout_signature}|"
+        f"preview-v7|fps-before-scale|program-audio-a1-a2-{audio_layout_signature}|"
         f"{source_start:.3f}|{proxy_seconds:.3f}|{resolved}|"
         f"{stat.st_size}|{stat.st_mtime_ns}"
     )
@@ -335,7 +353,7 @@ def create_preview_proxy(
                     "-t",
                     f"{proxy_seconds:.3f}",
                     "-vf",
-                    f"scale=-2:540,fps={RENDER_FRAME_RATE_LABEL},format=yuv420p",
+                    f"fps={RENDER_FRAME_RATE_LABEL},scale=-2:540,format=yuv420p",
                     "-r",
                     RENDER_FRAME_RATE_LABEL,
                     "-c:v",
@@ -904,33 +922,12 @@ def _caption_style_force_style(style: dict | None) -> str:
     )
 
 
-def _audio_stream_count(video_path: Path) -> int:
-    try:
-        result = _run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-select_streams",
-                "a",
-                "-show_entries",
-                "stream=index",
-                "-of",
-                "json",
-                str(video_path),
-            ],
-            timeout=60,
-        )
-    except FFmpegError:
-        return 1
-    data = json.loads(result.stdout or "{}")
-    return len(data.get("streams") or [])
-
-
-def _audio_channel_counts(
-    video_path: Path,
-    fallback_stream_count: int,
-) -> list[int]:
+@lru_cache(maxsize=64)
+def _audio_channel_counts_cached(
+    resolved_path: str,
+    _size: int,
+    _mtime_ns: int,
+) -> tuple[int, ...] | None:
     try:
         result = _run(
             [
@@ -943,20 +940,45 @@ def _audio_channel_counts(
                 "stream=channels",
                 "-of",
                 "json",
-                str(video_path),
+                resolved_path,
             ],
             timeout=60,
         )
         data = json.loads(result.stdout or "{}")
-        counts = [
+        return tuple(
             max(1, _safe_int(stream.get("channels"), 1))
             for stream in data.get("streams") or []
             if isinstance(stream, dict)
-        ]
-        if counts:
-            return counts
-    except (FFmpegError, json.JSONDecodeError):
-        pass
+        )
+    except (FFmpegError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _cached_audio_channel_counts(video_path: Path) -> tuple[int, ...] | None:
+    try:
+        resolved = video_path.resolve(strict=True)
+        stat = resolved.stat()
+    except OSError:
+        return None
+    return _audio_channel_counts_cached(
+        str(resolved),
+        stat.st_size,
+        stat.st_mtime_ns,
+    )
+
+
+def _audio_stream_count(video_path: Path) -> int:
+    counts = _cached_audio_channel_counts(video_path)
+    return len(counts) if counts is not None else 1
+
+
+def _audio_channel_counts(
+    video_path: Path,
+    fallback_stream_count: int,
+) -> list[int]:
+    counts = _cached_audio_channel_counts(video_path)
+    if counts:
+        return list(counts)
     return [1] * max(0, fallback_stream_count)
 
 

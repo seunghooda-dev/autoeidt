@@ -121,7 +121,7 @@ class EditorController extends ChangeNotifier {
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
   double _manualPlayheadSeconds = 0;
-  static const double _initialProxyPreviewSeconds = 12;
+  static const double _initialProxyPreviewSeconds = 8;
   static const double _seekProxyPreviewSeconds = 30;
   static const int _avSyncLengthToleranceFrames = 2;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');

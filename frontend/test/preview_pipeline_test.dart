@@ -41,7 +41,7 @@ void main() {
               'error=${controller.errorMessage}',
         );
 
-        expect(api.requestedDurations, [12]);
+        expect(api.requestedDurations, [8]);
         expect(api.requestedStarts, [0]);
         await _waitUntil(
           () => controller.duration == 120,
@@ -74,11 +74,11 @@ void main() {
         );
         final continuedController = controller.videoController!;
 
-        expect(api.requestedDurations, [12, 30]);
-        expect(api.requestedStarts[1], closeTo(4, 0.001));
+        expect(api.requestedDurations, [8, 30]);
+        expect(api.requestedStarts[1], closeTo(0, 0.001));
         expect(continuedController.value.position.inMilliseconds, 8000);
         expect(continuedController.value.isPlaying, isTrue);
-        expect(controller.currentPositionSeconds, closeTo(12, 0.001));
+        expect(controller.currentPositionSeconds, closeTo(8, 0.001));
       } finally {
         await controller.videoController?.dispose();
         controller.dispose();
@@ -130,7 +130,7 @@ class _ProxyApiClient extends ApiClient {
     double startSeconds = 0,
     double? durationSeconds,
   }) async {
-    final duration = durationSeconds ?? 12;
+    final duration = durationSeconds ?? 8;
     requestedStarts.add(startSeconds);
     requestedDurations.add(duration);
     return LocalPreviewInfo(
@@ -169,7 +169,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
     final id = _nextPlayerId++;
     final uri = options.dataSource.uri ?? '';
     final duration = uri.contains('proxy-1')
-        ? const Duration(seconds: 12)
+        ? const Duration(seconds: 8)
         : const Duration(seconds: 30);
     late final StreamController<VideoEvent> events;
     events = StreamController<VideoEvent>.broadcast(

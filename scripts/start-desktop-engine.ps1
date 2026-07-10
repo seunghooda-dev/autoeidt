@@ -93,7 +93,7 @@ if ($NeedsInstall) {
 $env:TASK_RUNNER = "inline"
 $env:REDIS_URL = "redis://localhost:6379/0"
 $env:DATA_DIR = $DataDir
-$env:PREVIEW_PROXY_SECONDS = "12"
+$env:PREVIEW_PROXY_SECONDS = "8"
 
 New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
 Set-Content -LiteralPath $PidFile -Value $PID -NoNewline -Encoding ascii

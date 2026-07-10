@@ -1,4 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
+import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -10,7 +12,7 @@ class _FakeSettings:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.prefer_gpu_encoding = False
-        self.preview_proxy_seconds = 12
+        self.preview_proxy_seconds = 8
 
 
 def _command_value(command: list[str], option: str) -> str:
@@ -114,8 +116,9 @@ def test_preview_proxy_forces_30p_non_drop_output(
     assert cached is False
     assert output_path.exists()
     assert "fps=30" in vf_filter
+    assert vf_filter.startswith("fps=30,scale=-2:540")
     assert _command_value(command, "-r") == "30"
-    assert _command_value(command, "-t") == "12.000"
+    assert _command_value(command, "-t") == "8.000"
     assert _command_value(command, "-write_tmcd") == "0"
 
 
@@ -202,6 +205,85 @@ def test_preview_proxy_routes_first_two_interleaved_channels() -> None:
     filter_complex = _command_value(args, "-filter_complex")
     assert "[0:a:0]" in filter_complex
     assert "pan=stereo|c0=c0|c1=c1" in filter_complex
+
+
+def test_media_probe_reuses_metadata_until_source_changes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "cached_probe.mxf"
+    source_path.write_bytes(b"source")
+    calls = 0
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        payload = {
+            "format": {"duration": "60.0", "format_name": "mxf"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "mpeg2video",
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "30/1",
+                }
+            ],
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    ffmpeg_service._probe_media_info_cached.cache_clear()
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    first = ffmpeg_service.probe_media_info(source_path)
+    second = ffmpeg_service.probe_media_info(source_path)
+
+    assert first == second
+    assert calls == 1
+
+    source_path.write_bytes(b"source changed")
+    stat = source_path.stat()
+    os.utime(
+        source_path,
+        ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000),
+    )
+    ffmpeg_service.probe_media_info(source_path)
+
+    assert calls == 2
+
+
+def test_audio_layout_probe_is_shared_by_count_and_channel_mapping(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "broadcast_audio.mxf"
+    source_path.write_bytes(b"source")
+    calls = 0
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        payload = {"streams": [{"channels": 1}, {"channels": 1}]}
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    ffmpeg_service._audio_channel_counts_cached.cache_clear()
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    stream_count = ffmpeg_service._audio_stream_count(source_path)
+    channel_counts = ffmpeg_service._audio_channel_counts(
+        source_path,
+        stream_count,
+    )
+
+    assert stream_count == 2
+    assert channel_counts == [1, 1]
+    assert calls == 1
 
 
 def test_analysis_audio_routes_first_two_separate_program_streams(

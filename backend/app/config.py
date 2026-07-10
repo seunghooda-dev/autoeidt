@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     visual_motion_threshold: float = 1.7
     scene_change_threshold: float = 0.35
     prefer_gpu_encoding: bool = True
-    preview_proxy_seconds: int = 12
+    preview_proxy_seconds: int = 8
 
     upload_max_mb: int = 4096
 
