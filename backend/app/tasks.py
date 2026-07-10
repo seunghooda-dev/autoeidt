@@ -401,6 +401,10 @@ def _normalize_highlights(
                 audio_linked = True
         audio_volume = max(0.0, min(float(item.get("audio_volume", 1.0)), 2.0))
         audio_pan = max(-1.0, min(float(item.get("audio_pan", 0.0)), 1.0))
+        audio_loudness_target = max(
+            -24.0,
+            min(float(item.get("audio_loudness_target", -14.0)), -12.0),
+        )
         playback_speed = max(0.25, min(float(item.get("playback_speed", 1.0)), 4.0))
         video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
         video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
@@ -476,6 +480,7 @@ def _normalize_highlights(
                 "audio_volume": round(audio_volume, 2),
                 "audio_pan": round(audio_pan, 2),
                 "audio_normalize": bool(item.get("audio_normalize", False)),
+                "audio_loudness_target": round(audio_loudness_target, 1),
                 "audio_linked": audio_linked,
                 "audio_channel_1_enabled": audio_channel_1_enabled,
                 "audio_channel_2_enabled": audio_channel_2_enabled,

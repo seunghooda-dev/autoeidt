@@ -580,6 +580,14 @@ def _segment_audio_normalize(segment: dict) -> bool:
     return bool(segment.get("audio_normalize", False))
 
 
+def _segment_audio_loudness_target(segment: dict) -> float:
+    try:
+        value = float(segment.get("audio_loudness_target", -14.0))
+    except (TypeError, ValueError):
+        value = -14.0
+    return max(-24.0, min(value, -12.0))
+
+
 def _segment_playback_speed(segment: dict) -> float:
     return max(0.25, min(float(segment.get("playback_speed", 1.0)), 4.0))
 
@@ -1099,7 +1107,11 @@ def _render_reencode_with_video_args(
             "asetpts=PTS-STARTPTS",
         ]
         if _segment_audio_normalize(segment) and volume > 0:
-            audio_steps.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+            loudness_target = _segment_audio_loudness_target(segment)
+            true_peak = -2.0 if loudness_target <= -20 else -1.5
+            audio_steps.append(
+                f"loudnorm=I={loudness_target:.1f}:TP={true_peak:.1f}:LRA=11"
+            )
         fade_in = _segment_audio_fade_in(segment, output_duration)
         fade_out = _segment_audio_fade_out(segment, output_duration)
         if fade_in > 0:

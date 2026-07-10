@@ -36,6 +36,7 @@ void main() {
       audioVolume: 0.7,
       audioPan: -0.4,
       audioNormalize: true,
+      audioLoudnessTarget: -24,
       audioLinked: false,
       audioChannel1Enabled: true,
       audioChannel2Enabled: false,
@@ -66,6 +67,7 @@ void main() {
     expect(json['audio_volume'], 0.7);
     expect(json['audio_pan'], -0.4);
     expect(json['audio_normalize'], isTrue);
+    expect(json['audio_loudness_target'], -24);
     expect(json['audio_linked'], isFalse);
     expect(json['audio_channel_1_enabled'], isTrue);
     expect(json['audio_channel_2_enabled'], isFalse);
@@ -96,6 +98,7 @@ void main() {
     expect(restored.audioVolume, 0.7);
     expect(restored.audioPan, -0.4);
     expect(restored.audioNormalize, isTrue);
+    expect(restored.audioLoudnessTarget, -24);
     expect(restored.audioLinked, isFalse);
     expect(restored.audioChannel1Enabled, isTrue);
     expect(restored.audioChannel2Enabled, isFalse);
@@ -126,6 +129,9 @@ void main() {
     expect(controller.selectedSegment!.audioSourceChannelRight, 8);
     controller.setSelectedAudioSourceChannelRight(99);
     expect(controller.selectedSegment!.audioSourceChannelRight, 8);
+    controller.setSelectedAudioLoudnessTarget(-24);
+    expect(controller.selectedSegment!.audioNormalize, isTrue);
+    expect(controller.selectedSegment!.audioLoudnessTarget, -24);
     controller.dispose();
   });
 

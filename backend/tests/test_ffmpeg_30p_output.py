@@ -222,3 +222,40 @@ def test_audio_routing_maps_separate_mono_streams() -> None:
     assert "[0:a:6]" in filter_text
     assert "[0:a:7]" in filter_text
     assert "amerge=inputs=2" in filter_text
+
+
+def test_render_uses_selected_broadcast_loudness_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_audio_channel_counts", lambda path, count: [2])
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [
+            {
+                "order": 1,
+                "start": 0,
+                "end": 5,
+                "reason": "loudness",
+                "audio_normalize": True,
+                "audio_loudness_target": -24,
+            }
+        ],
+        tmp_path / "broadcast.mp4",
+    )
+
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "loudnorm=I=-24.0:TP=-2.0:LRA=11" in filter_complex

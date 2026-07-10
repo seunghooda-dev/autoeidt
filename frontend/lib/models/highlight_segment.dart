@@ -60,6 +60,7 @@ class HighlightSegment {
     this.audioVolume = 1.0,
     this.audioPan = 0.0,
     this.audioNormalize = false,
+    this.audioLoudnessTarget = -14.0,
     this.audioLinked = true,
     this.audioChannel1Enabled = true,
     this.audioChannel2Enabled = true,
@@ -95,6 +96,7 @@ class HighlightSegment {
   final double audioVolume;
   final double audioPan;
   final bool audioNormalize;
+  final double audioLoudnessTarget;
   final bool audioLinked;
   final bool audioChannel1Enabled;
   final bool audioChannel2Enabled;
@@ -138,6 +140,7 @@ class HighlightSegment {
     double? audioVolume,
     double? audioPan,
     bool? audioNormalize,
+    double? audioLoudnessTarget,
     bool? audioLinked,
     bool? audioChannel1Enabled,
     bool? audioChannel2Enabled,
@@ -173,6 +176,7 @@ class HighlightSegment {
       audioVolume: audioVolume ?? this.audioVolume,
       audioPan: audioPan ?? this.audioPan,
       audioNormalize: audioNormalize ?? this.audioNormalize,
+      audioLoudnessTarget: audioLoudnessTarget ?? this.audioLoudnessTarget,
       audioLinked: audioLinked ?? this.audioLinked,
       audioChannel1Enabled: audioChannel1Enabled ?? this.audioChannel1Enabled,
       audioChannel2Enabled: audioChannel2Enabled ?? this.audioChannel2Enabled,
@@ -262,6 +266,12 @@ class HighlightSegment {
           (json['audio_normalize'] as bool?) ??
           (json['audioNormalize'] as bool?) ??
           false,
+      audioLoudnessTarget:
+          ((json['audio_loudness_target'] as num?)?.toDouble() ??
+                  (json['audioLoudnessTarget'] as num?)?.toDouble() ??
+                  -14.0)
+              .clamp(-24.0, -12.0)
+              .toDouble(),
       audioLinked:
           (json['audio_linked'] as bool?) ??
           (json['audioLinked'] as bool?) ??
@@ -334,6 +344,7 @@ class HighlightSegment {
       'audio_volume': audioVolume,
       'audio_pan': audioPan,
       'audio_normalize': audioNormalize,
+      'audio_loudness_target': audioLoudnessTarget,
       'audio_linked': audioLinked,
       'audio_channel_1_enabled': audioChannel1Enabled,
       'audio_channel_2_enabled': audioChannel2Enabled,

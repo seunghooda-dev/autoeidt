@@ -2577,6 +2577,20 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void setSelectedAudioLoudnessTarget(double target) {
+    final selected = selectedSegment;
+    if (selected == null || anyAudioTrackEditLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioNormalize: true,
+        audioLoudnessTarget: target.clamp(-24.0, -12.0).toDouble(),
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void toggleAllAudioMute() {
     setAllAudioMute(!allAudioMuted);
   }

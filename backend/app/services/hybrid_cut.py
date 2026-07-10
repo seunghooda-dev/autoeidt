@@ -168,6 +168,9 @@ def refine_highlights_with_hybrid_cut(
                     "topic_id": int(highlight.get("topic_id", 0) or 0),
                     "audio_pan": float(highlight.get("audio_pan", 0.0)),
                     "audio_normalize": bool(highlight.get("audio_normalize", False)),
+                    "audio_loudness_target": float(
+                        highlight.get("audio_loudness_target", -14.0)
+                    ),
                     "audio_channel_1_enabled": bool(
                         highlight.get("audio_channel_1_enabled", True)
                     ),

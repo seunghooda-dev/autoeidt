@@ -161,6 +161,14 @@ class ClipInspector extends StatelessWidget {
               : editor.setSelectedAudioSourceChannelRight,
         ),
         const SizedBox(height: 8),
+        _LoudnessTargetControl(
+          enabled: selected.audioNormalize,
+          target: selected.audioLoudnessTarget,
+          onChanged: controller.anyAudioTrackEditLocked
+              ? null
+              : editor.setSelectedAudioLoudnessTarget,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
           icon: Icons.align_horizontal_center,
           label: 'Reframe X',
@@ -507,6 +515,72 @@ class _ChannelRouteDropdown extends StatelessWidget {
                 },
         ),
       ],
+    );
+  }
+}
+
+class _LoudnessTargetControl extends StatelessWidget {
+  const _LoudnessTargetControl({
+    required this.enabled,
+    required this.target,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final double target;
+  final ValueChanged<double>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const targets = [-14.0, -16.0, -24.0];
+    final selectedTarget = targets.reduce(
+      (current, candidate) =>
+          (candidate - target).abs() < (current - target).abs()
+          ? candidate
+          : current,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            enabled ? Icons.graphic_eq : Icons.graphic_eq_outlined,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Loudness target'),
+                Text(
+                  enabled ? 'Normalization enabled' : 'Normalization off',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<double>(
+            value: selectedTarget,
+            onChanged: onChanged == null
+                ? null
+                : (value) {
+                    if (value != null) {
+                      onChanged!(value);
+                    }
+                  },
+            items: const [
+              DropdownMenuItem(value: -14, child: Text('YouTube  -14 LUFS')),
+              DropdownMenuItem(value: -16, child: Text('Voice  -16 LUFS')),
+              DropdownMenuItem(value: -24, child: Text('Broadcast  -24 LKFS')),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -144,6 +144,7 @@ class HighlightSegment(BaseModel):
     audio_volume: float = 1.0
     audio_pan: float = 0.0
     audio_normalize: bool = False
+    audio_loudness_target: float = -14.0
     audio_linked: bool = True
     audio_channel_1_enabled: bool = True
     audio_channel_2_enabled: bool = True
@@ -177,6 +178,11 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_pan_must_be_safe(cls, value: float) -> float:
         return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("audio_loudness_target")
+    @classmethod
+    def audio_loudness_target_must_be_safe(cls, value: float) -> float:
+        return max(-24.0, min(float(value), -12.0))
 
     @field_validator("audio_source_channel_left", "audio_source_channel_right")
     @classmethod

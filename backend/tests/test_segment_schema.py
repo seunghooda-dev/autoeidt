@@ -24,6 +24,7 @@ def test_highlight_segment_accepts_track_controls() -> None:
         audio_volume=3,
         audio_pan=-2,
         audio_normalize=True,
+        audio_loudness_target=-99,
         audio_channel_2_enabled=False,
         audio_source_channel_left=99,
         audio_source_channel_right=-5,
@@ -43,6 +44,7 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.audio_volume == 2.0
     assert segment.audio_pan == -1.0
     assert segment.audio_normalize is True
+    assert segment.audio_loudness_target == -24.0
     assert segment.audio_channel_1_enabled is True
     assert segment.audio_channel_2_enabled is False
     assert segment.audio_source_channel_left == 64
