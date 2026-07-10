@@ -342,6 +342,33 @@ class EditorController extends ChangeNotifier {
 
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  List<EditorHistoryPoint> get editorHistoryPoints {
+    final points = <EditorHistoryPoint>[
+      EditorHistoryPoint(
+        depth: 0,
+        label: 'Current timeline',
+        detail: '${segments.length} clips · ${captions.length} captions',
+        createdAt: DateTime.now(),
+        isCurrent: true,
+      ),
+    ];
+    for (var index = _undoStack.length - 1; index >= 0; index--) {
+      final snapshot = _undoStack[index];
+      points.add(
+        EditorHistoryPoint(
+          depth: _undoStack.length - index,
+          label: 'Edit ${index + 1}',
+          detail:
+              '${snapshot.segments.length} clips · '
+              '${snapshot.captions.length} captions · '
+              '${snapshot.timelineMarkers.length} markers',
+          createdAt: snapshot.createdAt,
+        ),
+      );
+    }
+    return points;
+  }
+
   bool get hasRecoverableProject =>
       jobId != null ||
       duration > 0 ||
@@ -819,7 +846,34 @@ class EditorController extends ChangeNotifier {
     if (result == null || result.files.isEmpty) {
       return;
     }
-    selectedFile = result.files.single;
+    await openMediaFile(result.files.single);
+  }
+
+  Future<void> openMediaPath(String path) async {
+    final file = io.File(path);
+    if (!await file.exists()) {
+      errorMessage = '미디어 파일을 찾을 수 없습니다: $path';
+      notifyListeners();
+      return;
+    }
+    final name = file.uri.pathSegments.isEmpty
+        ? path
+        : file.uri.pathSegments.last;
+    final extension = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : '';
+    if (!supportedVideoExtensions.contains(extension)) {
+      errorMessage = '지원하지 않는 미디어 형식입니다: .$extension';
+      notifyListeners();
+      return;
+    }
+    await openMediaFile(
+      PlatformFile(name: name, size: await file.length(), path: path),
+    );
+  }
+
+  Future<void> openMediaFile(PlatformFile file) async {
+    selectedFile = file;
     selectedMediaProbe = null;
     isProbingMedia = false;
     isPreparingPreview = false;
@@ -857,8 +911,8 @@ class EditorController extends ChangeNotifier {
     _clearHistory();
     await _disposeVideoController();
     notifyListeners();
-    if (!kIsWeb && selectedFile?.path != null) {
-      unawaited(_initializeLocalPreview(selectedFile!.path!));
+    if (!kIsWeb && file.path != null) {
+      unawaited(_initializeLocalPreview(file.path!));
       unawaited(probeSelectedMedia());
     }
   }
@@ -2988,6 +3042,21 @@ class EditorController extends ChangeNotifier {
     final next = _redoStack.removeLast();
     _undoStack.add(current);
     _restoreSnapshot(next);
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void restoreHistoryDepth(int depth) {
+    final steps = depth.clamp(0, _undoStack.length);
+    if (steps == 0) {
+      return;
+    }
+    for (var index = 0; index < steps; index++) {
+      final current = _captureSnapshot();
+      final previous = _undoStack.removeLast();
+      _redoStack.add(current);
+      _restoreSnapshot(previous);
+    }
     renderUrl = null;
     notifyListeners();
   }
@@ -7557,6 +7626,7 @@ class EditorController extends ChangeNotifier {
 
   _EditorSnapshot _captureSnapshot() {
     return _EditorSnapshot(
+      createdAt: DateTime.now(),
       segments: List<HighlightSegment>.of(segments),
       captions: List<CaptionSegment>.of(captions),
       timelineMarkers: List<TimelineMarker>.of(timelineMarkers),
@@ -8011,6 +8081,7 @@ class ShortsCandidate {
 
 class _EditorSnapshot {
   const _EditorSnapshot({
+    required this.createdAt,
     required this.segments,
     required this.captions,
     required this.timelineMarkers,
@@ -8022,6 +8093,7 @@ class _EditorSnapshot {
     required this.exportAspectRatio,
   });
 
+  final DateTime createdAt;
   final List<HighlightSegment> segments;
   final List<CaptionSegment> captions;
   final List<TimelineMarker> timelineMarkers;
@@ -8031,4 +8103,20 @@ class _EditorSnapshot {
   final bool includeCaptions;
   final String captionStylePreset;
   final String exportAspectRatio;
+}
+
+class EditorHistoryPoint {
+  const EditorHistoryPoint({
+    required this.depth,
+    required this.label,
+    required this.detail,
+    required this.createdAt,
+    this.isCurrent = false,
+  });
+
+  final int depth;
+  final String label;
+  final String detail;
+  final DateTime createdAt;
+  final bool isCurrent;
 }

@@ -23,11 +23,8 @@ import 'widgets/workspace_tools_panel.dart';
 void main() {
   VideoPlayerMediaKit.ensureInitialized(windows: true);
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => EditorController(enableProjectRecovery: true)),
-        ChangeNotifierProvider(create: (_) => WorkspaceController()),
-      ],
+    ChangeNotifierProvider(
+      create: (_) => EditorController(enableProjectRecovery: true),
       child: const HighlightEditorApp(),
     ),
   );
@@ -65,7 +62,9 @@ class HighlightEditorApp extends StatelessWidget {
 }
 
 class EditorDashboard extends StatefulWidget {
-  const EditorDashboard({super.key});
+  const EditorDashboard({super.key, this.workspaceController});
+
+  final WorkspaceController? workspaceController;
 
   @override
   State<EditorDashboard> createState() => _EditorDashboardState();
@@ -75,29 +74,45 @@ class _EditorDashboardState extends State<EditorDashboard> {
   final FocusNode _shortcutFocusNode = FocusNode(
     debugLabel: 'AutoEdit shortcuts',
   );
+  late final WorkspaceController _workspaceController;
+  late final bool _ownsWorkspaceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsWorkspaceController = widget.workspaceController == null;
+    _workspaceController = widget.workspaceController ?? WorkspaceController();
+  }
 
   @override
   void dispose() {
     _shortcutFocusNode.dispose();
+    if (_ownsWorkspaceController) {
+      _workspaceController.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _shortcutFocusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final useDesktop =
-                  constraints.maxWidth >= 1120 && constraints.maxHeight >= 680;
-              return useDesktop
-                  ? const _DesktopEditorShell()
-                  : const _CompactEditorShell();
-            },
+    return ChangeNotifierProvider<WorkspaceController>.value(
+      value: _workspaceController,
+      child: Focus(
+        focusNode: _shortcutFocusNode,
+        autofocus: true,
+        onKeyEvent: _handleKeyEvent,
+        child: Scaffold(
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final useDesktop =
+                    constraints.maxWidth >= 1120 &&
+                    constraints.maxHeight >= 680;
+                return useDesktop
+                    ? const _DesktopEditorShell()
+                    : const _CompactEditorShell();
+              },
+            ),
           ),
         ),
       ),
@@ -472,6 +487,34 @@ class _DesktopEditorShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final workspace = context.watch<WorkspaceController>();
+    final mediaPanel = SizedBox(
+      width: workspace.mediaWidth,
+      child: const _MediaPanel(),
+    );
+    final inspectorPanel = SizedBox(
+      width: workspace.inspectorWidth,
+      child: const _InspectorPanel(),
+    );
+    final mediaHandle = _PanelResizeHandle(
+      key: const Key('workspace-media-resize'),
+      axis: Axis.vertical,
+      onDragUpdate: (delta) => workspace.setMediaWidth(
+        workspace.mediaWidth + (workspace.mediaOnLeft ? delta : -delta),
+      ),
+      onDragEnd: () =>
+          workspace.finishPanelResize('Media panel', workspace.mediaWidth),
+    );
+    final inspectorHandle = _PanelResizeHandle(
+      key: const Key('workspace-inspector-resize'),
+      axis: Axis.vertical,
+      onDragUpdate: (delta) => workspace.setInspectorWidth(
+        workspace.inspectorWidth + (workspace.mediaOnLeft ? -delta : delta),
+      ),
+      onDragEnd: () => workspace.finishPanelResize(
+        'Inspector panel',
+        workspace.inspectorWidth,
+      ),
+    );
     return Column(
       children: [
         const _TopBar(),
@@ -479,7 +522,7 @@ class _DesktopEditorShell extends StatelessWidget {
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+            children: [
               SizedBox(width: 56, child: _WorkspaceRail()),
               _VerticalRule(),
               Expanded(
@@ -488,17 +531,38 @@ class _DesktopEditorShell extends StatelessWidget {
                     Expanded(
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(width: workspace.mediaWidth, child: _MediaPanel()),
-                          _VerticalRule(),
-                          Expanded(child: _PreviewStage()),
-                          _VerticalRule(),
-                          SizedBox(width: workspace.inspectorWidth, child: _InspectorPanel()),
-                        ],
+                        children: workspace.mediaOnLeft
+                            ? [
+                                mediaPanel,
+                                mediaHandle,
+                                const Expanded(child: _PreviewStage()),
+                                inspectorHandle,
+                                inspectorPanel,
+                              ]
+                            : [
+                                inspectorPanel,
+                                inspectorHandle,
+                                const Expanded(child: _PreviewStage()),
+                                mediaHandle,
+                                mediaPanel,
+                              ],
                       ),
                     ),
-                    _HorizontalRule(),
-                    SizedBox(height: workspace.timelineHeight, child: _TimelinePanel()),
+                    _PanelResizeHandle(
+                      key: const Key('workspace-timeline-resize'),
+                      axis: Axis.horizontal,
+                      onDragUpdate: (delta) => workspace.setTimelineHeight(
+                        workspace.timelineHeight - delta,
+                      ),
+                      onDragEnd: () => workspace.finishPanelResize(
+                        'Timeline',
+                        workspace.timelineHeight,
+                      ),
+                    ),
+                    SizedBox(
+                      height: workspace.timelineHeight,
+                      child: const _TimelinePanel(),
+                    ),
                   ],
                 ),
               ),
@@ -506,6 +570,47 @@ class _DesktopEditorShell extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PanelResizeHandle extends StatelessWidget {
+  const _PanelResizeHandle({
+    super.key,
+    required this.axis,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  final Axis axis;
+  final ValueChanged<double> onDragUpdate;
+  final VoidCallback onDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final vertical = axis == Axis.vertical;
+    return MouseRegion(
+      cursor: vertical
+          ? SystemMouseCursors.resizeColumn
+          : SystemMouseCursors.resizeRow,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: vertical
+            ? (details) => onDragUpdate(details.delta.dx)
+            : null,
+        onHorizontalDragEnd: vertical ? (_) => onDragEnd() : null,
+        onVerticalDragUpdate: vertical
+            ? null
+            : (details) => onDragUpdate(details.delta.dy),
+        onVerticalDragEnd: vertical ? null : (_) => onDragEnd(),
+        child: SizedBox(
+          width: vertical ? 6 : double.infinity,
+          height: vertical ? double.infinity : 6,
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.7),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -933,6 +1038,17 @@ class _MediaPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final workspace = context.read<WorkspaceController>();
+    final selectedFile = controller.selectedFile;
+    final selectedPath = selectedFile?.path;
+    if (selectedFile != null &&
+        selectedPath != null &&
+        selectedPath.isNotEmpty &&
+        !workspace.assets.any((asset) => asset.path == selectedPath)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        workspace.addAsset(name: selectedFile.name, path: selectedPath);
+      });
+    }
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -2029,14 +2145,5 @@ class _VerticalRule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(width: 1, color: Theme.of(context).colorScheme.outline);
-  }
-}
-
-class _HorizontalRule extends StatelessWidget {
-  const _HorizontalRule();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(height: 1, color: Theme.of(context).colorScheme.outline);
   }
 }
