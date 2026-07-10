@@ -80,6 +80,18 @@ void main() {
 
     expect(controller.previewMonitorMode, 'program');
     expect(controller.monitorDurationSeconds, 5);
+    expect(find.byKey(const Key('timeline-view-selector')), findsOneWidget);
+    expect(find.textContaining('Sequence 00:00:05:00'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('timeline-view-selector')),
+        matching: find.text('Source'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.previewMonitorMode, 'source');
+    expect(find.textContaining('Source 00:01:00:00'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
@@ -403,6 +415,87 @@ void main() {
       expect(videoTargetToggles, 1);
     },
   );
+
+  testWidgets('sequence timeline maps output positions back to source edits', (
+    tester,
+  ) async {
+    double? splitSourceSeconds;
+    HighlightSegment? trimmedSegment;
+    int? selectedOrder;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 240,
+            child: TimelineEditor(
+              duration: 5,
+              sourceDuration: 60,
+              sequenceMode: true,
+              segments: const [
+                HighlightSegment(
+                  order: 1,
+                  start: 10,
+                  end: 14,
+                  playbackSpeed: 2,
+                  reason: 'fast opener',
+                ),
+                HighlightSegment(
+                  order: 2,
+                  start: 30,
+                  end: 33,
+                  reason: 'answer',
+                ),
+              ],
+              playheadSeconds: 0,
+              selectedSegmentOrder: 1,
+              markIn: null,
+              markOut: null,
+              timelineMarkers: const [],
+              waveform: const [0.1, 0.7, 0.4, 0.9],
+              zoom: 1,
+              trackHeightScale: 1,
+              snappingEnabled: false,
+              videoTrackTargeted: true,
+              audioTrack1Targeted: true,
+              audioTrack2Targeted: true,
+              videoTrackLocked: false,
+              audioTrackLocked: false,
+              audioTrack1Locked: false,
+              audioTrack2Locked: false,
+              razorTool: true,
+              onSegmentChanged: (segment) => trimmedSegment = segment,
+              onScrub: (_) {},
+              onSegmentSelected: (order) => selectedOrder = order,
+              onSplitAt: (seconds) => splitSourceSeconds = seconds,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final canvas = tester.getRect(find.byKey(const Key('timeline-canvas')));
+    final videoY = canvas.top + 50;
+    await tester.tapAt(Offset(canvas.left + canvas.width * 0.7, videoY));
+    await tester.pump();
+
+    expect(selectedOrder, 2);
+    expect(splitSourceSeconds, closeTo(31.5, 0.08));
+    expect(find.textContaining('Sequence 00:00:05:00'), findsOneWidget);
+
+    final trimGesture = await tester.startGesture(
+      Offset(canvas.left + canvas.width * 0.4, videoY),
+    );
+    await trimGesture.moveBy(const Offset(-4, 0));
+    await tester.pump();
+    await trimGesture.moveBy(Offset(-canvas.width * 0.1 + 4, 0));
+    await tester.pump();
+    await trimGesture.up();
+    await tester.pump();
+
+    expect(trimmedSegment?.order, 1);
+    expect(trimmedSegment?.end, closeTo(13, 0.08));
+  });
 
   testWidgets('registered keyboard shortcuts mutate editor state', (
     tester,

@@ -2102,6 +2102,55 @@ class _TimelinePanel extends StatelessWidget {
                     children: [
                       _SmallPill(label: '${controller.segments.length} clips'),
                       const SizedBox(width: 6),
+                      SegmentedButton<String>(
+                        key: const Key('timeline-view-selector'),
+                        showSelectedIcon: false,
+                        segments: [
+                          const ButtonSegment(
+                            value: 'source',
+                            label: Text('Source'),
+                          ),
+                          ButtonSegment(
+                            value: 'sequence',
+                            enabled: controller.segments.isNotEmpty,
+                            label: const Text('Sequence'),
+                          ),
+                        ],
+                        selected: {
+                          controller.isProgramMonitor ? 'sequence' : 'source',
+                        },
+                        onSelectionChanged: (selection) {
+                          if (selection.isEmpty) {
+                            return;
+                          }
+                          unawaited(
+                            editor.setPreviewMonitorMode(
+                              selection.first == 'sequence'
+                                  ? 'program'
+                                  : 'source',
+                            ),
+                          );
+                        },
+                        style: ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const WidgetStatePropertyAll(
+                            Size(0, 26),
+                          ),
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          textStyle: WidgetStatePropertyAll(
+                            Theme.of(context).textTheme.labelSmall,
+                          ),
+                          shape: WidgetStatePropertyAll(
+                            RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
                       _TrackControlButton(
                         label: controller.timelineSnappingLabel,
                         icon: controller.timelineSnappingEnabled
@@ -2539,9 +2588,13 @@ class _TimelineEditorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TimelineEditor(
-      duration: controller.timelineSourceDuration,
+      duration: controller.isProgramMonitor
+          ? controller.outputDurationSeconds
+          : controller.timelineSourceDuration,
+      sourceDuration: controller.timelineSourceDuration,
+      sequenceMode: controller.isProgramMonitor,
       segments: controller.segments,
-      playheadSeconds: controller.currentPositionSeconds,
+      playheadSeconds: controller.monitorPositionSeconds,
       selectedSegmentOrder: controller.selectedSegmentOrder,
       markIn: controller.markIn,
       markOut: controller.markOut,
@@ -2560,7 +2613,10 @@ class _TimelineEditorBody extends StatelessWidget {
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onScrub: (seconds) {
-        context.read<EditorController>().seekTo(seconds, autoplay: false);
+        context.read<EditorController>().seekMonitorTo(
+          seconds,
+          autoplay: false,
+        );
       },
       onSegmentSelected: context.read<EditorController>().selectSegment,
       onSetMarkIn: context.read<EditorController>().setMarkInAt,

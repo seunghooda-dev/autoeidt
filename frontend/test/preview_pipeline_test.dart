@@ -52,11 +52,19 @@ void main() {
       expect(controller.programSegmentOrderAt(2), 2);
       expect(controller.sourceTimeForProgramPosition(3.5), 31.5);
       expect(controller.programStartForSegment(2), 2);
+      expect(controller.programPositionForSourceTime(12), 1);
+      expect(controller.programPositionForSourceTime(31.5), 3.5);
 
       await controller.setPreviewMonitorMode('program');
       expect(controller.isProgramMonitor, isTrue);
       expect(controller.monitorDurationSeconds, 5);
       expect(controller.monitorPositionSeconds, 0);
+      await controller.jumpToNextEditPoint();
+      expect(controller.monitorPositionSeconds, 2);
+      expect(controller.currentPositionSeconds, 30);
+      await controller.stepPlayheadByFrames(1);
+      expect(controller.monitorPositionSeconds, closeTo(2 + 1 / 30, 0.001));
+      expect(controller.currentPositionSeconds, closeTo(30 + 1 / 30, 0.001));
       controller.dispose();
     },
   );

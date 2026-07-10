@@ -11,6 +11,47 @@ enum _DragEdge { start, end }
 
 enum _DragTrack { video, audio1, audio2 }
 
+class _TimelinePlacement {
+  const _TimelinePlacement({
+    required this.segment,
+    required this.index,
+    required this.sequenceStart,
+    required this.sequenceEnd,
+  });
+
+  final HighlightSegment segment;
+  final int index;
+  final double sequenceStart;
+  final double sequenceEnd;
+
+  double get speed => math.max(0.1, segment.playbackSpeed);
+  double get audioStart =>
+      sequenceStart + (segment.effectiveAudioStart - segment.start) / speed;
+  double get audioEnd =>
+      sequenceStart + (segment.effectiveAudioEnd - segment.start) / speed;
+}
+
+List<_TimelinePlacement> _buildTimelinePlacements(
+  List<HighlightSegment> segments,
+) {
+  var cursor = 0.0;
+  return [
+    for (var index = 0; index < segments.length; index++)
+      (() {
+        final segment = segments[index];
+        final start = cursor;
+        final end = start + math.max(0.0, segment.outputDuration);
+        cursor = end;
+        return _TimelinePlacement(
+          segment: segment,
+          index: index,
+          sequenceStart: start,
+          sequenceEnd: end,
+        );
+      })(),
+  ];
+}
+
 bool _isTimelineGapSegment(HighlightSegment segment) {
   final source = segment.source.toLowerCase();
   final reason = segment.reason.toLowerCase();
@@ -133,6 +174,8 @@ class TimelineEditor extends StatefulWidget {
     required this.onSegmentChanged,
     required this.onScrub,
     required this.onSegmentSelected,
+    this.sequenceMode = false,
+    this.sourceDuration,
     this.onSetMarkIn,
     this.onSetMarkOut,
     this.onClearMarks,
@@ -231,6 +274,8 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
+  final bool sequenceMode;
+  final double? sourceDuration;
   final ValueChanged<double>? onSetMarkIn;
   final ValueChanged<double>? onSetMarkOut;
   final VoidCallback? onClearMarks;
@@ -345,12 +390,27 @@ class _TimelineEditorState extends State<TimelineEditor> {
   double _lastViewportWidth = 0;
   double? _pendingZoomFocalRatio;
   double? _pendingZoomViewportX;
+  HighlightSegment? _dragOriginSegment;
+  double? _dragOriginSequenceStart;
+  int? _activePointer;
+  Offset? _pointerDownPosition;
+  bool _pointerDragging = false;
+  bool _followPlayheadScheduled = false;
   _TimelineLayout get _layout =>
       _TimelineLayout(scale: widget.trackHeightScale);
+
+  List<_TimelinePlacement> get _placements =>
+      _buildTimelinePlacements(widget.segments);
 
   @override
   void didUpdateWidget(covariant TimelineEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.sequenceMode != widget.sequenceMode ||
+        oldWidget.playheadSeconds != widget.playheadSeconds) {
+      _schedulePlayheadVisibility(
+        center: oldWidget.sequenceMode != widget.sequenceMode,
+      );
+    }
     if (oldWidget.zoom == widget.zoom || _pendingZoomFocalRatio == null) {
       return;
     }
@@ -372,6 +432,41 @@ class _TimelineEditorState extends State<TimelineEditor> {
     });
   }
 
+  void _schedulePlayheadVisibility({required bool center}) {
+    if (_followPlayheadScheduled) {
+      return;
+    }
+    _followPlayheadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _followPlayheadScheduled = false;
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          _lastViewportWidth <= 0 ||
+          widget.duration <= 0 ||
+          _pointerDragging) {
+        return;
+      }
+      final playheadX =
+          (widget.playheadSeconds / widget.duration).clamp(0.0, 1.0) *
+          _lastViewportWidth *
+          widget.zoom;
+      final current = _scrollController.offset;
+      final margin = math.min(56.0, _lastViewportWidth * 0.12);
+      final visible =
+          playheadX >= current + margin &&
+          playheadX <= current + _lastViewportWidth - margin;
+      if (!center && visible) {
+        return;
+      }
+      final target = playheadX - _lastViewportWidth / 2;
+      _scrollController.jumpTo(
+        target
+            .clamp(0.0, _scrollController.position.maxScrollExtent)
+            .toDouble(),
+      );
+    });
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -389,103 +484,120 @@ class _TimelineEditorState extends State<TimelineEditor> {
         );
         _lastViewportWidth = viewportWidth;
         final width = viewportWidth * widget.zoom;
-        return SizedBox(
-          height: layout.canvasHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: _trackHeaderWidth,
-                child: _TimelineTrackHeaders(
-                  layout: layout,
-                  segments: widget.segments,
-                  videoTargeted: widget.videoTrackTargeted,
-                  audio1Targeted: widget.audioTrack1Targeted,
-                  audio2Targeted: widget.audioTrack2Targeted,
-                  videoLocked: widget.videoTrackLocked,
-                  audio1Locked:
-                      widget.audioTrackLocked || widget.audioTrack1Locked,
-                  audio2Locked:
-                      widget.audioTrackLocked || widget.audioTrack2Locked,
-                  onToggleVideoTarget: widget.onToggleVideoTarget,
-                  onToggleAudio1Target: widget.onToggleAudio1Target,
-                  onToggleAudio2Target: widget.onToggleAudio2Target,
-                  onToggleVideoLock: widget.onToggleVideoLock,
-                  onToggleAudio1Lock: widget.onToggleAudio1Lock,
-                  onToggleAudio2Lock: widget.onToggleAudio2Lock,
-                  onToggleAudio1: widget.onToggleAllAudioChannel1,
-                  onToggleAudio2: widget.onToggleAllAudioChannel2,
+        return Semantics(
+          label: widget.sequenceMode
+              ? 'Sequence timeline ${formatSeconds(widget.duration)}'
+              : 'Source timeline ${formatSeconds(widget.duration)}',
+          child: SizedBox(
+            height: layout.canvasHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: _trackHeaderWidth,
+                  child: _TimelineTrackHeaders(
+                    layout: layout,
+                    segments: widget.segments,
+                    videoTargeted: widget.videoTrackTargeted,
+                    audio1Targeted: widget.audioTrack1Targeted,
+                    audio2Targeted: widget.audioTrack2Targeted,
+                    videoLocked: widget.videoTrackLocked,
+                    audio1Locked:
+                        widget.audioTrackLocked || widget.audioTrack1Locked,
+                    audio2Locked:
+                        widget.audioTrackLocked || widget.audioTrack2Locked,
+                    onToggleVideoTarget: widget.onToggleVideoTarget,
+                    onToggleAudio1Target: widget.onToggleAudio1Target,
+                    onToggleAudio2Target: widget.onToggleAudio2Target,
+                    onToggleVideoLock: widget.onToggleVideoLock,
+                    onToggleAudio1Lock: widget.onToggleAudio1Lock,
+                    onToggleAudio2Lock: widget.onToggleAudio2Lock,
+                    onToggleAudio1: widget.onToggleAllAudioChannel1,
+                    onToggleAudio2: widget.onToggleAllAudioChannel2,
+                  ),
                 ),
-              ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: Theme.of(context).colorScheme.outline,
-              ),
-              Expanded(
-                key: const Key('timeline-scroll-area'),
-                child: Listener(
-                  onPointerSignal: _handlePointerSignal,
-                  child: Scrollbar(
-                    controller: _scrollController,
-                    thumbVisibility: widget.zoom > 1.0,
-                    child: SingleChildScrollView(
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+                Expanded(
+                  key: const Key('timeline-scroll-area'),
+                  child: Listener(
+                    onPointerSignal: _handlePointerSignal,
+                    child: Scrollbar(
                       controller: _scrollController,
-                      scrollDirection: Axis.horizontal,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: (details) =>
-                            _tap(details.localPosition, width),
-                        onSecondaryTapDown: (details) =>
-                            _showContextMenu(details, width),
-                        onPanStart: (details) =>
-                            _startDrag(details.localPosition, width),
-                        onPanUpdate: (details) =>
-                            _updateDrag(details.localPosition.dx, width),
-                        onPanEnd: (_) => _finishDrag(),
-                        onPanCancel: _finishDrag,
-                        child: SizedBox(
-                          width: width,
-                          height: layout.canvasHeight,
-                          child: CustomPaint(
-                            painter: _TimelinePainter(
-                              layout: layout,
-                              duration: widget.duration,
-                              segments: widget.segments,
-                              playheadSeconds: widget.playheadSeconds,
-                              selectedSegmentOrder: widget.selectedSegmentOrder,
-                              markIn: widget.markIn,
-                              markOut: widget.markOut,
-                              timelineMarkers: widget.timelineMarkers,
-                              waveform: widget.waveform,
-                              activeIndex: _activeIndex,
-                              activeEdge: _activeEdge,
-                              activeTrack: _activeTrack,
-                              videoTrackLocked: widget.videoTrackLocked,
-                              audioTrack1Locked:
-                                  widget.audioTrackLocked ||
-                                  widget.audioTrack1Locked,
-                              audioTrack2Locked:
-                                  widget.audioTrackLocked ||
-                                  widget.audioTrack2Locked,
-                              colorScheme: Theme.of(context).colorScheme,
-                            ),
-                            child: Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  top: layout.footerTop,
-                                  left: 6,
+                      thumbVisibility: widget.zoom > 1.0,
+                      child: SingleChildScrollView(
+                        controller: _scrollController,
+                        scrollDirection: Axis.horizontal,
+                        physics: _pointerDragging
+                            ? const NeverScrollableScrollPhysics()
+                            : const ClampingScrollPhysics(),
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (event) => _handlePointerDown(event),
+                          onPointerMove: (event) =>
+                              _handlePointerMove(event, width),
+                          onPointerUp: _handlePointerEnd,
+                          onPointerCancel: _handlePointerEnd,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: (details) =>
+                                _tap(details.localPosition, width),
+                            onSecondaryTapDown: (details) =>
+                                _showContextMenu(details, width),
+                            child: SizedBox(
+                              width: width,
+                              height: layout.canvasHeight,
+                              child: CustomPaint(
+                                key: const Key('timeline-canvas'),
+                                painter: _TimelinePainter(
+                                  layout: layout,
+                                  duration: widget.duration,
+                                  segments: widget.segments,
+                                  playheadSeconds: widget.playheadSeconds,
+                                  selectedSegmentOrder:
+                                      widget.selectedSegmentOrder,
+                                  markIn: widget.markIn,
+                                  markOut: widget.markOut,
+                                  timelineMarkers: widget.timelineMarkers,
+                                  waveform: widget.waveform,
+                                  activeIndex: _activeIndex,
+                                  activeEdge: _activeEdge,
+                                  activeTrack: _activeTrack,
+                                  videoTrackLocked: widget.videoTrackLocked,
+                                  audioTrack1Locked:
+                                      widget.audioTrackLocked ||
+                                      widget.audioTrack1Locked,
+                                  audioTrack2Locked:
+                                      widget.audioTrackLocked ||
+                                      widget.audioTrack2Locked,
+                                  colorScheme: Theme.of(context).colorScheme,
+                                  sequenceMode: widget.sequenceMode,
+                                  sourceDuration:
+                                      widget.sourceDuration ?? widget.duration,
                                 ),
-                                child: SizedBox(
-                                  width: math.max(0, width - 12),
-                                  child: Text(
-                                    'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Detached A/V ${_detachedAudioCount()}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.labelSmall,
+                                child: Align(
+                                  alignment: Alignment.bottomLeft,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      top: layout.footerTop,
+                                      left: 6,
+                                    ),
+                                    child: SizedBox(
+                                      width: math.max(0, width - 12),
+                                      child: Text(
+                                        widget.sequenceMode
+                                            ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Detached A/V ${_detachedAudioCount()}'
+                                            : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Detached A/V ${_detachedAudioCount()}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -496,8 +608,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -533,6 +645,41 @@ class _TimelineEditorState extends State<TimelineEditor> {
     onZoomDelta(delta);
   }
 
+  void _handlePointerDown(PointerDownEvent event) {
+    if ((event.buttons & kPrimaryButton) == 0 || _activePointer != null) {
+      return;
+    }
+    _activePointer = event.pointer;
+    _pointerDownPosition = event.localPosition;
+    _pointerDragging = false;
+  }
+
+  void _handlePointerMove(PointerMoveEvent event, double width) {
+    if (_activePointer != event.pointer || _pointerDownPosition == null) {
+      return;
+    }
+    if (!_pointerDragging) {
+      if ((event.localPosition - _pointerDownPosition!).distance < 3) {
+        return;
+      }
+      _pointerDragging = true;
+      _startDrag(_pointerDownPosition!, width);
+    }
+    _updateDrag(event.localPosition.dx, width);
+  }
+
+  void _handlePointerEnd(PointerEvent event) {
+    if (_activePointer != event.pointer) {
+      return;
+    }
+    if (_pointerDragging) {
+      _finishDrag();
+      return;
+    }
+    _activePointer = null;
+    _pointerDownPosition = null;
+  }
+
   void _tap(Offset position, double width) {
     final track = _trackAt(position.dy);
     final hitIndex = _segmentIndexAt(position.dx, width, track);
@@ -540,11 +687,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _xToSeconds(position.dx, width),
       width,
     );
+    final sourceSeconds = _sourceSecondsAtDisplay(seconds, hitIndex: hitIndex);
     if (hitIndex != null) {
       widget.onSegmentSelected(widget.segments[hitIndex].order);
     }
     if (widget.razorTool && hitIndex != null) {
-      widget.onSplitAt?.call(seconds);
+      widget.onSplitAt?.call(sourceSeconds);
       return;
     }
     widget.onScrub(seconds);
@@ -559,6 +707,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _xToSeconds(position.dx, width),
       width,
     );
+    final sourceSeconds = _sourceSecondsAtDisplay(seconds, hitIndex: hitIndex);
     final segment = hitIndex == null ? null : widget.segments[hitIndex];
 
     if (segment != null) {
@@ -588,9 +737,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
       case _TimelineMenuAction.toggleSnapping:
         widget.onToggleSnapping?.call();
       case _TimelineMenuAction.markIn:
-        widget.onSetMarkIn?.call(seconds);
+        widget.onSetMarkIn?.call(sourceSeconds);
       case _TimelineMenuAction.markOut:
-        widget.onSetMarkOut?.call(seconds);
+        widget.onSetMarkOut?.call(sourceSeconds);
       case _TimelineMenuAction.markClip:
         widget.onMarkClip?.call();
       case _TimelineMenuAction.clearMarks:
@@ -624,7 +773,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       case _TimelineMenuAction.jumpToSelectedClipEnd:
         widget.onJumpToSelectedClipEnd?.call();
       case _TimelineMenuAction.addMarker:
-        widget.onAddMarkerAt?.call(seconds);
+        widget.onAddMarkerAt?.call(sourceSeconds);
       case _TimelineMenuAction.previousMarker:
         widget.onJumpToPreviousMarker?.call();
       case _TimelineMenuAction.nextMarker:
@@ -636,7 +785,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       case _TimelineMenuAction.clearTimelineMarkers:
         widget.onClearTimelineMarkers?.call();
       case _TimelineMenuAction.selectClipAtCursor:
-        widget.onSelectClipAt?.call(seconds);
+        widget.onSelectClipAt?.call(sourceSeconds);
       case _TimelineMenuAction.deselectClip:
         widget.onDeselectClip?.call();
       case _TimelineMenuAction.selectPreviousClip:
@@ -644,17 +793,17 @@ class _TimelineEditorState extends State<TimelineEditor> {
       case _TimelineMenuAction.selectNextClip:
         widget.onSelectNextClip?.call();
       case _TimelineMenuAction.addEdit:
-        widget.onAddEditAt?.call(seconds);
+        widget.onAddEditAt?.call(sourceSeconds);
       case _TimelineMenuAction.addEditAllTracks:
-        widget.onAddEditAllTracksAt?.call(seconds);
+        widget.onAddEditAllTracksAt?.call(sourceSeconds);
       case _TimelineMenuAction.rippleTrimStart:
-        widget.onRippleTrimStartTo?.call(seconds);
+        widget.onRippleTrimStartTo?.call(sourceSeconds);
       case _TimelineMenuAction.rippleTrimEnd:
-        widget.onRippleTrimEndTo?.call(seconds);
+        widget.onRippleTrimEndTo?.call(sourceSeconds);
       case _TimelineMenuAction.extendStart:
-        widget.onExtendStartTo?.call(seconds);
+        widget.onExtendStartTo?.call(sourceSeconds);
       case _TimelineMenuAction.extendEnd:
-        widget.onExtendEndTo?.call(seconds);
+        widget.onExtendEndTo?.call(sourceSeconds);
       case _TimelineMenuAction.rollIncomingEarlierFrame:
         widget.onRollIncomingEditFrames?.call(-1);
       case _TimelineMenuAction.rollIncomingLaterFrame:
@@ -686,7 +835,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
       case _TimelineMenuAction.rateStretchToMarks:
         widget.onRateStretchToMarks?.call();
       case _TimelineMenuAction.split:
-        widget.onSplitAt?.call(seconds);
+        widget.onSplitAt?.call(sourceSeconds);
       case _TimelineMenuAction.duplicate:
         widget.onDuplicateSegment?.call();
       case _TimelineMenuAction.copySelected:
@@ -1540,12 +1689,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
     for (var index = 0; index < widget.segments.length; index++) {
       final segment = widget.segments[index];
-      final startSeconds = track == _DragTrack.video
-          ? segment.start
-          : segment.effectiveAudioStart;
-      final endSeconds = track == _DragTrack.video
-          ? segment.end
-          : segment.effectiveAudioEnd;
+      final placement = _placementForIndex(index);
+      final startSeconds = _displayStartForTrack(segment, placement, track);
+      final endSeconds = _displayEndForTrack(segment, placement, track);
       final startX = _secondsToX(startSeconds, width);
       final endX = _secondsToX(endSeconds, width);
       final startDistance = (position.dx - startX).abs();
@@ -1569,6 +1715,12 @@ class _TimelineEditorState extends State<TimelineEditor> {
         _activeEdge = closestEdge;
         _activeTrack = track;
         _isScrubbing = false;
+        _dragOriginSegment = closestIndex == null
+            ? null
+            : widget.segments[closestIndex];
+        _dragOriginSequenceStart = closestIndex == null
+            ? null
+            : _placementForIndex(closestIndex)?.sequenceStart;
       });
       if (closestIndex != null) {
         widget.onSegmentSelected(widget.segments[closestIndex].order);
@@ -1589,6 +1741,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _activeEdge = null;
       _activeTrack = null;
       _isScrubbing = true;
+      _dragOriginSegment = null;
+      _dragOriginSequenceStart = null;
     });
     widget.onScrub(_snapTimelineSeconds(_xToSeconds(x, width), width));
   }
@@ -1610,20 +1764,30 @@ class _TimelineEditorState extends State<TimelineEditor> {
     }
 
     final current = widget.segments[index];
+    final origin = _dragOriginSegment ?? current;
     final seconds = _snapTimelineSeconds(_xToSeconds(x, width), width);
+    final sourceSeconds = widget.sequenceMode
+        ? (origin.start +
+                  (seconds - (_dragOriginSequenceStart ?? 0)) *
+                      math.max(0.1, origin.playbackSpeed))
+              .clamp(0.0, widget.sourceDuration ?? double.infinity)
+              .toDouble()
+        : seconds;
 
     HighlightSegment updated;
     if (track == _DragTrack.video) {
       if (edge == _DragEdge.start) {
         final maxStart = math.max(0.0, current.end - _minSegmentSeconds);
-        final start = seconds.clamp(0.0, maxStart).toDouble();
+        final start = sourceSeconds.clamp(0.0, maxStart).toDouble();
         updated = current.copyWith(start: start);
       } else {
         final minEnd = math.min(
-          widget.duration,
+          widget.sourceDuration ?? widget.duration,
           current.start + _minSegmentSeconds,
         );
-        final end = seconds.clamp(minEnd, widget.duration).toDouble();
+        final end = sourceSeconds
+            .clamp(minEnd, widget.sourceDuration ?? widget.duration)
+            .toDouble();
         updated = current.copyWith(end: end);
       }
     } else {
@@ -1632,14 +1796,16 @@ class _TimelineEditorState extends State<TimelineEditor> {
           0.0,
           current.effectiveAudioEnd - _minSegmentSeconds,
         );
-        final start = seconds.clamp(0.0, maxStart).toDouble();
+        final start = sourceSeconds.clamp(0.0, maxStart).toDouble();
         updated = current.copyWith(audioStart: start, audioLinked: false);
       } else {
         final minEnd = math.min(
-          widget.duration,
+          widget.sourceDuration ?? widget.duration,
           current.effectiveAudioStart + _minSegmentSeconds,
         );
-        final end = seconds.clamp(minEnd, widget.duration).toDouble();
+        final end = sourceSeconds
+            .clamp(minEnd, widget.sourceDuration ?? widget.duration)
+            .toDouble();
         updated = current.copyWith(audioEnd: end, audioLinked: false);
       }
     }
@@ -1652,6 +1818,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
       _activeEdge = null;
       _activeTrack = null;
       _isScrubbing = false;
+      _dragOriginSegment = null;
+      _dragOriginSequenceStart = null;
+      _activePointer = null;
+      _pointerDownPosition = null;
+      _pointerDragging = false;
     });
   }
 
@@ -1692,12 +1863,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
     }
     for (var index = widget.segments.length - 1; index >= 0; index--) {
       final segment = widget.segments[index];
-      final start = track == _DragTrack.video
-          ? segment.start
-          : segment.effectiveAudioStart;
-      final end = track == _DragTrack.video
-          ? segment.end
-          : segment.effectiveAudioEnd;
+      final placement = _placementForIndex(index);
+      final start = _displayStartForTrack(segment, placement, track);
+      final end = _displayEndForTrack(segment, placement, track);
       final left = _secondsToX(start, width);
       final right = _secondsToX(end, width);
       if (x >= left && x <= right) {
@@ -1707,11 +1875,100 @@ class _TimelineEditorState extends State<TimelineEditor> {
     return null;
   }
 
+  _TimelinePlacement? _placementForIndex(int index) {
+    if (!widget.sequenceMode || index < 0 || index >= widget.segments.length) {
+      return null;
+    }
+    return _placements[index];
+  }
+
+  double _displayStartForTrack(
+    HighlightSegment segment,
+    _TimelinePlacement? placement,
+    _DragTrack track,
+  ) {
+    if (placement == null) {
+      return track == _DragTrack.video
+          ? segment.start
+          : segment.effectiveAudioStart;
+    }
+    return track == _DragTrack.video
+        ? placement.sequenceStart
+        : placement.audioStart;
+  }
+
+  double _displayEndForTrack(
+    HighlightSegment segment,
+    _TimelinePlacement? placement,
+    _DragTrack track,
+  ) {
+    if (placement == null) {
+      return track == _DragTrack.video
+          ? segment.end
+          : segment.effectiveAudioEnd;
+    }
+    return track == _DragTrack.video
+        ? placement.sequenceEnd
+        : placement.audioEnd;
+  }
+
+  double _sourceSecondsAtDisplay(double displaySeconds, {int? hitIndex}) {
+    if (!widget.sequenceMode || widget.segments.isEmpty) {
+      return displaySeconds;
+    }
+    final placements = _placements;
+    _TimelinePlacement? placement;
+    if (hitIndex != null && hitIndex >= 0 && hitIndex < placements.length) {
+      placement = placements[hitIndex];
+    } else {
+      for (var index = 0; index < placements.length; index++) {
+        final candidate = placements[index];
+        if (displaySeconds <
+                candidate.sequenceEnd - timecodeFrameDurationSeconds / 2 ||
+            index == placements.length - 1) {
+          placement = candidate;
+          break;
+        }
+      }
+    }
+    if (placement == null) {
+      return 0;
+    }
+    final localOutput = (displaySeconds - placement.sequenceStart)
+        .clamp(0.0, placement.sequenceEnd - placement.sequenceStart)
+        .toDouble();
+    return (placement.segment.start + localOutput * placement.speed)
+        .clamp(placement.segment.start, placement.segment.end)
+        .toDouble();
+  }
+
+  double? _displaySecondsForSource(double sourceSeconds) {
+    if (!widget.sequenceMode) {
+      return sourceSeconds;
+    }
+    final placements = _placements;
+    final preferred = placements.where(
+      (placement) => placement.segment.order == widget.selectedSegmentOrder,
+    );
+    for (final placement in [...preferred, ...placements]) {
+      if (sourceSeconds >= placement.segment.start &&
+          sourceSeconds <= placement.segment.end) {
+        return placement.sequenceStart +
+            (sourceSeconds - placement.segment.start) / placement.speed;
+      }
+    }
+    return null;
+  }
+
   TimelineMarker? _markerAt(double x, double width) {
     TimelineMarker? closest;
     var closestDistance = double.infinity;
     for (final marker in widget.timelineMarkers) {
-      final markerX = _secondsToX(marker.seconds, width);
+      final displaySeconds = _displaySecondsForSource(marker.seconds);
+      if (displaySeconds == null) {
+        continue;
+      }
+      final markerX = _secondsToX(displaySeconds, width);
       final distance = (x - markerX).abs();
       if (distance < closestDistance) {
         closest = marker;
@@ -1723,12 +1980,18 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
   bool _hasNextMarker() {
     final threshold = widget.playheadSeconds + timecodeFrameDurationSeconds / 2;
-    return widget.timelineMarkers.any((marker) => marker.seconds > threshold);
+    return widget.timelineMarkers.any((marker) {
+      final seconds = _displaySecondsForSource(marker.seconds);
+      return seconds != null && seconds > threshold;
+    });
   }
 
   bool _hasPreviousMarker() {
     final threshold = widget.playheadSeconds - timecodeFrameDurationSeconds / 2;
-    return widget.timelineMarkers.any((marker) => marker.seconds < threshold);
+    return widget.timelineMarkers.any((marker) {
+      final seconds = _displaySecondsForSource(marker.seconds);
+      return seconds != null && seconds < threshold;
+    });
   }
 
   double _totalOutputSeconds() {
@@ -1781,22 +2044,33 @@ class _TimelineEditorState extends State<TimelineEditor> {
   List<double> _snapCandidateSeconds() {
     final points = <double>{0.0, widget.duration};
     if (widget.markIn != null) {
-      points.add(widget.markIn!);
+      final seconds = _displaySecondsForSource(widget.markIn!);
+      if (seconds != null) {
+        points.add(seconds);
+      }
     }
     if (widget.markOut != null) {
-      points.add(widget.markOut!);
+      final seconds = _displaySecondsForSource(widget.markOut!);
+      if (seconds != null) {
+        points.add(seconds);
+      }
     }
     for (final marker in widget.timelineMarkers) {
       if (marker.enabled) {
-        points.add(marker.seconds);
+        final seconds = _displaySecondsForSource(marker.seconds);
+        if (seconds != null) {
+          points.add(seconds);
+        }
       }
     }
-    for (final segment in widget.segments) {
+    for (var index = 0; index < widget.segments.length; index++) {
+      final segment = widget.segments[index];
+      final placement = _placementForIndex(index);
       points
-        ..add(segment.start)
-        ..add(segment.end)
-        ..add(segment.effectiveAudioStart)
-        ..add(segment.effectiveAudioEnd);
+        ..add(_displayStartForTrack(segment, placement, _DragTrack.video))
+        ..add(_displayEndForTrack(segment, placement, _DragTrack.video))
+        ..add(_displayStartForTrack(segment, placement, _DragTrack.audio1))
+        ..add(_displayEndForTrack(segment, placement, _DragTrack.audio1));
     }
     return points.toList();
   }
@@ -2146,6 +2420,8 @@ class _TimelinePainter extends CustomPainter {
     required this.audioTrack1Locked,
     required this.audioTrack2Locked,
     required this.colorScheme,
+    required this.sequenceMode,
+    required this.sourceDuration,
   });
 
   static const double _handleVisualWidth =
@@ -2172,6 +2448,10 @@ class _TimelinePainter extends CustomPainter {
   final bool audioTrack1Locked;
   final bool audioTrack2Locked;
   final ColorScheme colorScheme;
+  final bool sequenceMode;
+  final double sourceDuration;
+
+  List<_TimelinePlacement> get placements => _buildTimelinePlacements(segments);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2232,8 +2512,10 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawInOutRange(Canvas canvas, Size size) {
-    final inPoint = markIn;
-    final outPoint = markOut;
+    final inPoint = markIn == null ? null : _displaySecondsForSource(markIn!);
+    final outPoint = markOut == null
+        ? null
+        : _displaySecondsForSource(markOut!);
     if (inPoint == null || outPoint == null || outPoint <= inPoint) {
       return;
     }
@@ -2400,6 +2682,9 @@ class _TimelinePainter extends CustomPainter {
 
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
+      final placement = sequenceMode ? placements[index] : null;
+      final videoStart = placement?.sequenceStart ?? segment.start;
+      final videoEnd = placement?.sequenceEnd ?? segment.end;
       final isActive =
           activeIndex == index || selectedSegmentOrder == segment.order;
 
@@ -2407,8 +2692,8 @@ class _TimelinePainter extends CustomPainter {
         canvas,
         size,
         top: layout.videoTop,
-        start: segment.start,
-        end: segment.end,
+        start: videoStart,
+        end: videoEnd,
         fill: segment.videoEnabled
             ? (isActive ? _videoClipActiveColor : _videoClipColor)
             : colorScheme.onSurfaceVariant.withValues(alpha: 0.28),
@@ -2421,7 +2706,7 @@ class _TimelinePainter extends CustomPainter {
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
       );
-      _drawFadeOverlay(canvas, size, segment);
+      _drawFadeOverlay(canvas, size, segment, placement);
 
       final audioFill = segment.audioLinked
           ? (isActive ? _audioClipActiveColor : _audioClipColor)
@@ -2435,6 +2720,7 @@ class _TimelinePainter extends CustomPainter {
         canvas,
         size,
         segment: segment,
+        placement: placement,
         top: layout.audio1Top,
         channelEnabled: segment.audioChannel1Enabled,
         channelLabel: 'A1',
@@ -2448,6 +2734,7 @@ class _TimelinePainter extends CustomPainter {
         canvas,
         size,
         segment: segment,
+        placement: placement,
         top: layout.audio2Top,
         channelEnabled: segment.audioChannel2Enabled,
         channelLabel: 'A2',
@@ -2458,7 +2745,7 @@ class _TimelinePainter extends CustomPainter {
         track: _DragTrack.audio2,
       );
       if (segment.audioPan.abs() > 0.001) {
-        _drawPanIndicator(canvas, size, segment);
+        _drawPanIndicator(canvas, size, segment, placement);
       }
     }
   }
@@ -2470,6 +2757,7 @@ class _TimelinePainter extends CustomPainter {
     Canvas canvas,
     Size size, {
     required HighlightSegment segment,
+    required _TimelinePlacement? placement,
     required double top,
     required bool channelEnabled,
     required String channelLabel,
@@ -2480,12 +2768,16 @@ class _TimelinePainter extends CustomPainter {
     required _DragTrack track,
   }) {
     final disabled = segment.audioMuted || !channelEnabled;
+    final displayStart = placement?.audioStart ?? segment.effectiveAudioStart;
+    final displayEnd = placement?.audioEnd ?? segment.effectiveAudioEnd;
     _drawClipBlock(
       canvas,
       size,
       top: top,
-      start: segment.effectiveAudioStart,
-      end: segment.effectiveAudioEnd,
+      start: displayStart,
+      end: displayEnd,
+      waveformSourceStart: segment.effectiveAudioStart,
+      waveformSourceEnd: segment.effectiveAudioEnd,
       fill: disabled
           ? fill.withValues(alpha: 0.22)
           : fill.withValues(alpha: segment.audioLinked ? 0.84 : 0.95),
@@ -2512,6 +2804,8 @@ class _TimelinePainter extends CustomPainter {
     required bool handlesActive,
     required String label,
     required _DragTrack track,
+    double? waveformSourceStart,
+    double? waveformSourceEnd,
     bool disabledPattern = false,
   }) {
     final left = _secondsToX(start, size.width);
@@ -2567,7 +2861,12 @@ class _TimelinePainter extends CustomPainter {
     if (track == _DragTrack.video) {
       _drawVideoPresence(canvas, rect);
     } else {
-      _drawAudioPresence(canvas, rect, start, end);
+      _drawAudioPresence(
+        canvas,
+        rect,
+        waveformSourceStart ?? start,
+        waveformSourceEnd ?? end,
+      );
     }
     _drawClipTimecodeLabel(canvas, rect, label, start, end, track);
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
@@ -2628,9 +2927,9 @@ class _TimelinePainter extends CustomPainter {
           .clamp(0.0, 1.0)
           .toDouble();
       final sourceSeconds = start + (end - start) * ratio;
-      final peak = waveform.isEmpty || duration <= 0
+      final peak = waveform.isEmpty || sourceDuration <= 0
           ? 0.32 + 0.18 * math.sin(ratio * math.pi * 24).abs()
-          : waveform[(sourceSeconds / duration * (waveform.length - 1))
+          : waveform[(sourceSeconds / sourceDuration * (waveform.length - 1))
                     .round()
                     .clamp(0, waveform.length - 1)
                     .toInt()]
@@ -2705,9 +3004,20 @@ class _TimelinePainter extends CustomPainter {
     );
   }
 
-  void _drawPanIndicator(Canvas canvas, Size size, HighlightSegment segment) {
-    final left = _secondsToX(segment.effectiveAudioStart, size.width);
-    final right = _secondsToX(segment.effectiveAudioEnd, size.width);
+  void _drawPanIndicator(
+    Canvas canvas,
+    Size size,
+    HighlightSegment segment,
+    _TimelinePlacement? placement,
+  ) {
+    final left = _secondsToX(
+      placement?.audioStart ?? segment.effectiveAudioStart,
+      size.width,
+    );
+    final right = _secondsToX(
+      placement?.audioEnd ?? segment.effectiveAudioEnd,
+      size.width,
+    );
     final width = math.max(2.0, right - left);
     final panX =
         left + ((segment.audioPan + 1.0) / 2.0).clamp(0.0, 1.0) * width;
@@ -2725,9 +3035,17 @@ class _TimelinePainter extends CustomPainter {
     }
   }
 
-  void _drawFadeOverlay(Canvas canvas, Size size, HighlightSegment segment) {
-    final left = _secondsToX(segment.start, size.width);
-    final right = _secondsToX(segment.end, size.width);
+  void _drawFadeOverlay(
+    Canvas canvas,
+    Size size,
+    HighlightSegment segment,
+    _TimelinePlacement? placement,
+  ) {
+    final speed = placement?.speed ?? 1.0;
+    final displayStart = placement?.sequenceStart ?? segment.start;
+    final displayEnd = placement?.sequenceEnd ?? segment.end;
+    final left = _secondsToX(displayStart, size.width);
+    final right = _secondsToX(displayEnd, size.width);
     final clipWidth = math.max(2.0, right - left);
     final fadePaint = Paint()
       ..color = colorScheme.surface.withValues(alpha: 0.38);
@@ -2736,7 +3054,7 @@ class _TimelinePainter extends CustomPainter {
 
     if (segment.videoFadeIn > 0) {
       final fadeEnd = _secondsToX(
-        segment.start + segment.videoFadeIn,
+        displayStart + segment.videoFadeIn / speed,
         size.width,
       ).clamp(left, right).toDouble();
       final fadeWidth = math.min(clipWidth, fadeEnd - left);
@@ -2752,7 +3070,7 @@ class _TimelinePainter extends CustomPainter {
 
     if (segment.videoFadeOut > 0) {
       final fadeStart = _secondsToX(
-        segment.end - segment.videoFadeOut,
+        displayEnd - segment.videoFadeOut / speed,
         size.width,
       ).clamp(left, right).toDouble();
       final fadeWidth = math.min(clipWidth, right - fadeStart);
@@ -2771,8 +3089,10 @@ class _TimelinePainter extends CustomPainter {
     for (final marker in timelineMarkers) {
       _drawTimelineMarker(canvas, size, marker);
     }
-    final inPoint = markIn;
-    final outPoint = markOut;
+    final inPoint = markIn == null ? null : _displaySecondsForSource(markIn!);
+    final outPoint = markOut == null
+        ? null
+        : _displaySecondsForSource(markOut!);
     if (inPoint != null) {
       _drawMarker(canvas, size, inPoint, 'IN', colorScheme.primary);
     }
@@ -2782,7 +3102,11 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawTimelineMarker(Canvas canvas, Size size, TimelineMarker marker) {
-    final x = _secondsToX(marker.seconds, size.width);
+    final displaySeconds = _displaySecondsForSource(marker.seconds);
+    if (displaySeconds == null) {
+      return;
+    }
+    final x = _secondsToX(displaySeconds, size.width);
     final markerEnabled = marker.enabled;
     final color = markerEnabled
         ? _timelineMarkerColor(marker.color)
@@ -2848,6 +3172,24 @@ class _TimelinePainter extends CustomPainter {
       default:
         return colorScheme.tertiary;
     }
+  }
+
+  double? _displaySecondsForSource(double sourceSeconds) {
+    if (!sequenceMode) {
+      return sourceSeconds;
+    }
+    final timelinePlacements = placements;
+    final preferred = timelinePlacements.where(
+      (placement) => placement.segment.order == selectedSegmentOrder,
+    );
+    for (final placement in [...preferred, ...timelinePlacements]) {
+      if (sourceSeconds >= placement.segment.start &&
+          sourceSeconds <= placement.segment.end) {
+        return placement.sequenceStart +
+            (sourceSeconds - placement.segment.start) / placement.speed;
+      }
+    }
+    return null;
   }
 
   void _drawPlayhead(Canvas canvas, Size size) {
@@ -2926,6 +3268,8 @@ class _TimelinePainter extends CustomPainter {
         videoTrackLocked != oldDelegate.videoTrackLocked ||
         audioTrack1Locked != oldDelegate.audioTrack1Locked ||
         audioTrack2Locked != oldDelegate.audioTrack2Locked ||
+        sequenceMode != oldDelegate.sequenceMode ||
+        sourceDuration != oldDelegate.sourceDuration ||
         colorScheme != oldDelegate.colorScheme;
   }
 }

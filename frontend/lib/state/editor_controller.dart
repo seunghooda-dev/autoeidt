@@ -257,10 +257,30 @@ class EditorController extends ChangeNotifier {
   bool get hasTimelineMarkers => timelineMarkers.isNotEmpty;
   bool get canBuildTimelineFromMarkers =>
       _timelineMarkerRanges(enabledOnly: true).isNotEmpty;
-  bool get canJumpToNextTimelineMarker =>
-      _nextTimelineMarkerFrom(currentPositionSeconds) != null;
-  bool get canJumpToPreviousTimelineMarker =>
-      _previousTimelineMarkerFrom(currentPositionSeconds) != null;
+  bool get canJumpToNextTimelineMarker {
+    if (isProgramMonitor) {
+      final threshold =
+          _programPlayheadSeconds + timecodeFrameDurationSeconds / 2;
+      return timelineMarkers.any((marker) {
+        final position = programPositionForSourceTime(marker.seconds);
+        return position != null && position > threshold;
+      });
+    }
+    return _nextTimelineMarkerFrom(currentPositionSeconds) != null;
+  }
+
+  bool get canJumpToPreviousTimelineMarker {
+    if (isProgramMonitor) {
+      final threshold =
+          _programPlayheadSeconds - timecodeFrameDurationSeconds / 2;
+      return timelineMarkers.any((marker) {
+        final position = programPositionForSourceTime(marker.seconds);
+        return position != null && position < threshold;
+      });
+    }
+    return _previousTimelineMarkerFrom(currentPositionSeconds) != null;
+  }
+
   List<BatchRenderItemResult> get renderOutputs {
     final currentRenderUrl = renderUrl;
     if (currentRenderUrl == null || currentRenderUrl.isEmpty) {
@@ -558,8 +578,19 @@ class EditorController extends ChangeNotifier {
   bool get canUseProgramMonitor => segments.isNotEmpty;
   bool get isProgramMonitor =>
       previewMonitorMode == 'program' && canUseProgramMonitor;
-  double get monitorPositionSeconds =>
-      isProgramMonitor ? _programPlayheadSeconds : currentPositionSeconds;
+  double get monitorPositionSeconds {
+    if (!isProgramMonitor) {
+      return currentPositionSeconds;
+    }
+    final mapped = programPositionForSourceTime(
+      currentPositionSeconds,
+      preferredOrder: _programSegmentOrder ?? selectedSegmentOrder,
+    );
+    return (mapped ?? _programPlayheadSeconds)
+        .clamp(0.0, outputDurationSeconds)
+        .toDouble();
+  }
+
   double get monitorDurationSeconds =>
       isProgramMonitor ? outputDurationSeconds : duration;
 
@@ -669,6 +700,32 @@ class EditorController extends ChangeNotifier {
 
   double programStartForSegment(int order) {
     return _programSpanForOrder(order)?.sequenceStart ?? 0;
+  }
+
+  double? programPositionForSourceTime(
+    double sourceSeconds, {
+    int? preferredOrder,
+  }) {
+    final preferred = _programSpanForOrder(
+      preferredOrder ?? _programSegmentOrder ?? selectedSegmentOrder,
+    );
+    if (preferred != null &&
+        sourceSeconds >= preferred.segment.start &&
+        sourceSeconds <= preferred.segment.end) {
+      return preferred.sequenceStart +
+          (sourceSeconds - preferred.segment.start) /
+              math.max(0.1, preferred.segment.playbackSpeed);
+    }
+    var cursor = 0.0;
+    for (final segment in segments) {
+      if (sourceSeconds >= segment.start && sourceSeconds <= segment.end) {
+        return cursor +
+            (sourceSeconds - segment.start) /
+                math.max(0.1, segment.playbackSpeed);
+      }
+      cursor += math.max(0.0, segment.outputDuration);
+    }
+    return null;
   }
 
   _ProgramSpan? _programSpanAt(double programSeconds) {
@@ -2139,6 +2196,25 @@ class EditorController extends ChangeNotifier {
   }
 
   void jumpToNextTimelineMarker() {
+    if (isProgramMonitor) {
+      final candidates = <({TimelineMarker marker, double position})>[];
+      for (final marker in timelineMarkers) {
+        final position = programPositionForSourceTime(marker.seconds);
+        if (position != null) {
+          candidates.add((marker: marker, position: position));
+        }
+      }
+      candidates.sort((a, b) => a.position.compareTo(b.position));
+      final threshold =
+          _programPlayheadSeconds + timecodeFrameDurationSeconds / 2;
+      for (final candidate in candidates) {
+        if (candidate.position > threshold) {
+          unawaited(_seekProgramTo(candidate.position, autoplay: false));
+          return;
+        }
+      }
+      return;
+    }
     final marker = _nextTimelineMarkerFrom(currentPositionSeconds);
     if (marker == null) {
       return;
@@ -2147,6 +2223,25 @@ class EditorController extends ChangeNotifier {
   }
 
   void jumpToPreviousTimelineMarker() {
+    if (isProgramMonitor) {
+      final candidates = <({TimelineMarker marker, double position})>[];
+      for (final marker in timelineMarkers) {
+        final position = programPositionForSourceTime(marker.seconds);
+        if (position != null) {
+          candidates.add((marker: marker, position: position));
+        }
+      }
+      candidates.sort((a, b) => a.position.compareTo(b.position));
+      final threshold =
+          _programPlayheadSeconds - timecodeFrameDurationSeconds / 2;
+      for (final candidate in candidates.reversed) {
+        if (candidate.position < threshold) {
+          unawaited(_seekProgramTo(candidate.position, autoplay: false));
+          return;
+        }
+      }
+      return;
+    }
     final marker = _previousTimelineMarkerFrom(currentPositionSeconds);
     if (marker == null) {
       return;
@@ -2158,20 +2253,21 @@ class EditorController extends ChangeNotifier {
     if (frameDelta == 0) {
       return;
     }
+    final limit = monitorDurationSeconds;
     final next = _snapToFrame(
-      _clampTime(
-        currentPositionSeconds + frameDelta * timecodeFrameDurationSeconds,
-      ),
+      (monitorPositionSeconds + frameDelta * timecodeFrameDurationSeconds)
+          .clamp(0.0, limit)
+          .toDouble(),
     );
-    await seekTo(next, autoplay: false);
+    await seekMonitorTo(next, autoplay: false);
   }
 
   Future<void> jumpToTimelineStart() async {
-    await seekTo(0, autoplay: false);
+    await seekMonitorTo(0, autoplay: false);
   }
 
   Future<void> jumpToTimelineEnd() async {
-    await seekTo(timelineSourceDuration, autoplay: false);
+    await seekMonitorTo(monitorDurationSeconds, autoplay: false);
   }
 
   Future<void> jumpToMarkIn() async {
@@ -2179,7 +2275,10 @@ class EditorController extends ChangeNotifier {
     if (point == null) {
       return;
     }
-    await seekTo(point, autoplay: false);
+    final programPoint = isProgramMonitor
+        ? programPositionForSourceTime(point)
+        : null;
+    await seekMonitorTo(programPoint ?? point, autoplay: false);
   }
 
   Future<void> jumpToMarkOut() async {
@@ -2187,7 +2286,10 @@ class EditorController extends ChangeNotifier {
     if (point == null) {
       return;
     }
-    await seekTo(point, autoplay: false);
+    final programPoint = isProgramMonitor
+        ? programPositionForSourceTime(point)
+        : null;
+    await seekMonitorTo(programPoint ?? point, autoplay: false);
   }
 
   Future<void> jumpToSelectedClipStart() async {
@@ -2195,7 +2297,12 @@ class EditorController extends ChangeNotifier {
     if (selected == null) {
       return;
     }
-    await seekTo(selected.start, autoplay: false);
+    await seekMonitorTo(
+      isProgramMonitor
+          ? programStartForSegment(selected.order)
+          : selected.start,
+      autoplay: false,
+    );
   }
 
   Future<void> jumpToSelectedClipEnd() async {
@@ -2203,10 +2310,27 @@ class EditorController extends ChangeNotifier {
     if (selected == null) {
       return;
     }
-    await seekTo(selected.end, autoplay: false);
+    final span = _programSpanForOrder(selected.order);
+    await seekMonitorTo(
+      isProgramMonitor && span != null ? span.sequenceEnd : selected.end,
+      autoplay: false,
+    );
   }
 
   Future<void> jumpToNextEditPoint() async {
+    if (isProgramMonitor) {
+      final threshold =
+          _programPlayheadSeconds + timecodeFrameDurationSeconds / 2;
+      var cursor = 0.0;
+      for (final segment in segments) {
+        cursor += math.max(0.0, segment.outputDuration);
+        if (cursor > threshold) {
+          await _seekProgramTo(cursor, autoplay: false);
+          return;
+        }
+      }
+      return;
+    }
     final current = currentPositionSeconds;
     final threshold = current + timecodeFrameDurationSeconds / 2;
     for (final point in _timelineEditPoints()) {
@@ -2218,6 +2342,23 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> jumpToPreviousEditPoint() async {
+    if (isProgramMonitor) {
+      final threshold =
+          _programPlayheadSeconds - timecodeFrameDurationSeconds / 2;
+      final points = <double>[0];
+      var cursor = 0.0;
+      for (final segment in segments) {
+        cursor += math.max(0.0, segment.outputDuration);
+        points.add(cursor);
+      }
+      for (final point in points.reversed) {
+        if (point < threshold) {
+          await _seekProgramTo(point, autoplay: false);
+          return;
+        }
+      }
+      return;
+    }
     final current = currentPositionSeconds;
     final threshold = current - timecodeFrameDurationSeconds / 2;
     for (final point in _timelineEditPoints().reversed) {

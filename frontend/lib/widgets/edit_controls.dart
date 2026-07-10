@@ -22,19 +22,19 @@ class EditControls extends StatelessWidget {
           children: [
             _MetricChip(
               icon: Icons.play_arrow,
-              label: '현재',
-              value: formatSeconds(controller.currentPositionSeconds),
+              label: controller.isProgramMonitor ? 'Program' : 'Source',
+              value: formatSeconds(controller.monitorPositionSeconds),
             ),
             _MetricChip(
               icon: Icons.keyboard_tab,
-              label: 'In',
+              label: controller.isProgramMonitor ? 'Src In' : 'In',
               value: controller.markIn == null
                   ? '--:--'
                   : formatSeconds(controller.markIn!),
             ),
             _MetricChip(
               icon: Icons.keyboard_return,
-              label: 'Out',
+              label: controller.isProgramMonitor ? 'Src Out' : 'Out',
               value: controller.markOut == null
                   ? '--:--'
                   : formatSeconds(controller.markOut!),
@@ -74,18 +74,9 @@ class EditControls extends StatelessWidget {
                 value: '${selected.playbackSpeed.toStringAsFixed(2)}x',
               ),
             _ContextHint(),
-            _TrackLegend(
-              color: Theme.of(context).colorScheme.primary,
-              label: 'V1 Video',
-            ),
-            _TrackLegend(
-              color: Theme.of(context).colorScheme.secondary,
-              label: 'A1 Audio',
-            ),
-            _TrackLegend(
-              color: Theme.of(context).colorScheme.secondary,
-              label: 'A2 Audio',
-            ),
+            _TrackLegend(color: const Color(0xFF79C98D), label: 'V1 Video'),
+            _TrackLegend(color: const Color(0xFFE7A66A), label: 'A1 Audio'),
+            _TrackLegend(color: const Color(0xFFE7A66A), label: 'A2 Audio'),
           ],
         ),
       ],
