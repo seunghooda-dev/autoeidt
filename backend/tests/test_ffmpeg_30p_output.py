@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
+import time
 from pathlib import Path
 
 from app.services import ffmpeg_service
@@ -8,7 +10,7 @@ class _FakeSettings:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.prefer_gpu_encoding = False
-        self.preview_proxy_seconds = 180
+        self.preview_proxy_seconds = 12
 
 
 def _command_value(command: list[str], option: str) -> str:
@@ -113,6 +115,7 @@ def test_preview_proxy_forces_30p_non_drop_output(
     assert output_path.exists()
     assert "fps=30" in vf_filter
     assert _command_value(command, "-r") == "30"
+    assert _command_value(command, "-t") == "12.000"
     assert _command_value(command, "-write_tmcd") == "0"
 
 
@@ -149,6 +152,48 @@ def test_preview_proxy_routes_first_two_program_audio_streams(
     assert _command_value(command, "-map") == "0:v:0"
     assert command[command.index("-filter_complex") + 2] == "-map"
     assert command[command.index("-filter_complex") + 3] == "[previewa]"
+
+
+def test_duplicate_preview_requests_share_one_ffmpeg_generation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "broadcast_source.mxf"
+    source_path.write_bytes(b"source")
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        time.sleep(0.05)
+        Path(command[-1]).write_bytes(b"proxy")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 2)
+    monkeypatch.setattr(
+        ffmpeg_service,
+        "_audio_channel_counts",
+        lambda path, count: [1, 1],
+    )
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: ffmpeg_service.create_preview_proxy(
+                    source_path,
+                    duration_seconds=30,
+                ),
+                range(2),
+            )
+        )
+
+    assert len(commands) == 1
+    assert results[0][0] == results[1][0]
+    assert sorted(result[1] for result in results) == [False, True]
 
 
 def test_preview_proxy_routes_first_two_interleaved_channels() -> None:

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/services/api_client.dart';
+import 'package:highlight_editor_app/services/local_engine_service.dart';
 import 'package:highlight_editor_app/services/project_recovery_service.dart';
 import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
@@ -861,6 +862,49 @@ void main() {
     expect(controller.playbackShuttleLabel, 'K Stop');
     controller.dispose();
   });
+
+  test('play request is retained while preview is preparing', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..selectedFile = PlatformFile(
+        name: 'broadcast.mxf',
+        size: 1024,
+        path: r'C:\media\broadcast.mxf',
+      )
+      ..isPreparingPreview = true;
+
+    await controller.togglePlayback();
+    expect(controller.previewPlaybackQueued, isTrue);
+    expect(controller.playbackShuttleDirection, 1);
+
+    await controller.togglePlayback();
+    expect(controller.previewPlaybackQueued, isFalse);
+    expect(controller.playbackShuttleDirection, 0);
+    controller.dispose();
+  });
+
+  test(
+    'media probe restores full source duration after preview race',
+    () async {
+      final controller =
+          EditorController(
+              apiClient: _ProbeApiClient(),
+              engineService: _ReadyEngineService(),
+              autoStartEngine: false,
+            )
+            ..selectedFile = PlatformFile(
+              name: 'cached-preview-source.mp4',
+              size: 1024,
+              path: r'C:\media\cached-preview-source.mp4',
+            )
+            ..duration = 0;
+
+      await controller.probeSelectedMedia();
+
+      expect(controller.duration, 3035.767);
+      expect(controller.selectedMediaProbe?.canAnalyze, isTrue);
+      controller.dispose();
+    },
+  );
 
   test('disabled timeline markers are skipped by marker rough cut', () async {
     final controller = EditorController(autoStartEngine: false)
@@ -3148,4 +3192,36 @@ class _RecordingApiClient extends ApiClient {
       message: 'Rendering',
     );
   }
+}
+
+class _ProbeApiClient extends ApiClient {
+  _ProbeApiClient() : super(baseUrl: 'http://127.0.0.1:1');
+
+  @override
+  Future<MediaProbeInfo> probeLocalMedia(String path) async {
+    return MediaProbeInfo.fromJson({
+      'path': path,
+      'filename': 'cached-preview-source.mp4',
+      'duration': 3035.767,
+      'can_analyze': true,
+      'is_mxf': false,
+      'audio_stream_count': 1,
+      'audio_channel_count': 2,
+    });
+  }
+}
+
+class _ReadyEngineService extends LocalEngineService {
+  @override
+  Future<LocalEngineState> ensureRunning({int port = 8000}) async {
+    return const LocalEngineState(
+      status: 'running',
+      message: 'ready',
+      isRunning: true,
+      canStart: true,
+    );
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

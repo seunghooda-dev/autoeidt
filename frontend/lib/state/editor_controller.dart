@@ -114,9 +114,15 @@ class EditorController extends ChangeNotifier {
   bool isPreparingPreview = false;
   bool isProbingMedia = false;
   bool _previewUsesProxy = false;
+  bool _previewAutoplayRequested = false;
+  bool _proxyContinuationPending = false;
+  String? _activeProxyRequestKey;
+  Future<void>? _activeProxyRequest;
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
   double _manualPlayheadSeconds = 0;
+  static const double _initialProxyPreviewSeconds = 12;
+  static const double _seekProxyPreviewSeconds = 30;
   static const int _avSyncLengthToleranceFrames = 2;
   static const bool _demoMode = bool.fromEnvironment('AUTOEDIT_DEMO');
   static const List<String> supportedVideoExtensions = [
@@ -548,7 +554,9 @@ class EditorController extends ChangeNotifier {
 
   String get previewSourceLabel {
     if (isPreparingPreview) {
-      return 'Preparing Proxy';
+      return _previewAutoplayRequested
+          ? 'Preview · Play queued'
+          : 'Preparing Preview';
     }
     if (videoController == null) {
       return 'No Preview';
@@ -569,7 +577,7 @@ class EditorController extends ChangeNotifier {
       return 'No source audio';
     }
     if (_previewUsesProxy) {
-      return 'Mix ${math.min(audioChannels ?? audioStreams, 8)}ch';
+      return (audioChannels ?? audioStreams) <= 1 ? 'A1 Mono' : 'A1/A2 Program';
     }
     if (audioChannels != null && audioChannels != audioStreams) {
       return '$audioStreams stream / ${audioChannels}ch';
@@ -581,6 +589,7 @@ class EditorController extends ChangeNotifier {
       math.max(1, selectedMediaProbe?.audioChannelCount ?? 2);
 
   double get previewVolumePercent => previewMuted ? 0 : previewVolume * 100;
+  bool get previewPlaybackQueued => _previewAutoplayRequested;
 
   double get outputDurationSeconds {
     return segments.fold<double>(
@@ -791,6 +800,9 @@ class EditorController extends ChangeNotifier {
     if (job != null && job!.message.isNotEmpty) {
       return job!.message;
     }
+    if (isProbingMedia && isPreparingPreview) {
+      return '미디어 검사 · 빠른 프리뷰 준비 중...';
+    }
     if (isProbingMedia) {
       return '미디어 사전검사 중...';
     }
@@ -906,12 +918,27 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  bool _prefersProxyPreview(String path) {
+    return path.toLowerCase().endsWith('.mxf');
+  }
+
+  Future<void> _prepareLocalPreview(String path, {double focusSeconds = 0}) {
+    if (_prefersProxyPreview(path) ||
+        selectedMediaProbe?.isMxf == true ||
+        _previewUsesProxy) {
+      return _initializeProxyPreview(path, focusSeconds: focusSeconds);
+    }
+    return _initializeLocalPreview(path);
+  }
+
   Future<void> openMediaFile(PlatformFile file) async {
     projectFilePath = null;
     selectedFile = file;
     selectedMediaProbe = null;
     isProbingMedia = false;
     isPreparingPreview = false;
+    _previewAutoplayRequested = false;
+    _proxyContinuationPending = false;
     jobId = null;
     job = null;
     duration = 0;
@@ -948,7 +975,7 @@ class EditorController extends ChangeNotifier {
     await _disposeVideoController();
     notifyListeners();
     if (!kIsWeb && file.path != null) {
-      unawaited(_initializeLocalPreview(file.path!));
+      unawaited(_prepareLocalPreview(file.path!));
       unawaited(probeSelectedMedia());
     }
   }
@@ -971,11 +998,13 @@ class EditorController extends ChangeNotifier {
     selectedFile = file;
     selectedMediaProbe = null;
     renderUrl = null;
+    _previewAutoplayRequested = false;
     _markProjectDirty();
+    await _disposeVideoController();
     notifyListeners();
 
     if (!kIsWeb && file.path != null) {
-      unawaited(_initializeLocalPreview(file.path!));
+      unawaited(_prepareLocalPreview(file.path!));
       unawaited(probeSelectedMedia());
     }
     await saveProjectToBackend(silent: true);
@@ -1002,9 +1031,14 @@ class EditorController extends ChangeNotifier {
         return;
       }
       selectedMediaProbe = probe;
+      if (probe.duration > 0 && duration == 0) {
+        duration = probe.duration;
+      }
       if (!probe.canAnalyze) {
         errorMessage = '사전검사 실패: 분석 가능한 비디오 스트림이 없습니다.';
-      } else if (probe.isMxf) {
+      } else if (probe.isMxf &&
+          !isPreparingPreview &&
+          (videoController == null || !_previewUsesProxy)) {
         unawaited(_initializeProxyPreview(path));
       }
     } catch (error) {
@@ -1060,12 +1094,14 @@ class EditorController extends ChangeNotifier {
       try {
         if (!kIsWeb && localPath != null && localPath.isNotEmpty) {
           final previewFocus = currentPositionSeconds;
-          if (selectedMediaProbe?.isMxf == true || _previewUsesProxy) {
+          if ((selectedMediaProbe?.isMxf == true || _previewUsesProxy) &&
+              (!_previewUsesProxy || !_proxyContainsSourceTime(previewFocus))) {
             await _initializeProxyPreview(
               localPath,
               focusSeconds: previewFocus,
             );
-          } else {
+          } else if (videoController == null ||
+              !videoController!.value.isInitialized) {
             await _initializeLocalPreview(localPath);
           }
         } else {
@@ -1494,7 +1530,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     if (!kIsWeb && sourceMediaIsLinked) {
-      unawaited(_initializeLocalPreview(sourceMediaPath!));
+      unawaited(_prepareLocalPreview(sourceMediaPath!));
       unawaited(probeSelectedMedia());
     } else if (jobId != null) {
       try {
@@ -1648,7 +1684,7 @@ class EditorController extends ChangeNotifier {
     _lastRecoveryPayload = jsonEncode(snapshot.project.toJson());
 
     if (initializePreview && !kIsWeb && sourceMediaIsLinked) {
-      unawaited(_initializeLocalPreview(sourceMediaPath!));
+      unawaited(_prepareLocalPreview(sourceMediaPath!));
       unawaited(probeSelectedMedia());
     } else if (initializePreview && jobId != null) {
       try {
@@ -5706,6 +5742,11 @@ class EditorController extends ChangeNotifier {
       }
     }
     if (controller == null || !controller.value.isInitialized) {
+      if (autoplay && isPreparingPreview) {
+        _previewAutoplayRequested = true;
+        playbackShuttleDirection = 1;
+        playbackShuttleRate = 1.0;
+      }
       notifyListeners();
       return;
     }
@@ -5715,6 +5756,8 @@ class EditorController extends ChangeNotifier {
     );
     if (autoplay) {
       await controller.play();
+      playbackShuttleDirection = 1;
+      playbackShuttleRate = 1.0;
     }
     notifyListeners();
   }
@@ -5723,21 +5766,88 @@ class EditorController extends ChangeNotifier {
     _stopReverseShuttleTimer();
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
-      playbackShuttleDirection = playbackShuttleDirection == 0 ? 1 : 0;
+      final path = selectedFile?.path;
+      if (!kIsWeb && path != null && path.isNotEmpty) {
+        _previewAutoplayRequested = !_previewAutoplayRequested;
+        playbackShuttleDirection = _previewAutoplayRequested ? 1 : 0;
+        if (_previewAutoplayRequested && !isPreparingPreview) {
+          unawaited(
+            _prepareLocalPreview(path, focusSeconds: _manualPlayheadSeconds),
+          );
+        }
+      } else {
+        playbackShuttleDirection = playbackShuttleDirection == 0 ? 1 : 0;
+      }
       playbackShuttleRate = 1.0;
       notifyListeners();
       return;
     }
     if (controller.value.isPlaying) {
       await controller.pause();
+      _previewAutoplayRequested = false;
       playbackShuttleDirection = 0;
     } else {
+      if (await _continueProxyPlaybackIfNeeded()) {
+        return;
+      }
       await controller.setPlaybackSpeed(1.0);
       await controller.play();
       playbackShuttleDirection = 1;
     }
     playbackShuttleRate = 1.0;
     notifyListeners();
+  }
+
+  Future<bool> _continueProxyPlaybackIfNeeded() async {
+    final controller = videoController;
+    final path = selectedFile?.path;
+    if (!_previewUsesProxy ||
+        _proxyContinuationPending ||
+        controller == null ||
+        !controller.value.isInitialized ||
+        kIsWeb ||
+        path == null ||
+        path.isEmpty) {
+      return false;
+    }
+    final localDuration = controller.value.duration.inMilliseconds / 1000;
+    final localPosition = controller.value.position.inMilliseconds / 1000;
+    final proxyEnd = _previewSourceStartSeconds + localDuration;
+    if (localDuration <= 0 ||
+        localPosition < localDuration - timecodeFrameDurationSeconds * 2 ||
+        duration <= proxyEnd + timecodeFrameDurationSeconds) {
+      return false;
+    }
+
+    _proxyContinuationPending = true;
+    _previewAutoplayRequested = true;
+    final previousController = controller;
+    try {
+      await _initializeProxyPreview(
+        path,
+        focusSeconds: math.min(
+          proxyEnd,
+          duration - timecodeFrameDurationSeconds,
+        ),
+        autoplay: true,
+      );
+    } finally {
+      _proxyContinuationPending = false;
+    }
+    final nextController = videoController;
+    final continued =
+        nextController != null &&
+        !identical(nextController, previousController) &&
+        nextController.value.isInitialized &&
+        _previewUsesProxy &&
+        _proxyContainsSourceTime(proxyEnd);
+    if (!continued) {
+      _previewAutoplayRequested = false;
+      playbackShuttleDirection = 0;
+      playbackShuttleRate = 1.0;
+      notifyListeners();
+    }
+    return true;
   }
 
   Future<void> togglePreviewMute() async {
@@ -5941,20 +6051,24 @@ class EditorController extends ChangeNotifier {
 
   Future<void> _initializeLocalPreview(String path) async {
     final revision = ++_previewRevision;
+    isPreparingPreview = true;
+    notifyListeners();
+    VideoPlayerController? pendingController;
     try {
       final file = io.File(path);
       if (!await file.exists()) {
         return;
       }
-      final controller = VideoPlayerController.file(file);
-      await controller.initialize();
-      await _applyPreviewAudioSettings(controller);
+      pendingController = VideoPlayerController.file(file);
+      await pendingController.initialize();
+      await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
-        await controller.dispose();
         return;
       }
       await _disposeVideoController();
+      final controller = pendingController;
       videoController = controller;
+      pendingController = null;
       _previewUsesProxy = false;
       _previewSourceStartSeconds = 0;
       _previewSourceDurationSeconds = null;
@@ -5962,12 +6076,24 @@ class EditorController extends ChangeNotifier {
       if (previewDuration > 0 && duration == 0) {
         duration = previewDuration;
       }
+      if (_previewAutoplayRequested) {
+        await controller.setPlaybackSpeed(1.0);
+        await controller.play();
+        _previewAutoplayRequested = false;
+        playbackShuttleDirection = 1;
+        playbackShuttleRate = 1.0;
+      }
       controller.addListener(_handleVideoTick);
       notifyListeners();
     } catch (_) {
-      if (selectedFile?.path == path) {
+      if (revision == _previewRevision && selectedFile?.path == path) {
         await _disposeVideoController();
-        unawaited(_initializeProxyPreview(path));
+        await _initializeProxyPreview(path);
+      }
+    } finally {
+      await pendingController?.dispose();
+      if (revision == _previewRevision && selectedFile?.path == path) {
+        isPreparingPreview = false;
         notifyListeners();
       }
     }
@@ -5981,31 +6107,73 @@ class EditorController extends ChangeNotifier {
     if (kIsWeb || path.isEmpty) {
       return;
     }
+    if (autoplay) {
+      _previewAutoplayRequested = true;
+    }
+    final sourceStart = math.max(0.0, focusSeconds - 8.0);
+    final requestedDuration = focusSeconds > 0
+        ? _seekProxyPreviewSeconds
+        : _initialProxyPreviewSeconds;
+    final requestKey =
+        '$path|${sourceStart.toStringAsFixed(3)}|${requestedDuration.toStringAsFixed(3)}';
+    final activeRequest = _activeProxyRequest;
+    if (_activeProxyRequestKey == requestKey && activeRequest != null) {
+      await activeRequest;
+      return;
+    }
+
+    final revision = ++_previewRevision;
+    final request = _performProxyPreviewInitialization(
+      path,
+      revision: revision,
+      focusSeconds: focusSeconds,
+      sourceStart: sourceStart,
+      requestedDuration: requestedDuration,
+    );
+    _activeProxyRequestKey = requestKey;
+    _activeProxyRequest = request;
+    try {
+      await request;
+    } finally {
+      if (identical(_activeProxyRequest, request)) {
+        _activeProxyRequest = null;
+        _activeProxyRequestKey = null;
+      }
+    }
+  }
+
+  Future<void> _performProxyPreviewInitialization(
+    String path, {
+    required int revision,
+    required double focusSeconds,
+    required double sourceStart,
+    required double requestedDuration,
+  }) async {
     isPreparingPreview = true;
     notifyListeners();
+    VideoPlayerController? pendingController;
     try {
       await _ensureLocalEngineForApi();
-      final sourceStart = math.max(0.0, focusSeconds - 8.0);
       final preview = await _apiClient.createLocalPreview(
         path,
         startSeconds: sourceStart,
-        durationSeconds: focusSeconds > 0 ? 240 : null,
+        durationSeconds: requestedDuration,
       );
-      if (selectedFile?.path != path) {
+      if (revision != _previewRevision || selectedFile?.path != path) {
         return;
       }
-      final revision = ++_previewRevision;
-      final controller = VideoPlayerController.networkUrl(
+      pendingController = VideoPlayerController.networkUrl(
         Uri.parse(preview.url),
       );
-      await controller.initialize();
-      await _applyPreviewAudioSettings(controller);
+      await pendingController.initialize();
+      await _applyPreviewAudioSettings(pendingController);
       if (revision != _previewRevision || selectedFile?.path != path) {
-        await controller.dispose();
         return;
       }
       await _disposeVideoController();
+      final controller = pendingController;
       videoController = controller;
+      pendingController = null;
       _previewUsesProxy = true;
       _previewSourceStartSeconds = preview.sourceStart;
       final previewDuration = controller.value.duration.inMilliseconds / 1000;
@@ -6023,16 +6191,30 @@ class EditorController extends ChangeNotifier {
           Duration(milliseconds: (localSeconds * 1000).round()),
         );
       }
-      if (autoplay) {
+      if (_previewAutoplayRequested) {
+        await controller.setPlaybackSpeed(1.0);
         await controller.play();
+        _previewAutoplayRequested = false;
+        playbackShuttleDirection = 1;
+        playbackShuttleRate = 1.0;
       }
       controller.addListener(_handleVideoTick);
+      if (errorMessage?.startsWith('프리뷰 생성 실패') ?? false) {
+        errorMessage = null;
+      }
     } catch (error) {
-      if (selectedFile?.path == path && errorMessage == null) {
+      if (revision == _previewRevision &&
+          selectedFile?.path == path &&
+          (errorMessage == null ||
+              (errorMessage?.startsWith('프리뷰 생성 실패') ?? false))) {
         errorMessage = '프리뷰 생성 실패: $error';
+        _previewAutoplayRequested = false;
+        playbackShuttleDirection = 0;
+        playbackShuttleRate = 1.0;
       }
     } finally {
-      if (selectedFile?.path == path) {
+      await pendingController?.dispose();
+      if (revision == _previewRevision && selectedFile?.path == path) {
         isPreparingPreview = false;
         notifyListeners();
       }
@@ -6069,6 +6251,12 @@ class EditorController extends ChangeNotifier {
     final seconds = currentPositionSeconds;
     _manualPlayheadSeconds = seconds;
     final isPlaying = controller.value.isPlaying;
+    if (_previewUsesProxy &&
+        !isPlaying &&
+        playbackShuttleDirection == 1 &&
+        !isPreparingPreview) {
+      unawaited(_continueProxyPlaybackIfNeeded());
+    }
     if ((seconds - _lastNotifiedPosition).abs() >=
             timecodeFrameDurationSeconds ||
         isPlaying != _lastNotifiedPlaying) {

@@ -10,12 +10,34 @@ import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
 import 'package:highlight_editor_app/widgets/render_outputs_panel.dart';
 import 'package:highlight_editor_app/widgets/timeline_editor.dart';
+import 'package:highlight_editor_app/widgets/video_preview.dart';
 import 'package:provider/provider.dart';
 
 import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/state/workspace_controller.dart';
 
 void main() {
+  testWidgets('preview loading state can queue playback', (tester) async {
+    var toggleCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoPreview(
+            controller: null,
+            volume: 1,
+            muted: false,
+            loading: true,
+            onTogglePlayback: () => toggleCount += 1,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('빠른 프리뷰 준비 중'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('preview-play-when-ready')));
+    expect(toggleCount, 1);
+  });
+
   testWidgets('renders editor dashboard', (tester) async {
     await tester.pumpWidget(
       ChangeNotifierProvider(

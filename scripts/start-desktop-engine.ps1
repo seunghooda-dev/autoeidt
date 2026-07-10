@@ -9,6 +9,8 @@ $Backend = Join-Path $Root "backend"
 $VenvPython = Join-Path $Backend ".venv\Scripts\python.exe"
 $Requirements = Join-Path $Backend "requirements.txt"
 $Stamp = Join-Path $Backend ".venv\.desktop-deps.stamp"
+$DataDir = Join-Path $Backend "data"
+$PidFile = Join-Path $DataDir "desktop-engine-$Port.pid"
 
 function Get-FirstCommandPath {
     param([string[]]$Names)
@@ -90,11 +92,16 @@ if ($NeedsInstall) {
 
 $env:TASK_RUNNER = "inline"
 $env:REDIS_URL = "redis://localhost:6379/0"
-$env:DATA_DIR = Join-Path $Backend "data"
+$env:DATA_DIR = $DataDir
+$env:PREVIEW_PROXY_SECONDS = "12"
+
+New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+Set-Content -LiteralPath $PidFile -Value $PID -NoNewline -Encoding ascii
 
 Push-Location $Root
 try {
     & $VenvPython -m uvicorn app.main:app --app-dir $Backend --host 127.0.0.1 --port $Port
 } finally {
     Pop-Location
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
 }

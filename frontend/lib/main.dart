@@ -2019,6 +2019,15 @@ class _PreviewStage extends StatelessWidget {
                             controller: controller.videoController,
                             volume: controller.previewVolume,
                             muted: controller.previewMuted,
+                            loading: controller.isPreparingPreview,
+                            playWhenReady: controller.previewPlaybackQueued,
+                            onTogglePlayback: controller.hasFile
+                                ? () => unawaited(
+                                    context
+                                        .read<EditorController>()
+                                        .togglePlayback(),
+                                  )
+                                : null,
                             targetAspectRatio: aspect,
                             focusX: controller.selectedSegment?.focusX ?? 0.5,
                             focusY: controller.selectedSegment?.focusY ?? 0.42,

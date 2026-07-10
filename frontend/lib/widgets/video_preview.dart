@@ -13,6 +13,9 @@ class VideoPreview extends StatelessWidget {
     required this.volume,
     required this.muted,
     this.onToggleMute,
+    this.loading = false,
+    this.playWhenReady = false,
+    this.onTogglePlayback,
     this.targetAspectRatio,
     this.focusX = 0.5,
     this.focusY = 0.42,
@@ -24,6 +27,9 @@ class VideoPreview extends StatelessWidget {
   final double volume;
   final bool muted;
   final VoidCallback? onToggleMute;
+  final bool loading;
+  final bool playWhenReady;
+  final VoidCallback? onTogglePlayback;
   final double? targetAspectRatio;
   final double focusX;
   final double focusY;
@@ -41,12 +47,10 @@ class VideoPreview extends StatelessWidget {
             color: Colors.black,
             borderRadius: BorderRadius.circular(2),
           ),
-          child: Center(
-            child: Icon(
-              Icons.movie_outlined,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              size: 44,
-            ),
+          child: _PreviewPlaceholder(
+            loading: loading,
+            playWhenReady: playWhenReady,
+            onTogglePlayback: onTogglePlayback,
           ),
         ),
       );
@@ -73,7 +77,11 @@ class VideoPreview extends StatelessWidget {
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
-                value.isPlaying ? player.pause() : player.play();
+                if (onTogglePlayback != null) {
+                  onTogglePlayback!();
+                } else {
+                  value.isPlaying ? player.pause() : player.play();
+                }
               },
               child: Stack(
                 fit: StackFit.expand,
@@ -84,7 +92,11 @@ class VideoPreview extends StatelessWidget {
                     focusX: trackedFocus.$1,
                     focusY: trackedFocus.$2,
                   ),
-                  if (!value.isPlaying) _PausedOverlay(controller: player),
+                  if (!value.isPlaying)
+                    _PausedOverlay(
+                      controller: player,
+                      onTogglePlayback: onTogglePlayback,
+                    ),
                   Positioned(
                     left: 12,
                     right: 12,
@@ -94,6 +106,7 @@ class VideoPreview extends StatelessWidget {
                       volume: volume,
                       muted: muted,
                       onToggleMute: onToggleMute,
+                      onTogglePlayback: onTogglePlayback,
                       compact: outputAspectRatio < 1,
                     ),
                   ),
@@ -102,6 +115,51 @@ class VideoPreview extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _PreviewPlaceholder extends StatelessWidget {
+  const _PreviewPlaceholder({
+    required this.loading,
+    required this.playWhenReady,
+    required this.onTogglePlayback,
+  });
+
+  final bool loading;
+  final bool playWhenReady;
+  final VoidCallback? onTogglePlayback;
+
+  @override
+  Widget build(BuildContext context) {
+    final mutedColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            )
+          else
+            Icon(Icons.movie_outlined, color: mutedColor, size: 40),
+          const SizedBox(height: 12),
+          Text(
+            loading ? (playWhenReady ? '준비되면 자동 재생' : '빠른 프리뷰 준비 중') : '프리뷰 준비',
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: mutedColor),
+          ),
+          const SizedBox(height: 8),
+          IconButton.filledTonal(
+            key: const Key('preview-play-when-ready'),
+            tooltip: playWhenReady ? '자동 재생 취소' : '재생',
+            onPressed: onTogglePlayback,
+            icon: Icon(playWhenReady ? Icons.pause : Icons.play_arrow),
+          ),
+        ],
       ),
     );
   }
@@ -216,9 +274,13 @@ class _ReframedVideo extends StatelessWidget {
 }
 
 class _PausedOverlay extends StatelessWidget {
-  const _PausedOverlay({required this.controller});
+  const _PausedOverlay({
+    required this.controller,
+    required this.onTogglePlayback,
+  });
 
   final VideoPlayerController controller;
+  final VoidCallback? onTogglePlayback;
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +290,7 @@ class _PausedOverlay extends StatelessWidget {
         child: Tooltip(
           message: '재생 / 일시정지 (Space)',
           child: FilledButton.tonalIcon(
-            onPressed: controller.play,
+            onPressed: onTogglePlayback ?? controller.play,
             icon: const Icon(Icons.play_arrow, size: 30),
             label: const Text('Play'),
             style: FilledButton.styleFrom(
@@ -253,6 +315,7 @@ class _VideoControls extends StatelessWidget {
     required this.volume,
     required this.muted,
     required this.onToggleMute,
+    required this.onTogglePlayback,
     required this.compact,
   });
 
@@ -260,6 +323,7 @@ class _VideoControls extends StatelessWidget {
   final double volume;
   final bool muted;
   final VoidCallback? onToggleMute;
+  final VoidCallback? onTogglePlayback;
   final bool compact;
 
   @override
@@ -288,7 +352,11 @@ class _VideoControls extends StatelessWidget {
                   color: Colors.white,
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
-                    value.isPlaying ? controller.pause() : controller.play();
+                    if (onTogglePlayback != null) {
+                      onTogglePlayback!();
+                    } else {
+                      value.isPlaying ? controller.pause() : controller.play();
+                    }
                   },
                   icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow),
                 ),

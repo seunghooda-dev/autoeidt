@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha1
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from app.config import get_settings
@@ -274,6 +275,11 @@ def probe_media_info(video_path: Path) -> dict[str, Any]:
     return summarize_media_probe(video_path, json.loads(result.stdout))
 
 
+@lru_cache(maxsize=None)
+def _preview_proxy_lock(cache_key: str) -> Any:
+    return Lock()
+
+
 def create_preview_proxy(
     video_path: Path,
     start_seconds: float = 0.0,
@@ -288,7 +294,7 @@ def create_preview_proxy(
         if duration_seconds is not None and duration_seconds > 0
         else float(settings.preview_proxy_seconds)
     )
-    proxy_seconds = max(30.0, min(requested_duration, 600.0))
+    proxy_seconds = max(8.0, min(requested_duration, 600.0))
     audio_stream_count = _audio_stream_count(resolved)
     audio_channel_counts = _audio_channel_counts(resolved, audio_stream_count)
     audio_layout_signature = "-".join(str(count) for count in audio_channel_counts)
@@ -304,50 +310,58 @@ def create_preview_proxy(
     if output_path.exists() and output_path.stat().st_size > 0:
         return output_path, True, source_start, proxy_seconds
 
-    temp_path = output_path.with_suffix(".tmp.mp4")
-    if temp_path.exists():
-        temp_path.unlink()
-    audio_args = _preview_audio_output_args(audio_channel_counts)
-    _run(
-        [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            f"{source_start:.3f}",
-            "-i",
-            str(resolved),
-            "-map",
-            "0:v:0",
-            *audio_args,
-            "-sn",
-            "-dn",
-            "-t",
-            f"{proxy_seconds:.3f}",
-            "-vf",
-            f"scale=-2:540,fps={RENDER_FRAME_RATE_LABEL},format=yuv420p",
-            "-r",
-            RENDER_FRAME_RATE_LABEL,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "30",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "96k",
-            "-ac",
-            "2",
-            *TIMELINE_OUTPUT_METADATA_ARGS,
-            "-movflags",
-            "+faststart",
-            str(temp_path),
-        ],
-        timeout=None,
-    )
-    temp_path.replace(output_path)
-    return output_path, False, source_start, proxy_seconds
+    with _preview_proxy_lock(cache_key):
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path, True, source_start, proxy_seconds
+
+        temp_path = output_path.with_suffix(".tmp.mp4")
+        if temp_path.exists():
+            temp_path.unlink()
+        audio_args = _preview_audio_output_args(audio_channel_counts)
+        try:
+            _run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{source_start:.3f}",
+                    "-i",
+                    str(resolved),
+                    "-map",
+                    "0:v:0",
+                    *audio_args,
+                    "-sn",
+                    "-dn",
+                    "-t",
+                    f"{proxy_seconds:.3f}",
+                    "-vf",
+                    f"scale=-2:540,fps={RENDER_FRAME_RATE_LABEL},format=yuv420p",
+                    "-r",
+                    RENDER_FRAME_RATE_LABEL,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "30",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "96k",
+                    "-ac",
+                    "2",
+                    *TIMELINE_OUTPUT_METADATA_ARGS,
+                    "-movflags",
+                    "+faststart",
+                    str(temp_path),
+                ],
+                timeout=None,
+            )
+            temp_path.replace(output_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+        return output_path, False, source_start, proxy_seconds
 
 
 def _preview_audio_output_args(audio_channel_counts: list[int]) -> list[str]:
