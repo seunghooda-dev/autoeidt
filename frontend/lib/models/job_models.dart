@@ -47,6 +47,7 @@ class MediaProbeInfo {
     this.timelineTimecodeMode = 'non_drop',
     this.timelineTimebase = '30p NDF',
     required this.audioStreamCount,
+    required this.audioChannelCount,
     required this.audioSummary,
     required this.isMxf,
     required this.mxfOperationalPattern,
@@ -74,6 +75,7 @@ class MediaProbeInfo {
   final String timelineTimebase;
   final String? timecode;
   final int audioStreamCount;
+  final int audioChannelCount;
   final String audioSummary;
   final bool isMxf;
   final String mxfOperationalPattern;
@@ -124,6 +126,10 @@ class MediaProbeInfo {
       timelineTimebase: json['timeline_timebase'] as String? ?? '30p NDF',
       timecode: normalizeTimecodeText(json['timecode'] as String?),
       audioStreamCount: (json['audio_stream_count'] as num?)?.toInt() ?? 0,
+      audioChannelCount:
+          (json['audio_channel_count'] as num?)?.toInt() ??
+          (json['audio_stream_count'] as num?)?.toInt() ??
+          0,
       audioSummary: json['audio_summary'] as String? ?? '',
       isMxf: json['is_mxf'] as bool? ?? false,
       mxfOperationalPattern: json['mxf_operational_pattern'] as String? ?? '',

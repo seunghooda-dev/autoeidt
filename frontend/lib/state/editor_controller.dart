@@ -544,6 +544,7 @@ class EditorController extends ChangeNotifier {
       return 'Muted';
     }
     final audioStreams = selectedMediaProbe?.audioStreamCount;
+    final audioChannels = selectedMediaProbe?.audioChannelCount;
     if (audioStreams == null) {
       return 'Audio ${previewVolumePercent.round()}%';
     }
@@ -551,9 +552,10 @@ class EditorController extends ChangeNotifier {
       return 'No source audio';
     }
     if (_previewUsesProxy) {
-      return audioStreams == 1
-          ? 'A1 Preview'
-          : 'Mix ${math.min(audioStreams, 8)}ch';
+      return 'Mix ${math.min(audioChannels ?? audioStreams, 8)}ch';
+    }
+    if (audioChannels != null && audioChannels != audioStreams) {
+      return '$audioStreams stream / ${audioChannels}ch';
     }
     return audioStreams == 1 ? 'A1 Source' : '$audioStreams audio streams';
   }

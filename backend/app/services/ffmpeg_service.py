@@ -172,6 +172,9 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         streams = []
     video_streams = [item for item in streams if item.get("codec_type") == "video"]
     audio_streams = [item for item in streams if item.get("codec_type") == "audio"]
+    audio_channel_count = sum(
+        max(1, _safe_int(stream.get("channels"), 1)) for stream in audio_streams
+    )
     video = video_streams[0] if video_streams else {}
 
     format_name = str(format_info.get("format_name") or "")
@@ -214,9 +217,9 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         warnings.append(
             "소스 drop-frame 타임코드는 제거하고 30p non-drop 표기로 변환해 작업합니다."
         )
-    if is_mxf and len(audio_streams) >= 8:
+    if is_mxf and audio_channel_count >= 8:
         warnings.append(
-            "방송 MXF 다중 오디오 스트림입니다. 필요한 채널 매핑 확인이 필요합니다."
+            "방송 MXF 다중 오디오 채널입니다. 필요한 채널 매핑 확인이 필요합니다."
         )
     if is_mxf:
         warnings.append("방송 원본 MXF입니다. 렌더 전 코덱/프록시 검사를 권장합니다.")
@@ -241,6 +244,7 @@ def summarize_media_probe(video_path: Path, payload: dict[str, Any]) -> dict[str
         "timeline_timebase": TIMELINE_TIMEBASE_LABEL,
         "timecode": timeline_timecode,
         "audio_stream_count": len(audio_streams),
+        "audio_channel_count": audio_channel_count,
         "audio_summary": ", ".join(audio_labels),
         "is_mxf": is_mxf,
         "mxf_operational_pattern": (

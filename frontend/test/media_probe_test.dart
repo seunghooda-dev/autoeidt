@@ -23,6 +23,7 @@ void main() {
       'timeline_timebase': '30p NDF',
       'timecode': '01:00:00;00',
       'audio_stream_count': 8,
+      'audio_channel_count': 8,
       'audio_summary': 'A1 pcm_s24le mono, A2 pcm_s24le mono, +4 more',
       'is_mxf': true,
       'mxf_operational_pattern': 'OP1a-like single-file MXF',
@@ -43,6 +44,7 @@ void main() {
     expect(probe.timelineTimebaseLabel, '30p NDF');
     expect(probe.timecode, '01:00:00:00');
     expect(probe.audioStreamCount, 8);
+    expect(probe.audioChannelCount, 8);
     expect(probe.warnings.single, contains('다중 오디오'));
   });
 
@@ -57,5 +59,17 @@ void main() {
     });
 
     expect(job.analysisWarnings.single, contains('검토용 후보'));
+  });
+
+  test('media probe distinguishes interleaved channels from streams', () {
+    final probe = MediaProbeInfo.fromJson({
+      'audio_stream_count': 1,
+      'audio_channel_count': 8,
+    });
+    expect(probe.audioStreamCount, 1);
+    expect(probe.audioChannelCount, 8);
+
+    final legacyProbe = MediaProbeInfo.fromJson({'audio_stream_count': 2});
+    expect(legacyProbe.audioChannelCount, 2);
   });
 }

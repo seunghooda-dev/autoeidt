@@ -294,6 +294,7 @@ class MediaProbeResponse(BaseModel):
     timeline_timebase: str = "30p NDF"
     timecode: str | None = None
     audio_stream_count: int = 0
+    audio_channel_count: int = 0
     audio_summary: str = ""
     is_mxf: bool = False
     mxf_operational_pattern: str = ""

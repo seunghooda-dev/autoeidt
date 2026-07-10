@@ -32,7 +32,7 @@ class LocalEngineState {
   factory LocalEngineState.starting() {
     return const LocalEngineState(
       status: 'starting',
-      message: '로컬 편집 엔진 시작 중',
+      message: '로컬 편집 엔진 시작 중 · 첫 실행은 최대 3분 정도 걸릴 수 있습니다',
       isStarting: true,
     );
   }
@@ -87,7 +87,7 @@ class LocalEngineService {
       _process!.stderr.drain<void>();
     }
 
-    final deadline = DateTime.now().add(const Duration(seconds: 75));
+    final deadline = DateTime.now().add(const Duration(minutes: 3));
     while (DateTime.now().isBefore(deadline)) {
       if (await _isHealthy(port)) {
         if (!await _hasRequiredApi(port)) {
@@ -102,7 +102,7 @@ class LocalEngineService {
     }
 
     return LocalEngineState.unavailable(
-      '로컬 편집 엔진 시작 시간이 초과되었습니다. Python/FFmpeg 설치 상태를 확인해 주세요.',
+      '로컬 편집 엔진이 3분 안에 시작되지 않았습니다. Python/FFmpeg 설치 상태와 백신 검사를 확인해 주세요.',
     );
   }
 

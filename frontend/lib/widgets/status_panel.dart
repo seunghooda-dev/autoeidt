@@ -231,7 +231,9 @@ class _MediaProbePanel extends StatelessWidget {
               if (probe.sourceDropFrame) const _ProbeBadge(label: 'DF removed'),
               if (probe.timecode != null)
                 _ProbeBadge(label: 'Timeline TC ${probe.timecode}'),
-              _ProbeBadge(label: 'A ${probe.audioStreamCount}'),
+              _ProbeBadge(label: 'A ${probe.audioStreamCount} stream'),
+              if (probe.audioChannelCount != probe.audioStreamCount)
+                _ProbeBadge(label: '${probe.audioChannelCount} channels'),
             ],
           ),
           if (probe.isMxf && probe.mxfOperationalPattern.isNotEmpty) ...[
