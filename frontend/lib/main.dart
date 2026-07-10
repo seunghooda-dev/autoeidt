@@ -10,6 +10,7 @@ import 'state/workspace_controller.dart';
 import 'widgets/ai_director_panel.dart';
 import 'widgets/caption_editor.dart';
 import 'widgets/clip_inspector.dart';
+import 'widgets/command_palette.dart';
 import 'widgets/edit_controls.dart';
 import 'widgets/highlight_cards.dart';
 import 'widgets/render_outputs_panel.dart';
@@ -119,6 +120,16 @@ class _EditorDashboardState extends State<EditorDashboard> {
     );
   }
 
+  Future<void> _showCommandPalette() {
+    final editor = context.read<EditorController>();
+    return showDialog<void>(
+      context: context,
+      builder: (_) => CommandPalette(
+        commands: _buildEditorCommands(editor, _workspaceController),
+      ),
+    );
+  }
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
@@ -133,9 +144,19 @@ class _EditorDashboardState extends State<EditorDashboard> {
     final isAlt = keyboard.isAltPressed;
     final key = event.logicalKey;
     final editor = context.read<EditorController>();
+    final workspace = _workspaceController;
 
     bool handled = true;
-    if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
+    if (isCtrl && isShift && !isAlt && key == LogicalKeyboardKey.keyP) {
+      unawaited(_showCommandPalette());
+    } else if (!isCtrl &&
+        !isShift &&
+        !isAlt &&
+        key == LogicalKeyboardKey.backquote) {
+      workspace.toggleMaximizeActivePanel();
+    } else if (isCtrl && isAlt && !isShift && key == LogicalKeyboardKey.keyW) {
+      workspace.toggleLayoutLock();
+    } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyZ) {
       editor.redo();
     } else if (isCtrl && isShift && !isAlt && key == LogicalKeyboardKey.keyA) {
       editor.clearSegmentSelection();
@@ -481,6 +502,119 @@ class _EditorDashboardState extends State<EditorDashboard> {
   }
 }
 
+Future<void> _showEditorCommandPalette(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => CommandPalette(
+      commands: _buildEditorCommands(
+        context.read<EditorController>(),
+        context.read<WorkspaceController>(),
+      ),
+    ),
+  );
+}
+
+List<EditorCommand> _buildEditorCommands(
+  EditorController editor,
+  WorkspaceController workspace,
+) {
+  return [
+    EditorCommand(
+      label: 'Import media',
+      category: 'File',
+      icon: Icons.video_file_outlined,
+      action: editor.pickVideo,
+      keywords: const ['open', 'mxf', 'video'],
+    ),
+    EditorCommand(
+      label: 'Analyze selected media',
+      category: 'AI',
+      icon: Icons.auto_awesome,
+      action: editor.startUpload,
+      enabled: editor.canStartUpload,
+      keywords: const ['transcribe', 'highlight', 'whisper'],
+    ),
+    EditorCommand(
+      label: 'Undo last edit',
+      category: 'Edit',
+      icon: Icons.undo,
+      action: editor.undo,
+      shortcut: 'Ctrl+Z',
+      enabled: editor.canUndo,
+    ),
+    EditorCommand(
+      label: 'Redo edit',
+      category: 'Edit',
+      icon: Icons.redo,
+      action: editor.redo,
+      shortcut: 'Ctrl+Shift+Z',
+      enabled: editor.canRedo,
+    ),
+    EditorCommand(
+      label: 'Add edit at playhead',
+      category: 'Timeline',
+      icon: Icons.content_cut,
+      action: editor.addEditAtPlayhead,
+      shortcut: 'Ctrl+K',
+      enabled: editor.hasTimeline,
+      keywords: const ['split', 'razor', 'cut'],
+    ),
+    EditorCommand(
+      label: 'Add marker at playhead',
+      category: 'Timeline',
+      icon: Icons.bookmark_add_outlined,
+      action: editor.addTimelineMarkerAtPlayhead,
+      shortcut: 'M',
+      enabled: editor.hasTimelineSource,
+    ),
+    EditorCommand(
+      label: editor.timelineSnappingEnabled
+          ? 'Disable timeline snapping'
+          : 'Enable timeline snapping',
+      category: 'Timeline',
+      icon: Icons.vertical_align_center,
+      action: editor.toggleTimelineSnapping,
+      shortcut: 'S',
+    ),
+    EditorCommand(
+      label: workspace.maximizedPanel == null
+          ? 'Maximize active panel'
+          : 'Restore panel layout',
+      category: 'Workspace',
+      icon: workspace.maximizedPanel == null
+          ? Icons.fullscreen
+          : Icons.fullscreen_exit,
+      action: workspace.toggleMaximizeActivePanel,
+      shortcut: '`',
+      keywords: const ['focus', 'panel'],
+    ),
+    EditorCommand(
+      label: workspace.layoutLocked
+          ? 'Unlock workspace layout'
+          : 'Lock workspace layout',
+      category: 'Workspace',
+      icon: workspace.layoutLocked ? Icons.lock_open : Icons.lock_outline,
+      action: workspace.toggleLayoutLock,
+      shortcut: 'Ctrl+Alt+W',
+    ),
+    EditorCommand(
+      label: 'Apply Edit workspace',
+      category: 'Workspace',
+      icon: Icons.space_dashboard_outlined,
+      action: () => workspace.applyPreset(WorkspaceController.presets.first),
+      keywords: const ['reset', 'layout'],
+    ),
+    EditorCommand(
+      label: 'Render current timeline',
+      category: 'Export',
+      icon: Icons.movie_creation_outlined,
+      action: editor.requestRender,
+      enabled: editor.canRender,
+      keywords: const ['export', 'youtube'],
+    ),
+  ];
+}
+
 class _DesktopEditorShell extends StatelessWidget {
   const _DesktopEditorShell();
 
@@ -489,15 +623,19 @@ class _DesktopEditorShell extends StatelessWidget {
     final workspace = context.watch<WorkspaceController>();
     final mediaPanel = SizedBox(
       width: workspace.mediaWidth,
-      child: const _MediaPanel(),
+      child: const _WorkspacePanelFocus(panel: 'media', child: _MediaPanel()),
     );
     final inspectorPanel = SizedBox(
       width: workspace.inspectorWidth,
-      child: const _InspectorPanel(),
+      child: const _WorkspacePanelFocus(
+        panel: 'inspector',
+        child: _InspectorPanel(),
+      ),
     );
     final mediaHandle = _PanelResizeHandle(
       key: const Key('workspace-media-resize'),
       axis: Axis.vertical,
+      enabled: !workspace.layoutLocked,
       onDragUpdate: (delta) => workspace.setMediaWidth(
         workspace.mediaWidth + (workspace.mediaOnLeft ? delta : -delta),
       ),
@@ -507,6 +645,7 @@ class _DesktopEditorShell extends StatelessWidget {
     final inspectorHandle = _PanelResizeHandle(
       key: const Key('workspace-inspector-resize'),
       axis: Axis.vertical,
+      enabled: !workspace.layoutLocked,
       onDragUpdate: (delta) => workspace.setInspectorWidth(
         workspace.inspectorWidth + (workspace.mediaOnLeft ? -delta : delta),
       ),
@@ -515,6 +654,27 @@ class _DesktopEditorShell extends StatelessWidget {
         workspace.inspectorWidth,
       ),
     );
+    final maximizedPanel = workspace.maximizedPanel;
+    if (maximizedPanel != null) {
+      final panel = switch (maximizedPanel) {
+        'media' => const _MediaPanel(),
+        'inspector' => const _InspectorPanel(),
+        'timeline' => const _TimelinePanel(),
+        _ => const _PreviewStage(),
+      };
+      return Column(
+        children: [
+          const _TopBar(),
+          const _CommandBar(),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: _WorkspacePanelFocus(panel: maximizedPanel, child: panel),
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       children: [
         const _TopBar(),
@@ -535,14 +695,24 @@ class _DesktopEditorShell extends StatelessWidget {
                             ? [
                                 mediaPanel,
                                 mediaHandle,
-                                const Expanded(child: _PreviewStage()),
+                                const Expanded(
+                                  child: _WorkspacePanelFocus(
+                                    panel: 'preview',
+                                    child: _PreviewStage(),
+                                  ),
+                                ),
                                 inspectorHandle,
                                 inspectorPanel,
                               ]
                             : [
                                 inspectorPanel,
                                 inspectorHandle,
-                                const Expanded(child: _PreviewStage()),
+                                const Expanded(
+                                  child: _WorkspacePanelFocus(
+                                    panel: 'preview',
+                                    child: _PreviewStage(),
+                                  ),
+                                ),
                                 mediaHandle,
                                 mediaPanel,
                               ],
@@ -551,6 +721,7 @@ class _DesktopEditorShell extends StatelessWidget {
                     _PanelResizeHandle(
                       key: const Key('workspace-timeline-resize'),
                       axis: Axis.horizontal,
+                      enabled: !workspace.layoutLocked,
                       onDragUpdate: (delta) => workspace.setTimelineHeight(
                         workspace.timelineHeight - delta,
                       ),
@@ -561,7 +732,10 @@ class _DesktopEditorShell extends StatelessWidget {
                     ),
                     SizedBox(
                       height: workspace.timelineHeight,
-                      child: const _TimelinePanel(),
+                      child: const _WorkspacePanelFocus(
+                        panel: 'timeline',
+                        child: _TimelinePanel(),
+                      ),
                     ),
                   ],
                 ),
@@ -580,29 +754,33 @@ class _PanelResizeHandle extends StatelessWidget {
     required this.axis,
     required this.onDragUpdate,
     required this.onDragEnd,
+    this.enabled = true,
   });
 
   final Axis axis;
   final ValueChanged<double> onDragUpdate;
   final VoidCallback onDragEnd;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final vertical = axis == Axis.vertical;
     return MouseRegion(
-      cursor: vertical
-          ? SystemMouseCursors.resizeColumn
-          : SystemMouseCursors.resizeRow,
+      cursor: enabled
+          ? (vertical
+                ? SystemMouseCursors.resizeColumn
+                : SystemMouseCursors.resizeRow)
+          : SystemMouseCursors.basic,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: vertical
+        onHorizontalDragUpdate: enabled && vertical
             ? (details) => onDragUpdate(details.delta.dx)
             : null,
-        onHorizontalDragEnd: vertical ? (_) => onDragEnd() : null,
-        onVerticalDragUpdate: vertical
+        onHorizontalDragEnd: enabled && vertical ? (_) => onDragEnd() : null,
+        onVerticalDragUpdate: !enabled || vertical
             ? null
             : (details) => onDragUpdate(details.delta.dy),
-        onVerticalDragEnd: vertical ? null : (_) => onDragEnd(),
+        onVerticalDragEnd: enabled && !vertical ? (_) => onDragEnd() : null,
         child: SizedBox(
           width: vertical ? 6 : double.infinity,
           height: vertical ? double.infinity : 6,
@@ -612,6 +790,106 @@ class _PanelResizeHandle extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _WorkspacePanelFocus extends StatelessWidget {
+  const _WorkspacePanelFocus({required this.panel, required this.child});
+
+  final String panel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final workspace = context.watch<WorkspaceController>();
+    final active = workspace.activePanel == panel;
+    return MouseRegion(
+      onEnter: (_) => context.read<WorkspaceController>().setActivePanel(panel),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTapDown: (_) =>
+            context.read<WorkspaceController>().setActivePanel(panel),
+        onSecondaryTapDown: panel == 'timeline'
+            ? null
+            : (details) => _showPanelMenu(context, details.globalPosition),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: active
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.65)
+                  : Colors.transparent,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPanelMenu(BuildContext context, Offset position) async {
+    final workspace = context.read<WorkspaceController>();
+    workspace.setActivePanel(panel);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'maximize',
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              workspace.maximizedPanel == null
+                  ? Icons.fullscreen
+                  : Icons.fullscreen_exit,
+            ),
+            title: Text(
+              workspace.maximizedPanel == null
+                  ? 'Maximize panel  (`)'
+                  : 'Restore panel layout  (`)',
+            ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'lock',
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              workspace.layoutLocked ? Icons.lock_open : Icons.lock_outline,
+            ),
+            title: Text(
+              workspace.layoutLocked ? 'Unlock layout' : 'Lock layout',
+            ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'swap',
+          enabled: !workspace.layoutLocked,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.swap_horiz),
+            title: Text('Swap side panels'),
+          ),
+        ),
+      ],
+    );
+    switch (action) {
+      case 'maximize':
+        workspace.toggleMaximizeActivePanel();
+        break;
+      case 'lock':
+        workspace.toggleLayoutLock();
+        break;
+      case 'swap':
+        workspace.swapSidePanels();
+        break;
+    }
   }
 }
 
@@ -722,6 +1000,12 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               icon: const Icon(Icons.dashboard_customize_outlined),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: 'Command palette (Ctrl+Shift+P)',
+              onPressed: () => _showEditorCommandPalette(context),
+              icon: const Icon(Icons.search),
             ),
             const SizedBox(width: 6),
             IconButton.outlined(

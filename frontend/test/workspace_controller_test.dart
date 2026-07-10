@@ -16,6 +16,20 @@ void main() {
     expect(workspace.snapshots, isNotEmpty);
   });
 
+  test('layout lock blocks resizing and custom presets can be managed', () {
+    final workspace = WorkspaceController(persist: false);
+    workspace.toggleLayoutLock();
+    workspace.setMediaWidth(440);
+    expect(workspace.mediaWidth, 320);
+    workspace.toggleLayoutLock();
+    workspace.setMediaWidth(440);
+    workspace.saveCurrentPreset('News Desk');
+    expect(workspace.customPresets.single.name, 'News Desk');
+    expect(workspace.customPresets.single.mediaWidth, 440);
+    workspace.deleteCustomPreset(workspace.customPresets.single);
+    expect(workspace.customPresets, isEmpty);
+  });
+
   test('assets can be tagged and filtered by folder', () {
     final workspace = WorkspaceController(persist: false);
     workspace.addAsset(name: 'interview.mxf', path: r'C:\media\interview.mxf');
@@ -27,6 +41,18 @@ void main() {
     expect(workspace.filteredAssets.single.name, 'interview.mxf');
     workspace.assetTagFilter = 'Music';
     expect(workspace.filteredAssets, isEmpty);
+  });
+
+  test('assets can be searched and filtered by favorite state', () {
+    final workspace = WorkspaceController(persist: false);
+    workspace.addAsset(name: 'evening_news.mxf', path: r'C:\media\news.mxf');
+    workspace.addAsset(name: 'music.wav', path: r'C:\media\music.wav');
+    workspace.toggleAssetFavorite(workspace.assets.first);
+    workspace.setAssetSearchQuery('evening');
+    expect(workspace.filteredAssets.single.name, 'evening_news.mxf');
+    workspace.setAssetSearchQuery('');
+    workspace.toggleFavoriteAssetsOnly();
+    expect(workspace.filteredAssets.single.favorite, isTrue);
   });
 
   test('history keeps newest snapshots first and caps its size', () {
@@ -47,14 +73,20 @@ void main() {
     source.addAsset(name: 'news.mxf', path: r'C:\media\news.mxf');
     source.setAssetFolder(source.assets.single, 'Footage');
     source.toggleAssetTag(source.assets.single, 'News');
+    source.toggleAssetFavorite(source.assets.single);
+    source.saveCurrentPreset('Broadcast');
+    source.toggleLayoutLock();
     await source.save();
 
     final restored = WorkspaceController(persist: false, storagePath: path);
     await restored.load();
-    expect(restored.activePreset, 'Review');
+    expect(restored.activePreset, 'Broadcast');
     expect(restored.mediaOnLeft, isFalse);
     expect(restored.assets.single.folder, 'Footage');
     expect(restored.assets.single.tags, contains('News'));
+    expect(restored.assets.single.favorite, isTrue);
+    expect(restored.customPresets.single.name, 'Broadcast');
+    expect(restored.layoutLocked, isTrue);
     source.dispose();
     restored.dispose();
   });

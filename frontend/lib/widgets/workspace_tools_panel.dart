@@ -59,17 +59,42 @@ class _LayoutTab extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: [
-            for (final preset in WorkspaceController.presets)
-              ChoiceChip(
+            for (final preset in workspace.allPresets)
+              InputChip(
                 label: Text(preset.name),
                 selected: workspace.activePreset == preset.name,
                 onSelected: (_) => workspace.applyPreset(preset),
+                onDeleted: workspace.customPresets.contains(preset)
+                    ? () => workspace.deleteCustomPreset(preset)
+                    : null,
               ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: workspace.toggleLayoutLock,
+                icon: Icon(
+                  workspace.layoutLocked ? Icons.lock : Icons.lock_open,
+                ),
+                label: Text(
+                  workspace.layoutLocked ? 'Layout locked' : 'Lock layout',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              tooltip: 'Save current workspace',
+              onPressed: () => _savePresetDialog(context),
+              icon: const Icon(Icons.save_outlined),
+            ),
           ],
         ),
         const SizedBox(height: 14),
         OutlinedButton.icon(
-          onPressed: workspace.swapSidePanels,
+          onPressed: workspace.layoutLocked ? null : workspace.swapSidePanels,
           icon: const Icon(Icons.swap_horiz),
           label: Text(
             workspace.mediaOnLeft
@@ -86,6 +111,7 @@ class _LayoutTab extends StatelessWidget {
           onChanged: workspace.setMediaWidth,
           onChangeEnd: (value) =>
               workspace.finishPanelResize('Media panel', value),
+          enabled: !workspace.layoutLocked,
         ),
         _SizeSlider(
           label: 'Inspector panel',
@@ -95,6 +121,7 @@ class _LayoutTab extends StatelessWidget {
           onChanged: workspace.setInspectorWidth,
           onChangeEnd: (value) =>
               workspace.finishPanelResize('Inspector panel', value),
+          enabled: !workspace.layoutLocked,
         ),
         _SizeSlider(
           label: 'Timeline',
@@ -104,6 +131,7 @@ class _LayoutTab extends StatelessWidget {
           onChanged: workspace.setTimelineHeight,
           onChangeEnd: (value) =>
               workspace.finishPanelResize('Timeline', value),
+          enabled: !workspace.layoutLocked,
         ),
         const SizedBox(height: 10),
         Text(
@@ -111,6 +139,38 @@ class _LayoutTab extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
+    );
+  }
+
+  void _savePresetDialog(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Save workspace preset'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Preset name'),
+          onSubmitted: (value) {
+            workspace.saveCurrentPreset(value);
+            Navigator.pop(dialogContext);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              workspace.saveCurrentPreset(controller.text);
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -123,6 +183,7 @@ class _SizeSlider extends StatelessWidget {
     required this.max,
     required this.onChanged,
     required this.onChangeEnd,
+    this.enabled = true,
   });
 
   final String label;
@@ -131,6 +192,7 @@ class _SizeSlider extends StatelessWidget {
   final double max;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -142,8 +204,8 @@ class _SizeSlider extends StatelessWidget {
           value: value,
           min: min,
           max: max,
-          onChanged: onChanged,
-          onChangeEnd: onChangeEnd,
+          onChanged: enabled ? onChanged : null,
+          onChangeEnd: enabled ? onChangeEnd : null,
         ),
       ],
     );
@@ -163,6 +225,34 @@ class _AssetTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('asset-search-field'),
+                  onChanged: workspace.setAssetSearchQuery,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search assets',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.outlined(
+                tooltip: 'Favorites only',
+                isSelected: workspace.favoriteAssetsOnly,
+                onPressed: workspace.toggleFavoriteAssetsOnly,
+                icon: Icon(
+                  workspace.favoriteAssetsOnly ? Icons.star : Icons.star_border,
+                ),
+              ),
+            ],
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
           child: Row(
@@ -227,7 +317,9 @@ class _AssetTab extends StatelessWidget {
                     return ListTile(
                       selected: isActive,
                       leading: Icon(
-                        isActive
+                        asset.isOffline
+                            ? Icons.link_off
+                            : isActive
                             ? Icons.play_circle_outline
                             : Icons.movie_outlined,
                       ),
@@ -237,15 +329,35 @@ class _AssetTab extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '${asset.folder}  ${asset.tags.join(', ')}',
+                        asset.isOffline
+                            ? 'Offline · ${asset.folder}'
+                            : '${asset.folder}  ${asset.tags.join(', ')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      onTap: () => editor.openMediaPath(asset.path),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.more_vert),
-                        tooltip: 'Organize asset',
-                        onPressed: () => _organizeAssetDialog(context, asset),
+                      onTap: asset.isOffline
+                          ? null
+                          : () => editor.openMediaPath(asset.path),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              asset.favorite ? Icons.star : Icons.star_border,
+                            ),
+                            tooltip: asset.favorite
+                                ? 'Remove favorite'
+                                : 'Add favorite',
+                            onPressed: () =>
+                                workspace.toggleAssetFavorite(asset),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.more_vert),
+                            tooltip: 'Organize asset',
+                            onPressed: () =>
+                                _organizeAssetDialog(context, asset),
+                          ),
+                        ],
                       ),
                     );
                   },
