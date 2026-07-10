@@ -2741,6 +2741,17 @@ class _TimelinePainter extends CustomPainter {
         disabledPattern: !segment.videoEnabled,
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
+        hasVideoEffects:
+            (segment.videoOpacity - 1).abs() > 0.0001 ||
+            (segment.videoScale - 1).abs() > 0.0001 ||
+            segment.videoPositionX.abs() > 0.0001 ||
+            segment.videoPositionY.abs() > 0.0001 ||
+            segment.videoRotation.abs() > 0.0001 ||
+            segment.videoFadeIn > 0 ||
+            segment.videoFadeOut > 0 ||
+            segment.colorBrightness.abs() > 0.0001 ||
+            (segment.colorContrast - 1).abs() > 0.0001 ||
+            (segment.colorSaturation - 1).abs() > 0.0001,
         thumbnails: timelineThumbnailSampleFrames(segment)
             .map((frame) => timelineThumbnails[frame])
             .whereType<ui.Image>()
@@ -2850,6 +2861,7 @@ class _TimelinePainter extends CustomPainter {
     double? waveformSourceStart,
     double? waveformSourceEnd,
     bool disabledPattern = false,
+    bool hasVideoEffects = false,
     List<ui.Image> thumbnails = const [],
   }) {
     final left = _secondsToX(start, size.width);
@@ -2931,7 +2943,11 @@ class _TimelinePainter extends CustomPainter {
       end,
       track,
       hasThumbnail: track == _DragTrack.video && thumbnails.isNotEmpty,
+      hasVideoEffects: hasVideoEffects,
     );
+    if (hasVideoEffects && track == _DragTrack.video && rect.width >= 72) {
+      _drawFxBadge(canvas, rect);
+    }
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
       rrect,
@@ -3001,6 +3017,32 @@ class _TimelinePainter extends CustomPainter {
     canvas.restore();
   }
 
+  void _drawFxBadge(Canvas canvas, Rect rect) {
+    final badgeRect = Rect.fromLTWH(rect.right - 25, rect.top + 3, 21, 13);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(3)),
+      Paint()..color = colorScheme.primary.withValues(alpha: 0.88),
+    );
+    final painter = TextPainter(
+      text: TextSpan(
+        text: 'FX',
+        style: TextStyle(
+          color: colorScheme.onPrimary,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      Offset(
+        badgeRect.center.dx - painter.width / 2,
+        badgeRect.center.dy - painter.height / 2,
+      ),
+    );
+  }
+
   void _drawVideoPresence(Canvas canvas, Rect rect) {
     if (rect.width < 18) {
       return;
@@ -3061,6 +3103,7 @@ class _TimelinePainter extends CustomPainter {
     double end,
     _DragTrack track, {
     bool hasThumbnail = false,
+    bool hasVideoEffects = false,
   }) {
     if (rect.width < 28) {
       return;
@@ -3080,7 +3123,7 @@ class _TimelinePainter extends CustomPainter {
       maxLines: 1,
       ellipsis: '…',
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: math.max(0, rect.width - 12));
+    )..layout(maxWidth: math.max(0, rect.width - (hasVideoEffects ? 40 : 12)));
     labelPainter.paint(
       canvas,
       Offset(

@@ -158,6 +158,85 @@ class ClipInspector extends StatelessWidget {
               ? editor.setSelectedTransitionDuration
               : null,
         ),
+        const SizedBox(height: 14),
+        _InspectorSectionHeader(
+          icon: Icons.open_with,
+          label: 'Motion / Opacity',
+          resetTooltip: '모션 및 불투명도 초기화',
+          onReset: controller.videoTrackLocked
+              ? null
+              : editor.resetSelectedMotion,
+        ),
+        const SizedBox(height: 6),
+        _PropertySlider(
+          key: const Key('clip-video-opacity'),
+          icon: Icons.opacity,
+          label: 'Opacity',
+          value: selected.videoOpacity.clamp(0.0, 1.0).toDouble(),
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(selected.videoOpacity * 100).round()}%',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedVideoOpacity,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('clip-video-scale'),
+          icon: Icons.zoom_out_map,
+          label: 'Scale',
+          value: selected.videoScale.clamp(1.0, 3.0).toDouble(),
+          min: 1,
+          max: 3,
+          divisions: 200,
+          valueLabel: '${(selected.videoScale * 100).round()}%',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedVideoScale,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('clip-video-position-x'),
+          icon: Icons.swap_horiz,
+          label: 'Position X',
+          value: selected.videoPositionX.clamp(-1.0, 1.0).toDouble(),
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: '${(selected.videoPositionX * 100).round()}',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedVideoPositionX,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('clip-video-position-y'),
+          icon: Icons.swap_vert,
+          label: 'Position Y',
+          value: selected.videoPositionY.clamp(-1.0, 1.0).toDouble(),
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: '${(selected.videoPositionY * 100).round()}',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedVideoPositionY,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('clip-video-rotation'),
+          icon: Icons.rotate_right,
+          label: 'Rotation',
+          value: selected.videoRotation.clamp(-180.0, 180.0).toDouble(),
+          min: -180,
+          max: 180,
+          divisions: 360,
+          valueLabel: '${selected.videoRotation.round()}°',
+          onChanged: controller.videoTrackLocked
+              ? null
+              : editor.setSelectedVideoRotation,
+        ),
         const SizedBox(height: 8),
         _FocusStatus(
           confidence: selected.focusConfidence,
@@ -414,6 +493,46 @@ class ClipInspector extends StatelessWidget {
           onChanged: controller.anyAudioTrackEditLocked
               ? null
               : editor.setSelectedAudioFadeOut,
+        ),
+      ],
+    );
+  }
+}
+
+class _InspectorSectionHeader extends StatelessWidget {
+  const _InspectorSectionHeader({
+    required this.icon,
+    required this.label,
+    required this.resetTooltip,
+    required this.onReset,
+  });
+
+  final IconData icon;
+  final String label;
+  final String resetTooltip;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 17, color: colorScheme.primary),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+        IconButton(
+          key: const Key('clip-motion-reset'),
+          tooltip: resetTooltip,
+          visualDensity: VisualDensity.compact,
+          onPressed: onReset,
+          icon: const Icon(Icons.restart_alt, size: 18),
         ),
       ],
     );
@@ -869,6 +988,7 @@ class _TimecodeRow extends StatelessWidget {
 
 class _PropertySlider extends StatelessWidget {
   const _PropertySlider({
+    super.key,
     required this.icon,
     required this.label,
     required this.value,

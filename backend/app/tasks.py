@@ -178,6 +178,11 @@ def _write_batch_render_manifest(
                             )
                         ),
                         "playback_speed": segment.get("playback_speed", 1.0),
+                        "video_opacity": segment.get("video_opacity", 1.0),
+                        "video_scale": segment.get("video_scale", 1.0),
+                        "video_position_x": segment.get("video_position_x", 0.0),
+                        "video_position_y": segment.get("video_position_y", 0.0),
+                        "video_rotation": segment.get("video_rotation", 0.0),
                         "focus_x": segment.get("focus_x", 0.5),
                         "focus_y": segment.get("focus_y", 0.42),
                         "focus_confidence": segment.get("focus_confidence", 0.0),
@@ -422,6 +427,17 @@ def _normalize_highlights(
         )
         if transition_type == "cut":
             transition_duration = 0.0
+        video_opacity = max(0.0, min(float(item.get("video_opacity", 1.0)), 1.0))
+        video_scale = max(1.0, min(float(item.get("video_scale", 1.0)), 3.0))
+        video_position_x = max(
+            -1.0, min(float(item.get("video_position_x", 0.0)), 1.0)
+        )
+        video_position_y = max(
+            -1.0, min(float(item.get("video_position_y", 0.0)), 1.0)
+        )
+        video_rotation = max(
+            -180.0, min(float(item.get("video_rotation", 0.0)), 180.0)
+        )
         video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
         video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
         color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
@@ -480,6 +496,11 @@ def _normalize_highlights(
                 "script": str(item.get("script", "")),
                 "source": str(item.get("source", "ai")),
                 "video_enabled": bool(item.get("video_enabled", True)),
+                "video_opacity": round(video_opacity, 3),
+                "video_scale": round(video_scale, 3),
+                "video_position_x": round(video_position_x, 3),
+                "video_position_y": round(video_position_y, 3),
+                "video_rotation": round(video_rotation, 3),
                 "video_fade_in": round(video_fade_in, 3),
                 "video_fade_out": round(video_fade_out, 3),
                 "color_brightness": round(color_brightness, 3),

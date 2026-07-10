@@ -9,6 +9,11 @@ def test_highlight_segment_accepts_track_controls() -> None:
         end=5,
         reason="test",
         video_enabled=False,
+        video_opacity=4,
+        video_scale=7,
+        video_position_x=-3,
+        video_position_y=3,
+        video_rotation=270,
         video_fade_in=20,
         video_fade_out=20,
         color_brightness=1,
@@ -34,6 +39,11 @@ def test_highlight_segment_accepts_track_controls() -> None:
     )
 
     assert segment.video_enabled is False
+    assert segment.video_opacity == 1.0
+    assert segment.video_scale == 3.0
+    assert segment.video_position_x == -1.0
+    assert segment.video_position_y == 1.0
+    assert segment.video_rotation == 180.0
     assert segment.video_fade_in == 10.0
     assert segment.video_fade_out == 10.0
     assert segment.color_brightness == 0.3
@@ -84,6 +94,31 @@ def test_render_normalization_preserves_supported_clip_transitions() -> None:
     assert normalized[0]["transition_duration"] == 0
     assert normalized[1]["transition_type"] == "cross_dissolve"
     assert normalized[1]["transition_duration"] == 0.466667
+
+
+def test_render_normalization_preserves_motion_and_opacity() -> None:
+    normalized = _normalize_highlights(
+        [
+            {
+                "start": 1,
+                "end": 5,
+                "reason": "motion",
+                "video_opacity": 0.62,
+                "video_scale": 1.4,
+                "video_position_x": -0.35,
+                "video_position_y": 0.2,
+                "video_rotation": 14.5,
+            }
+        ],
+        duration=10,
+        preserve_order=True,
+    )
+
+    assert normalized[0]["video_opacity"] == 0.62
+    assert normalized[0]["video_scale"] == 1.4
+    assert normalized[0]["video_position_x"] == -0.35
+    assert normalized[0]["video_position_y"] == 0.2
+    assert normalized[0]["video_rotation"] == 14.5
 
 
 def test_caption_style_clamps_unsafe_values() -> None:

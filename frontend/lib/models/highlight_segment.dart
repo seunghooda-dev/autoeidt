@@ -57,6 +57,11 @@ class HighlightSegment {
     this.script = '',
     this.source = 'ai',
     this.videoEnabled = true,
+    this.videoOpacity = 1.0,
+    this.videoScale = 1.0,
+    this.videoPositionX = 0.0,
+    this.videoPositionY = 0.0,
+    this.videoRotation = 0.0,
     this.videoFadeIn = 0.0,
     this.videoFadeOut = 0.0,
     this.colorBrightness = 0.0,
@@ -95,6 +100,11 @@ class HighlightSegment {
   final String script;
   final String source;
   final bool videoEnabled;
+  final double videoOpacity;
+  final double videoScale;
+  final double videoPositionX;
+  final double videoPositionY;
+  final double videoRotation;
   final double videoFadeIn;
   final double videoFadeOut;
   final double colorBrightness;
@@ -141,6 +151,11 @@ class HighlightSegment {
     String? script,
     String? source,
     bool? videoEnabled,
+    double? videoOpacity,
+    double? videoScale,
+    double? videoPositionX,
+    double? videoPositionY,
+    double? videoRotation,
     double? videoFadeIn,
     double? videoFadeOut,
     double? colorBrightness,
@@ -179,6 +194,11 @@ class HighlightSegment {
       script: script ?? this.script,
       source: source ?? this.source,
       videoEnabled: videoEnabled ?? this.videoEnabled,
+      videoOpacity: videoOpacity ?? this.videoOpacity,
+      videoScale: videoScale ?? this.videoScale,
+      videoPositionX: videoPositionX ?? this.videoPositionX,
+      videoPositionY: videoPositionY ?? this.videoPositionY,
+      videoRotation: videoRotation ?? this.videoRotation,
       videoFadeIn: videoFadeIn ?? this.videoFadeIn,
       videoFadeOut: videoFadeOut ?? this.videoFadeOut,
       colorBrightness: colorBrightness ?? this.colorBrightness,
@@ -227,6 +247,36 @@ class HighlightSegment {
           (json['video_enabled'] as bool?) ??
           (json['videoEnabled'] as bool?) ??
           true,
+      videoOpacity:
+          ((json['video_opacity'] as num?)?.toDouble() ??
+                  (json['videoOpacity'] as num?)?.toDouble() ??
+                  1.0)
+              .clamp(0.0, 1.0)
+              .toDouble(),
+      videoScale:
+          ((json['video_scale'] as num?)?.toDouble() ??
+                  (json['videoScale'] as num?)?.toDouble() ??
+                  1.0)
+              .clamp(1.0, 3.0)
+              .toDouble(),
+      videoPositionX:
+          ((json['video_position_x'] as num?)?.toDouble() ??
+                  (json['videoPositionX'] as num?)?.toDouble() ??
+                  0.0)
+              .clamp(-1.0, 1.0)
+              .toDouble(),
+      videoPositionY:
+          ((json['video_position_y'] as num?)?.toDouble() ??
+                  (json['videoPositionY'] as num?)?.toDouble() ??
+                  0.0)
+              .clamp(-1.0, 1.0)
+              .toDouble(),
+      videoRotation:
+          ((json['video_rotation'] as num?)?.toDouble() ??
+                  (json['videoRotation'] as num?)?.toDouble() ??
+                  0.0)
+              .clamp(-180.0, 180.0)
+              .toDouble(),
       videoFadeIn:
           (json['video_fade_in'] as num?)?.toDouble() ??
           (json['videoFadeIn'] as num?)?.toDouble() ??
@@ -357,6 +407,11 @@ class HighlightSegment {
       'script': script,
       'source': source,
       'video_enabled': videoEnabled,
+      'video_opacity': videoOpacity,
+      'video_scale': videoScale,
+      'video_position_x': videoPositionX,
+      'video_position_y': videoPositionY,
+      'video_rotation': videoRotation,
       'video_fade_in': videoFadeIn,
       'video_fade_out': videoFadeOut,
       'color_brightness': colorBrightness,

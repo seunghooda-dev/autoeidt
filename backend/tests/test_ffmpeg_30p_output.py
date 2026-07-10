@@ -121,6 +121,53 @@ def test_render_builds_video_and_constant_power_audio_transitions(
     ) == 11.3
 
 
+def test_render_applies_motion_rotation_and_true_opacity(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_audio_channel_counts", lambda path, count: [2])
+    monkeypatch.setattr(ffmpeg_service, "_source_video_dimensions", lambda path: (1920, 1080))
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [
+            {
+                "order": 1,
+                "start": 0,
+                "end": 2,
+                "reason": "motion",
+                "video_opacity": 0.7,
+                "video_scale": 1.25,
+                "video_position_x": 0.2,
+                "video_position_y": -0.3,
+                "video_rotation": 15,
+            }
+        ],
+        tmp_path / "motion.mp4",
+    )
+
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "scale=2400:1350,format=rgba" in filter_complex
+    assert "rotate=0.261799388:ow=iw:oh=ih:c=black@0" in filter_complex
+    assert "colorchannelmixer=aa=0.700000" in filter_complex
+    assert "color=c=black:s=1920x1080:d=2.000000:r=30" in filter_complex
+    assert "(1920-w)/2+(0.200000)*1920/2" in filter_complex
+    assert "(1080-h)/2+(-0.300000)*1080/2" in filter_complex
+    assert "shortest=1:format=auto" in filter_complex
+
+
 def test_caption_timing_uses_transition_adjusted_sequence_positions(
     tmp_path: Path,
 ) -> None:

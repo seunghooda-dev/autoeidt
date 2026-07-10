@@ -129,6 +129,11 @@ class HighlightSegment(BaseModel):
     script: str = ""
     source: str = "ai"
     video_enabled: bool = True
+    video_opacity: float = 1.0
+    video_scale: float = 1.0
+    video_position_x: float = 0.0
+    video_position_y: float = 0.0
+    video_rotation: float = 0.0
     video_fade_in: float = 0.0
     video_fade_out: float = 0.0
     color_brightness: float = 0.0
@@ -217,6 +222,26 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_fade_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("video_opacity")
+    @classmethod
+    def video_opacity_must_be_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @field_validator("video_scale")
+    @classmethod
+    def video_scale_must_be_safe(cls, value: float) -> float:
+        return max(1.0, min(float(value), 3.0))
+
+    @field_validator("video_position_x", "video_position_y")
+    @classmethod
+    def video_position_must_be_safe(cls, value: float) -> float:
+        return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("video_rotation")
+    @classmethod
+    def video_rotation_must_be_safe(cls, value: float) -> float:
+        return max(-180.0, min(float(value), 180.0))
 
     @field_validator("color_brightness")
     @classmethod

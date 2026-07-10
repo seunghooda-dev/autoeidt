@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import shlex
 import subprocess
@@ -756,6 +757,62 @@ def _segment_video_enabled(segment: dict) -> bool:
     return bool(segment.get("video_enabled", True))
 
 
+def _segment_video_opacity(segment: dict) -> float:
+    try:
+        value = float(segment.get("video_opacity", 1.0))
+    except (TypeError, ValueError):
+        value = 1.0
+    return max(0.0, min(value, 1.0))
+
+
+def _segment_video_scale(segment: dict) -> float:
+    try:
+        value = float(segment.get("video_scale", 1.0))
+    except (TypeError, ValueError):
+        value = 1.0
+    return max(1.0, min(value, 3.0))
+
+
+def _segment_video_position(segment: dict, axis: str) -> float:
+    try:
+        value = float(segment.get(f"video_position_{axis}", 0.0))
+    except (TypeError, ValueError):
+        value = 0.0
+    return max(-1.0, min(value, 1.0))
+
+
+def _segment_video_rotation(segment: dict) -> float:
+    try:
+        value = float(segment.get("video_rotation", 0.0))
+    except (TypeError, ValueError):
+        value = 0.0
+    return max(-180.0, min(value, 180.0))
+
+
+def _segment_has_motion_effect(segment: dict) -> bool:
+    return any(
+        (
+            abs(_segment_video_opacity(segment) - 1.0) > 0.0001,
+            abs(_segment_video_scale(segment) - 1.0) > 0.0001,
+            abs(_segment_video_position(segment, "x")) > 0.0001,
+            abs(_segment_video_position(segment, "y")) > 0.0001,
+            abs(_segment_video_rotation(segment)) > 0.0001,
+        )
+    )
+
+
+def _source_video_dimensions(video_path: Path) -> tuple[int, int]:
+    try:
+        probe = probe_media_info(video_path)
+        width = int(probe.get("width") or 0)
+        height = int(probe.get("height") or 0)
+    except (FFmpegError, OSError, TypeError, ValueError):
+        width, height = 1920, 1080
+    if width <= 0 or height <= 0:
+        return 1920, 1080
+    return width - (width % 2), height - (height % 2)
+
+
 def _segment_audio_normalize(segment: dict) -> bool:
     return bool(segment.get("audio_normalize", False))
 
@@ -1288,6 +1345,7 @@ def _render_reencode_with_video_args(
     output_durations: list[float] = []
     audio_stream_count = _audio_stream_count(video_path)
     audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
+    source_width, source_height = _source_video_dimensions(video_path)
     source_starts = [float(segment["start"]) for segment in segments]
     source_starts.extend(_segment_audio_start(segment) for segment in segments)
     input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)
@@ -1330,6 +1388,43 @@ def _render_reencode_with_video_args(
             )
         if not _segment_video_enabled(segment):
             video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+        if _segment_has_motion_effect(segment):
+            scale = _segment_video_scale(segment)
+            scaled_width = max(2, round(source_width * scale / 2) * 2)
+            scaled_height = max(2, round(source_height * scale / 2) * 2)
+            opacity = _segment_video_opacity(segment)
+            rotation_radians = math.radians(_segment_video_rotation(segment))
+            position_x = _segment_video_position(segment, "x")
+            position_y = _segment_video_position(segment, "y")
+            video_steps.extend(
+                [
+                    f"scale={scaled_width}:{scaled_height}",
+                    "format=rgba",
+                ]
+            )
+            if abs(rotation_radians) > 0.000001:
+                video_steps.append(
+                    f"rotate={rotation_radians:.9f}:ow=iw:oh=ih:c=black@0"
+                )
+            if opacity < 0.9999:
+                video_steps.append(f"colorchannelmixer=aa={opacity:.6f}")
+            video_steps[-1] = f"{video_steps[-1]}[motion{index}]"
+            filters.append(",".join(video_steps))
+            filters.append(
+                f"color=c=black:s={source_width}x{source_height}:"
+                f"d={output_duration:.6f}:r={RENDER_FRAME_RATE_LABEL}"
+                f"[motioncanvas{index}]"
+            )
+            overlay_x = (
+                f"({source_width}-w)/2+({position_x:.6f})*{source_width}/2"
+            )
+            overlay_y = (
+                f"({source_height}-h)/2+({position_y:.6f})*{source_height}/2"
+            )
+            video_steps = [
+                f"[motioncanvas{index}][motion{index}]overlay="
+                f"x='{overlay_x}':y='{overlay_y}':shortest=1:format=auto"
+            ]
         if aspect_ratio == "9:16":
             video_steps.extend(_portrait_reframe_filters(segment))
         video_steps.extend([f"fps={RENDER_FRAME_RATE_LABEL}", "settb=AVTB", "format=yuv420p"])

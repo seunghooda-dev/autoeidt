@@ -57,6 +57,56 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('clip inspector exposes professional motion controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(
+          order: 1,
+          start: 0,
+          end: 10,
+          reason: 'motion',
+          videoOpacity: 0.8,
+          videoScale: 1.25,
+          videoPositionX: 0.1,
+          videoPositionY: -0.2,
+          videoRotation: 5,
+        ),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 380, child: ClipInspector())),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Motion / Opacity'), findsOneWidget);
+    expect(find.byKey(const Key('clip-video-opacity')), findsOneWidget);
+    expect(find.byKey(const Key('clip-video-scale')), findsOneWidget);
+    expect(find.byKey(const Key('clip-video-position-x')), findsOneWidget);
+    expect(find.byKey(const Key('clip-video-position-y')), findsOneWidget);
+    expect(find.byKey(const Key('clip-video-rotation')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('clip-motion-reset')));
+    await tester.pump();
+    expect(controller.selectedSegment!.videoOpacity, 1);
+    expect(controller.selectedSegment!.videoScale, 1);
+    expect(controller.selectedSegment!.videoPositionX, 0);
+    expect(controller.selectedSegment!.videoPositionY, 0);
+    expect(controller.selectedSegment!.videoRotation, 0);
+    controller.dispose();
+  });
+
   testWidgets('preview loading state can queue playback', (tester) async {
     var toggleCount = 0;
     await tester.pumpWidget(

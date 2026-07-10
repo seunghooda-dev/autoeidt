@@ -40,6 +40,11 @@ void main() {
       end: 20,
       reason: 'test',
       videoEnabled: false,
+      videoOpacity: 0.65,
+      videoScale: 1.35,
+      videoPositionX: -0.25,
+      videoPositionY: 0.4,
+      videoRotation: 12.5,
       videoFadeIn: 0.2,
       videoFadeOut: 0.4,
       colorBrightness: 0.1,
@@ -76,6 +81,11 @@ void main() {
 
     final json = segment.toJson();
     expect(json['video_enabled'], isFalse);
+    expect(json['video_opacity'], 0.65);
+    expect(json['video_scale'], 1.35);
+    expect(json['video_position_x'], -0.25);
+    expect(json['video_position_y'], 0.4);
+    expect(json['video_rotation'], 12.5);
     expect(json['video_fade_in'], 0.2);
     expect(json['video_fade_out'], 0.4);
     expect(json['color_brightness'], 0.1);
@@ -108,6 +118,11 @@ void main() {
 
     final restored = HighlightSegment.fromJson(json);
     expect(restored.videoEnabled, isFalse);
+    expect(restored.videoOpacity, 0.65);
+    expect(restored.videoScale, 1.35);
+    expect(restored.videoPositionX, -0.25);
+    expect(restored.videoPositionY, 0.4);
+    expect(restored.videoRotation, 12.5);
     expect(restored.videoFadeIn, 0.2);
     expect(restored.videoFadeOut, 0.4);
     expect(restored.colorBrightness, 0.1);
@@ -139,6 +154,37 @@ void main() {
     expect(restored.score, 8.4);
     expect(restored.tags, ['핵심', '문제해결']);
     expect(restored.outputDuration, closeTo(6.666, 0.01));
+  });
+
+  test('selected clip motion properties support reset and history', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'motion'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setSelectedVideoOpacity(0.7);
+    controller.setSelectedVideoScale(1.5);
+    controller.setSelectedVideoPositionX(-0.2);
+    controller.setSelectedVideoPositionY(0.35);
+    controller.setSelectedVideoRotation(18);
+
+    expect(controller.selectedSegment!.videoOpacity, 0.7);
+    expect(controller.selectedSegment!.videoScale, 1.5);
+    expect(controller.selectedSegment!.videoPositionX, -0.2);
+    expect(controller.selectedSegment!.videoPositionY, 0.35);
+    expect(controller.selectedSegment!.videoRotation, 18);
+
+    controller.resetSelectedMotion();
+    expect(controller.selectedSegment!.videoOpacity, 1);
+    expect(controller.selectedSegment!.videoScale, 1);
+    expect(controller.selectedSegment!.videoPositionX, 0);
+    expect(controller.selectedSegment!.videoPositionY, 0);
+    expect(controller.selectedSegment!.videoRotation, 0);
+
+    controller.undo();
+    expect(controller.selectedSegment!.videoRotation, 18);
+    controller.dispose();
   });
 
   test('selected clip routes broadcast source channels to stereo output', () {

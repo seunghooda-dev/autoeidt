@@ -3291,6 +3291,66 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void setSelectedVideoOpacity(double value) {
+    _updateSelectedMotion(videoOpacity: value.clamp(0.0, 1.0).toDouble());
+  }
+
+  void setSelectedVideoScale(double value) {
+    _updateSelectedMotion(videoScale: value.clamp(1.0, 3.0).toDouble());
+  }
+
+  void setSelectedVideoPositionX(double value) {
+    _updateSelectedMotion(videoPositionX: value.clamp(-1.0, 1.0).toDouble());
+  }
+
+  void setSelectedVideoPositionY(double value) {
+    _updateSelectedMotion(videoPositionY: value.clamp(-1.0, 1.0).toDouble());
+  }
+
+  void setSelectedVideoRotation(double value) {
+    _updateSelectedMotion(videoRotation: value.clamp(-180.0, 180.0).toDouble());
+  }
+
+  void _updateSelectedMotion({
+    double? videoOpacity,
+    double? videoScale,
+    double? videoPositionX,
+    double? videoPositionY,
+    double? videoRotation,
+  }) {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoOpacity: videoOpacity,
+        videoScale: videoScale,
+        videoPositionX: videoPositionX,
+        videoPositionY: videoPositionY,
+        videoRotation: videoRotation,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void resetSelectedMotion() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        videoOpacity: 1,
+        videoScale: 1,
+        videoPositionX: 0,
+        videoPositionY: 0,
+        videoRotation: 0,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
   void setSelectedColorBrightness(double value) {
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked) {
