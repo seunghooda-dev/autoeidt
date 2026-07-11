@@ -165,6 +165,11 @@ void main() {
     expect(find.byKey(const Key('overlay-position-x')), findsOneWidget);
     expect(find.byKey(const Key('overlay-position-y')), findsOneWidget);
     expect(find.byKey(const Key('overlay-rotation')), findsOneWidget);
+    expect(find.text('A3 Overlay Audio'), findsOneWidget);
+    expect(find.byKey(const Key('overlay-audio-volume')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-audio-pan')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-audio-fade-in')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-audio-fade-out')), findsOneWidget);
 
     await tester.tap(find.byTooltip('전체 화면'));
     await tester.pump();
@@ -526,6 +531,7 @@ void main() {
     (tester) async {
       var videoTargetToggles = 0;
       var overlayTargetToggles = 0;
+      var audio3TargetToggles = 0;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -564,6 +570,7 @@ void main() {
                 onSegmentSelected: (_) {},
                 onToggleVideoTarget: () => videoTargetToggles += 1,
                 onToggleVideoOverlayTarget: () => overlayTargetToggles += 1,
+                onToggleAudio3Target: () => audio3TargetToggles += 1,
               ),
             ),
           ),
@@ -575,11 +582,13 @@ void main() {
       expect(find.byKey(const Key('track-header-v2')), findsOneWidget);
       expect(find.byKey(const Key('track-header-a1')), findsOneWidget);
       expect(find.byKey(const Key('track-header-a2')), findsOneWidget);
+      expect(find.byKey(const Key('track-header-a3')), findsOneWidget);
       expect(find.text('SEQUENCE 01'), findsOneWidget);
       expect(find.text('Video 1'), findsOneWidget);
       expect(find.text('Overlay / B-roll'), findsOneWidget);
       expect(find.text('Audio 1'), findsOneWidget);
       expect(find.text('Audio 2'), findsOneWidget);
+      expect(find.text('Overlay Audio'), findsOneWidget);
 
       await tester.tap(find.text('V1'));
       await tester.pump();
@@ -587,6 +596,9 @@ void main() {
       await tester.tap(find.text('V2'));
       await tester.pump();
       expect(overlayTargetToggles, 1);
+      await tester.tap(find.text('A3'));
+      await tester.pump();
+      expect(audio3TargetToggles, 1);
     },
   );
 
@@ -651,8 +663,12 @@ void main() {
     );
 
     final overlay = find.byKey(const ValueKey('video-overlay-v2-test'));
+    final overlayAudio = find.byKey(
+      const ValueKey('video-overlay-audio-v2-test'),
+    );
     expect(overlay, findsOneWidget);
-    expect(find.text('broll.mov'), findsOneWidget);
+    expect(overlayAudio, findsOneWidget);
+    expect(find.text('broll.mov'), findsWidgets);
     await tester.tap(overlay);
     await tester.pump();
     expect(selectedOverlayId, 'v2-test');

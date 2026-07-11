@@ -91,6 +91,11 @@ def test_render_composites_v2_overlay_before_captions(
                 "scale": 0.4,
                 "position_x": 0.5,
                 "position_y": -0.4,
+                "muted": False,
+                "audio_volume": 0.5,
+                "audio_pan": 0.25,
+                "audio_fade_in": 0.5,
+                "audio_fade_out": 0.75,
             }
         ],
     )
@@ -109,6 +114,14 @@ def test_render_composites_v2_overlay_before_captions(
     assert "setpts=PTS+2.000000/TB" in filter_complex
     assert "enable='between(t,2.000000,8.000000)'" in filter_complex
     assert "[v2base0]fps=30,format=yuv420p[outv]" in filter_complex
+    assert "[1:a:0]atrim=start=1.000000:end=7.000000" in filter_complex
+    assert "volume=0.500" in filter_complex
+    assert "pan=stereo|c0=0.750000*c0|c1=1.000000*c1" in filter_complex
+    assert "afade=t=in:st=0:d=0.500000" in filter_complex
+    assert "afade=t=out:st=5.250000:d=0.750000" in filter_complex
+    assert "adelay=delays=2000:all=1" in filter_complex
+    assert "amix=inputs=2:duration=longest:normalize=0" in filter_complex
+    assert ";[a3mix0]anull[outa]" in filter_complex
 
 
 def test_render_builds_video_and_constant_power_audio_transitions(

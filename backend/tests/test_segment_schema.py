@@ -205,6 +205,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
                 "source_end": 8.049,
                 "scale": 4.0,
                 "position_x": -2.0,
+                "audio_volume": 4.0,
+                "audio_pan": -2.0,
+                "audio_fade_in": 12.0,
+                "audio_fade_out": -1.0,
             }
         ],
         shorts_candidates=[
@@ -240,6 +244,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.video_overlays[0].source_end == 8.033333
     assert project.video_overlays[0].scale == 1.0
     assert project.video_overlays[0].position_x == -1.0
+    assert project.video_overlays[0].audio_volume == 2.0
+    assert project.video_overlays[0].audio_pan == -1.0
+    assert project.video_overlays[0].audio_fade_in == 10.0
+    assert project.video_overlays[0].audio_fade_out == 0.0
     assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
     assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 

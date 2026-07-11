@@ -360,6 +360,10 @@ class VideoOverlayClip(BaseModel):
     position_y: float = -0.55
     rotation: float = 0.0
     muted: bool = True
+    audio_volume: float = 1.0
+    audio_pan: float = 0.0
+    audio_fade_in: float = 0.0
+    audio_fade_out: float = 0.0
 
     @field_validator(
         "timeline_start", "timeline_end", "source_start", "source_end", mode="before"
@@ -395,6 +399,21 @@ class VideoOverlayClip(BaseModel):
     @classmethod
     def rotation_is_safe(cls, value: float) -> float:
         return max(-180.0, min(float(value), 180.0))
+
+    @field_validator("audio_volume")
+    @classmethod
+    def audio_volume_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 2.0))
+
+    @field_validator("audio_pan")
+    @classmethod
+    def audio_pan_is_safe(cls, value: float) -> float:
+        return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("audio_fade_in", "audio_fade_out")
+    @classmethod
+    def audio_fade_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 10.0))
 
 
 class LocalPreviewRequest(BaseModel):

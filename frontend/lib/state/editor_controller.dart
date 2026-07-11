@@ -131,12 +131,14 @@ class EditorController extends ChangeNotifier {
   bool videoOverlayTrackTargeted = false;
   bool audioTrack1Targeted = true;
   bool audioTrack2Targeted = true;
+  bool audioTrack3Targeted = true;
   bool videoTrackLocked = false;
   bool videoOverlayTrackLocked = false;
   bool videoOverlayTrackVisible = true;
   bool audioTrackLocked = false;
   bool audioTrack1Locked = false;
   bool audioTrack2Locked = false;
+  bool audioTrack3Locked = false;
   String projectName = 'AutoEdit Project';
   String? projectFilePath;
   HighlightSegment? _clipClipboard;
@@ -692,6 +694,9 @@ class EditorController extends ChangeNotifier {
         path.isNotEmpty &&
         !io.File(path).existsSync();
   }
+
+  bool get videoOverlayAudioEnabled =>
+      videoOverlays.any((overlay) => !overlay.muted && overlay.audioVolume > 0);
 
   double get selectedMotionLocalTime {
     final selected = selectedSegment;
@@ -1496,12 +1501,14 @@ class EditorController extends ChangeNotifier {
     videoOverlayTrackTargeted = false;
     audioTrack1Targeted = true;
     audioTrack2Targeted = true;
+    audioTrack3Targeted = true;
     videoTrackLocked = false;
     videoOverlayTrackLocked = false;
     videoOverlayTrackVisible = true;
     audioTrackLocked = false;
     audioTrack1Locked = false;
     audioTrack2Locked = false;
+    audioTrack3Locked = false;
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
@@ -2478,8 +2485,8 @@ class EditorController extends ChangeNotifier {
     _refreshProgramPreviewAfterOverlayEdit();
   }
 
-  void updateVideoOverlay(VideoOverlayClip updated) {
-    if (videoOverlayTrackLocked ||
+  void updateVideoOverlay(VideoOverlayClip updated, {bool audioOnly = false}) {
+    if ((audioOnly ? audioTrack3Locked : videoOverlayTrackLocked) ||
         !videoOverlays.any((overlay) => overlay.id == updated.id)) {
       return;
     }
@@ -2574,6 +2581,81 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void toggleSelectedVideoOverlayAudioMute() {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(muted: !overlay.muted),
+      audioOnly: true,
+    );
+  }
+
+  void setSelectedVideoOverlayAudioVolume(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(audioVolume: value.clamp(0.0, 2.0).toDouble()),
+      audioOnly: true,
+    );
+  }
+
+  void setSelectedVideoOverlayAudioPan(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(audioPan: value.clamp(-1.0, 1.0).toDouble()),
+      audioOnly: true,
+    );
+  }
+
+  void setSelectedVideoOverlayAudioFadeIn(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(
+        audioFadeIn: value.clamp(0.0, overlay.timelineDuration / 2).toDouble(),
+      ),
+      audioOnly: true,
+    );
+  }
+
+  void setSelectedVideoOverlayAudioFadeOut(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(
+        audioFadeOut: value.clamp(0.0, overlay.timelineDuration / 2).toDouble(),
+      ),
+      audioOnly: true,
+    );
+  }
+
+  void resetSelectedVideoOverlayAudio() {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(
+        audioVolume: 1,
+        audioPan: 0,
+        audioFadeIn: 0,
+        audioFadeOut: 0,
+      ),
+      audioOnly: true,
+    );
+  }
+
   void applySelectedVideoOverlayPreset(String preset) {
     final overlay = selectedVideoOverlay;
     if (overlay == null) {
@@ -2657,6 +2739,36 @@ class EditorController extends ChangeNotifier {
   void toggleVideoOverlayTrackVisibility() {
     videoOverlayTrackVisible = !videoOverlayTrackVisible;
     notifyListeners();
+  }
+
+  void toggleAudioTrack3Target() {
+    audioTrack3Targeted = !audioTrack3Targeted;
+    notifyListeners();
+  }
+
+  void toggleAudioTrack3Lock() {
+    audioTrack3Locked = !audioTrack3Locked;
+    notifyListeners();
+  }
+
+  void toggleAllVideoOverlayAudio() {
+    if (audioTrack3Locked || videoOverlays.isEmpty) {
+      return;
+    }
+    final muteAll = videoOverlayAudioEnabled;
+    _commitHistory();
+    videoOverlays = [
+      for (final overlay in videoOverlays)
+        overlay.copyWith(
+          muted: muteAll,
+          audioVolume: !muteAll && overlay.audioVolume <= 0
+              ? 1
+              : overlay.audioVolume,
+        ),
+    ];
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void selectSegment(int order) {

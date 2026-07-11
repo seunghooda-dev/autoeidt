@@ -285,6 +285,11 @@ void main() {
           scale: 0.45,
           positionX: 0.5,
           positionY: -0.4,
+          muted: false,
+          audioVolume: 0.75,
+          audioPan: -0.25,
+          audioFadeIn: 0.5,
+          audioFadeOut: 0.75,
         ),
       ],
       transcript: [
@@ -366,6 +371,11 @@ void main() {
     );
     expect(restored.videoOverlays.single.sourcePath, r'C:\media\broll.mov');
     expect(restored.videoOverlays.single.scale, 0.45);
+    expect(restored.videoOverlays.single.muted, isFalse);
+    expect(restored.videoOverlays.single.audioVolume, 0.75);
+    expect(restored.videoOverlays.single.audioPan, -0.25);
+    expect(restored.videoOverlays.single.audioFadeIn, 0.5);
+    expect(restored.videoOverlays.single.audioFadeOut, 0.75);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
@@ -419,6 +429,30 @@ void main() {
     expect(controller.selectedVideoOverlay?.positionY, 0.55);
     controller.setSelectedVideoOverlayOpacity(0.65);
     expect(controller.selectedVideoOverlay?.opacity, 0.65);
+
+    controller.toggleSelectedVideoOverlayAudioMute();
+    controller.setSelectedVideoOverlayAudioVolume(0.7);
+    controller.setSelectedVideoOverlayAudioPan(-0.4);
+    controller.setSelectedVideoOverlayAudioFadeIn(0.5);
+    controller.setSelectedVideoOverlayAudioFadeOut(0.75);
+    expect(controller.selectedVideoOverlay?.muted, isFalse);
+    expect(controller.selectedVideoOverlay?.audioVolume, 0.7);
+    expect(controller.selectedVideoOverlay?.audioPan, -0.4);
+    expect(controller.selectedVideoOverlay?.audioFadeIn, 0.5);
+    expect(controller.selectedVideoOverlay?.audioFadeOut, 0.75);
+
+    controller.toggleAudioTrack3Lock();
+    controller.setSelectedVideoOverlayAudioVolume(0.2);
+    controller.toggleSelectedVideoOverlayAudioMute();
+    expect(controller.selectedVideoOverlay?.audioVolume, 0.7);
+    expect(controller.selectedVideoOverlay?.muted, isFalse);
+    controller.toggleAudioTrack3Lock();
+    controller.toggleAllVideoOverlayAudio();
+    expect(controller.selectedVideoOverlay?.muted, isTrue);
+    controller.setSelectedVideoOverlayAudioVolume(0);
+    controller.toggleAllVideoOverlayAudio();
+    expect(controller.selectedVideoOverlay?.muted, isFalse);
+    expect(controller.selectedVideoOverlay?.audioVolume, 1);
 
     controller.toggleVideoOverlayTrackLock();
     controller.updateVideoOverlay(moved.copyWith(timelineStart: 8));

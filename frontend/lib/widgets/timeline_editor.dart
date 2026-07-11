@@ -180,12 +180,14 @@ class TimelineEditor extends StatefulWidget {
     this.videoOverlayTrackTargeted = true,
     required this.audioTrack1Targeted,
     required this.audioTrack2Targeted,
+    this.audioTrack3Targeted = true,
     required this.videoTrackLocked,
     this.videoOverlayTrackLocked = false,
     this.videoOverlayTrackVisible = true,
     required this.audioTrackLocked,
     required this.audioTrack1Locked,
     required this.audioTrack2Locked,
+    this.audioTrack3Locked = false,
     required this.razorTool,
     required this.onSegmentChanged,
     this.onVideoOverlayChanged,
@@ -261,15 +263,18 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleVideoTarget,
     this.onToggleAudio1Target,
     this.onToggleAudio2Target,
+    this.onToggleAudio3Target,
     this.onToggleVideoLock,
     this.onToggleAudio1Lock,
     this.onToggleAudio2Lock,
+    this.onToggleAudio3Lock,
     this.onToggleClipEnabled,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onToggleVideoOverlayTarget,
     this.onToggleVideoOverlayLock,
     this.onToggleVideoOverlayVisibility,
+    this.onToggleVideoOverlayAudio,
     this.onDeleteVideoOverlay,
     this.onZoomDelta,
   });
@@ -292,12 +297,14 @@ class TimelineEditor extends StatefulWidget {
   final bool videoOverlayTrackTargeted;
   final bool audioTrack1Targeted;
   final bool audioTrack2Targeted;
+  final bool audioTrack3Targeted;
   final bool videoTrackLocked;
   final bool videoOverlayTrackLocked;
   final bool videoOverlayTrackVisible;
   final bool audioTrackLocked;
   final bool audioTrack1Locked;
   final bool audioTrack2Locked;
+  final bool audioTrack3Locked;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
@@ -373,15 +380,18 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
+  final VoidCallback? onToggleAudio3Target;
   final VoidCallback? onToggleVideoLock;
   final VoidCallback? onToggleAudio1Lock;
   final VoidCallback? onToggleAudio2Lock;
+  final VoidCallback? onToggleAudio3Lock;
   final VoidCallback? onToggleClipEnabled;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final VoidCallback? onToggleVideoOverlayTarget;
   final VoidCallback? onToggleVideoOverlayLock;
   final VoidCallback? onToggleVideoOverlayVisibility;
+  final VoidCallback? onToggleVideoOverlayAudio;
   final VoidCallback? onDeleteVideoOverlay;
   final ValueChanged<double>? onZoomDelta;
 
@@ -400,14 +410,15 @@ class _TimelineLayout {
   final double scale;
   double get rulerHeight => 30;
   double get overlayTop => rulerHeight + 2;
-  double get laneHeight => 38 * scale;
+  double get laneHeight => 27 * scale;
   double get laneGap => 2;
   double get videoTop => overlayTop + laneHeight + laneGap;
   double get audio1Top => videoTop + laneHeight + laneGap;
   double get audio2Top => audio1Top + laneHeight + laneGap;
-  double get footerTop => audio2Top + laneHeight + 4;
+  double get audio3Top => audio2Top + laneHeight + laneGap;
+  double get footerTop => audio3Top + laneHeight + 4;
   double get canvasHeight => footerTop + 28;
-  double get trackBottom => audio2Top + laneHeight;
+  double get trackBottom => audio3Top + laneHeight;
 }
 
 class _TimelineEditorState extends State<TimelineEditor> {
@@ -537,6 +548,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                     videoTargeted: widget.videoTrackTargeted,
                     audio1Targeted: widget.audioTrack1Targeted,
                     audio2Targeted: widget.audioTrack2Targeted,
+                    audio3Targeted: widget.audioTrack3Targeted,
                     videoLocked: widget.videoTrackLocked,
                     overlayLocked: widget.videoOverlayTrackLocked,
                     overlayVisible: widget.videoOverlayTrackVisible,
@@ -544,18 +556,28 @@ class _TimelineEditorState extends State<TimelineEditor> {
                         widget.audioTrackLocked || widget.audioTrack1Locked,
                     audio2Locked:
                         widget.audioTrackLocked || widget.audioTrack2Locked,
+                    audio3Locked: widget.audioTrack3Locked,
+                    overlayAudioEnabled:
+                        widget.videoOverlays.isEmpty ||
+                        widget.videoOverlays.any(
+                          (overlay) =>
+                              !overlay.muted && overlay.audioVolume > 0,
+                        ),
                     onToggleVideoTarget: widget.onToggleVideoTarget,
                     onToggleOverlayTarget: widget.onToggleVideoOverlayTarget,
                     onToggleAudio1Target: widget.onToggleAudio1Target,
                     onToggleAudio2Target: widget.onToggleAudio2Target,
+                    onToggleAudio3Target: widget.onToggleAudio3Target,
                     onToggleVideoLock: widget.onToggleVideoLock,
                     onToggleOverlayLock: widget.onToggleVideoOverlayLock,
                     onToggleOverlayVisibility:
                         widget.onToggleVideoOverlayVisibility,
                     onToggleAudio1Lock: widget.onToggleAudio1Lock,
                     onToggleAudio2Lock: widget.onToggleAudio2Lock,
+                    onToggleAudio3Lock: widget.onToggleAudio3Lock,
                     onToggleAudio1: widget.onToggleAllAudioChannel1,
                     onToggleAudio2: widget.onToggleAllAudioChannel2,
+                    onToggleAudio3: widget.onToggleVideoOverlayAudio,
                   ),
                 ),
                 VerticalDivider(
@@ -644,6 +666,22 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                           onChanged:
                                               widget.onVideoOverlayChanged,
                                           onDelete: widget.onDeleteVideoOverlay,
+                                        ),
+                                    if (widget.sequenceMode)
+                                      for (final overlay
+                                          in widget.videoOverlays)
+                                        _VideoOverlayAudioBlock(
+                                          overlay: overlay,
+                                          duration: widget.duration,
+                                          canvasWidth: width,
+                                          top: layout.audio3Top + 2,
+                                          height: layout.laneHeight - 4,
+                                          selected:
+                                              widget.selectedVideoOverlayId ==
+                                              overlay.id,
+                                          locked: widget.audioTrack3Locked,
+                                          onSelected:
+                                              widget.onVideoOverlaySelected,
                                         ),
                                     Align(
                                       alignment: Alignment.bottomLeft,
@@ -2448,6 +2486,95 @@ class _OverlayTrimHandle extends StatelessWidget {
   }
 }
 
+class _VideoOverlayAudioBlock extends StatelessWidget {
+  const _VideoOverlayAudioBlock({
+    required this.overlay,
+    required this.duration,
+    required this.canvasWidth,
+    required this.top,
+    required this.height,
+    required this.selected,
+    required this.locked,
+    required this.onSelected,
+  });
+
+  final VideoOverlayClip overlay;
+  final double duration;
+  final double canvasWidth;
+  final double top;
+  final double height;
+  final bool selected;
+  final bool locked;
+  final ValueChanged<String>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final left = duration <= 0
+        ? 0.0
+        : overlay.timelineStart / duration * canvasWidth;
+    final width = math.max(
+      18.0,
+      overlay.timelineDuration / math.max(duration, 0.001) * canvasWidth,
+    );
+    final accent = _TimelinePainter._overlayAudioColor;
+    final active = !overlay.muted && overlay.audioVolume > 0;
+    return Positioned(
+      key: ValueKey('video-overlay-audio-${overlay.id}'),
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      child: Opacity(
+        opacity: active ? 1 : 0.4,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onSelected?.call(overlay.id),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: selected ? 0.94 : 0.72),
+              border: Border.all(
+                color: selected ? Colors.white : accent,
+                width: selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              child: Row(
+                children: [
+                  Icon(
+                    active ? Icons.graphic_eq : Icons.volume_off_outlined,
+                    size: 13,
+                    color: _TimelinePainter._clipTextColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'A3 ${overlay.sourceName}  ${(overlay.audioVolume * 100).round()}%',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: _TimelinePainter._clipTextColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  if (locked)
+                    const Icon(
+                      Icons.lock,
+                      size: 12,
+                      color: _TimelinePainter._clipTextColor,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimelineTrackHeaders extends StatelessWidget {
   const _TimelineTrackHeaders({
     required this.layout,
@@ -2456,22 +2583,28 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.videoTargeted,
     required this.audio1Targeted,
     required this.audio2Targeted,
+    required this.audio3Targeted,
     required this.videoLocked,
     required this.overlayLocked,
     required this.overlayVisible,
     required this.audio1Locked,
     required this.audio2Locked,
+    required this.audio3Locked,
+    required this.overlayAudioEnabled,
     required this.onToggleVideoTarget,
     required this.onToggleOverlayTarget,
     required this.onToggleAudio1Target,
     required this.onToggleAudio2Target,
+    required this.onToggleAudio3Target,
     required this.onToggleVideoLock,
     required this.onToggleOverlayLock,
     required this.onToggleOverlayVisibility,
     required this.onToggleAudio1Lock,
     required this.onToggleAudio2Lock,
+    required this.onToggleAudio3Lock,
     required this.onToggleAudio1,
     required this.onToggleAudio2,
+    required this.onToggleAudio3,
   });
 
   final _TimelineLayout layout;
@@ -2480,22 +2613,28 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final bool videoTargeted;
   final bool audio1Targeted;
   final bool audio2Targeted;
+  final bool audio3Targeted;
   final bool videoLocked;
   final bool overlayLocked;
   final bool overlayVisible;
   final bool audio1Locked;
   final bool audio2Locked;
+  final bool audio3Locked;
+  final bool overlayAudioEnabled;
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleOverlayTarget;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
+  final VoidCallback? onToggleAudio3Target;
   final VoidCallback? onToggleVideoLock;
   final VoidCallback? onToggleOverlayLock;
   final VoidCallback? onToggleOverlayVisibility;
   final VoidCallback? onToggleAudio1Lock;
   final VoidCallback? onToggleAudio2Lock;
+  final VoidCallback? onToggleAudio3Lock;
   final VoidCallback? onToggleAudio1;
   final VoidCallback? onToggleAudio2;
+  final VoidCallback? onToggleAudio3;
 
   bool get _audio1Enabled =>
       segments.isEmpty ||
@@ -2629,12 +2768,30 @@ class _TimelineTrackHeaders extends StatelessWidget {
               onToggleLock: onToggleAudio2Lock,
               onToggleMedia: audio2Locked ? null : onToggleAudio2,
             ),
+            _TrackHeaderLane(
+              key: const Key('track-header-a3'),
+              top: layout.audio3Top,
+              height: layout.laneHeight,
+              patchLabel: 'A3',
+              trackLabel: 'Overlay Audio',
+              accent: _TimelinePainter._overlayAudioColor,
+              targeted: audio3Targeted,
+              locked: audio3Locked,
+              mediaEnabled: overlayAudioEnabled,
+              mediaIcon: overlayAudioEnabled
+                  ? Icons.volume_up_outlined
+                  : Icons.volume_off_outlined,
+              mediaTooltip: overlayAudioEnabled ? 'A3 전체 비활성화' : 'A3 전체 활성화',
+              onToggleTarget: onToggleAudio3Target,
+              onToggleLock: onToggleAudio3Lock,
+              onToggleMedia: audio3Locked ? null : onToggleAudio3,
+            ),
             Positioned(
               left: 8,
               right: 8,
               top: layout.footerTop + 5,
               child: Text(
-                'V2 / V1 / A1 / A2  ·  30p NDF',
+                'V2 / V1 / A1 / A2 / A3  ·  30p NDF',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -2713,7 +2870,7 @@ class _TrackHeaderLane extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                   child: Container(
                     width: 30,
-                    height: 24,
+                    height: 22,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: targeted
@@ -2787,8 +2944,8 @@ class _TrackHeaderIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 26,
-      height: 26,
+      width: 24,
+      height: 22,
       child: IconButton(
         tooltip: tooltip,
         padding: EdgeInsets.zero,
@@ -2834,6 +2991,7 @@ class _TimelinePainter extends CustomPainter {
   static const Color _videoClipActiveColor = Color(0xFF9BE3A9);
   static const Color _audioClipColor = Color(0xFFE7A66A);
   static const Color _audioClipActiveColor = Color(0xFFF4BE84);
+  static const Color _overlayAudioColor = Color(0xFFD18A63);
   static const Color _clipTextColor = Color(0xFF11140F);
 
   final _TimelineLayout layout;
@@ -2865,6 +3023,7 @@ class _TimelinePainter extends CustomPainter {
     _drawTrack(canvas, size, layout.videoTop, radius, _videoClipColor);
     _drawTrack(canvas, size, layout.audio1Top, radius, _audioClipColor);
     _drawTrack(canvas, size, layout.audio2Top, radius, _audioClipColor);
+    _drawTrack(canvas, size, layout.audio3Top, radius, _overlayAudioColor);
     _drawInOutRange(canvas, size);
     _drawTicks(canvas, size);
     _drawSegments(canvas, size, radius);
@@ -2932,7 +3091,7 @@ class _TimelinePainter extends CustomPainter {
         left,
         layout.overlayTop - 7,
         math.max(2, right - left),
-        layout.audio2Top - layout.overlayTop + layout.laneHeight + 14,
+        layout.audio3Top - layout.overlayTop + layout.laneHeight + 14,
       ),
       Radius.circular(6),
     );

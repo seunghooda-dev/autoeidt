@@ -735,6 +735,89 @@ class _VideoOverlayInspector extends StatelessWidget {
           onChanged: enabled ? editor.setSelectedVideoOverlayRotation : null,
         ),
         const SizedBox(height: 14),
+        _InspectorSectionHeader(
+          icon: Icons.graphic_eq,
+          label: 'A3 Overlay Audio',
+          resetTooltip: 'A3 오디오 초기화',
+          onReset: controller.audioTrack3Locked
+              ? null
+              : editor.resetSelectedVideoOverlayAudio,
+        ),
+        const SizedBox(height: 7),
+        FilterChip(
+          selected: !overlay.muted,
+          onSelected: controller.audioTrack3Locked
+              ? null
+              : (_) => editor.toggleSelectedVideoOverlayAudioMute(),
+          avatar: Icon(
+            overlay.muted
+                ? Icons.volume_off_outlined
+                : Icons.volume_up_outlined,
+            size: 18,
+          ),
+          label: Text(overlay.muted ? 'A3 음소거' : 'A3 활성'),
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-audio-volume'),
+          icon: Icons.volume_up_outlined,
+          label: 'Volume',
+          value: overlay.audioVolume,
+          min: 0,
+          max: 2,
+          divisions: 200,
+          valueLabel: '${(overlay.audioVolume * 100).round()}%',
+          onChanged: controller.audioTrack3Locked
+              ? null
+              : editor.setSelectedVideoOverlayAudioVolume,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-audio-pan'),
+          icon: Icons.surround_sound_outlined,
+          label: 'Pan',
+          value: overlay.audioPan,
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: overlay.audioPan.abs() < 0.01
+              ? 'C'
+              : overlay.audioPan < 0
+              ? 'L${(overlay.audioPan.abs() * 100).round()}'
+              : 'R${(overlay.audioPan * 100).round()}',
+          onChanged: controller.audioTrack3Locked
+              ? null
+              : editor.setSelectedVideoOverlayAudioPan,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-audio-fade-in'),
+          icon: Icons.trending_up,
+          label: 'Fade In',
+          value: overlay.audioFadeIn.clamp(0.0, 10.0).toDouble(),
+          min: 0,
+          max: 10,
+          divisions: 100,
+          valueLabel: '${overlay.audioFadeIn.toStringAsFixed(1)}s',
+          onChanged: controller.audioTrack3Locked
+              ? null
+              : editor.setSelectedVideoOverlayAudioFadeIn,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-audio-fade-out'),
+          icon: Icons.trending_down,
+          label: 'Fade Out',
+          value: overlay.audioFadeOut.clamp(0.0, 10.0).toDouble(),
+          min: 0,
+          max: 10,
+          divisions: 100,
+          valueLabel: '${overlay.audioFadeOut.toStringAsFixed(1)}s',
+          onChanged: controller.audioTrack3Locked
+              ? null
+              : editor.setSelectedVideoOverlayAudioFadeOut,
+        ),
+        const SizedBox(height: 14),
         Text(
           overlay.sourcePath,
           maxLines: 2,

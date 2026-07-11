@@ -177,6 +177,10 @@ class VideoOverlayClip {
     this.positionY = -0.55,
     this.rotation = 0.0,
     this.muted = true,
+    this.audioVolume = 1.0,
+    this.audioPan = 0.0,
+    this.audioFadeIn = 0.0,
+    this.audioFadeOut = 0.0,
   });
 
   final String id;
@@ -193,6 +197,10 @@ class VideoOverlayClip {
   final double positionY;
   final double rotation;
   final bool muted;
+  final double audioVolume;
+  final double audioPan;
+  final double audioFadeIn;
+  final double audioFadeOut;
 
   double get timelineDuration => timelineEnd - timelineStart;
   double get sourceDuration => sourceEnd - sourceStart;
@@ -212,6 +220,10 @@ class VideoOverlayClip {
     double? positionY,
     double? rotation,
     bool? muted,
+    double? audioVolume,
+    double? audioPan,
+    double? audioFadeIn,
+    double? audioFadeOut,
   }) {
     return VideoOverlayClip(
       id: id ?? this.id,
@@ -228,6 +240,10 @@ class VideoOverlayClip {
       positionY: positionY ?? this.positionY,
       rotation: rotation ?? this.rotation,
       muted: muted ?? this.muted,
+      audioVolume: audioVolume ?? this.audioVolume,
+      audioPan: audioPan ?? this.audioPan,
+      audioFadeIn: audioFadeIn ?? this.audioFadeIn,
+      audioFadeOut: audioFadeOut ?? this.audioFadeOut,
     );
   }
 
@@ -268,6 +284,18 @@ class VideoOverlayClip {
           .clamp(-180.0, 180.0)
           .toDouble(),
       muted: json['muted'] as bool? ?? true,
+      audioVolume: ((json['audio_volume'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 2.0)
+          .toDouble(),
+      audioPan: ((json['audio_pan'] as num?)?.toDouble() ?? 0.0)
+          .clamp(-1.0, 1.0)
+          .toDouble(),
+      audioFadeIn: ((json['audio_fade_in'] as num?)?.toDouble() ?? 0.0)
+          .clamp(0.0, 10.0)
+          .toDouble(),
+      audioFadeOut: ((json['audio_fade_out'] as num?)?.toDouble() ?? 0.0)
+          .clamp(0.0, 10.0)
+          .toDouble(),
     );
   }
 
@@ -286,6 +314,10 @@ class VideoOverlayClip {
     'position_y': positionY,
     'rotation': rotation,
     'muted': muted,
+    'audio_volume': audioVolume,
+    'audio_pan': audioPan,
+    'audio_fade_in': audioFadeIn,
+    'audio_fade_out': audioFadeOut,
   };
 }
 

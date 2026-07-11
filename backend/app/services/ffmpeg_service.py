@@ -1626,6 +1626,7 @@ def _render_reencode_with_video_args(
                 "timeline_end": timeline_end,
                 "source_start": source_start,
                 "source_end": source_end,
+                "has_audio": _audio_stream_count(overlay_path) > 0,
             }
         )
     source_starts = [float(segment["start"]) for segment in segments]
@@ -1833,8 +1834,7 @@ def _render_reencode_with_video_args(
     )
     if video_output != "[basev]":
         filters.append(f"{video_output}null[basev]")
-    if audio_output != "[outa]":
-        filters.append(f"{audio_output}anull[outa]")
+    filters.append(f"{audio_output}anull[basea]")
     filter_complex = ";".join(filters)
 
     video_chain = "[basev]"
@@ -1867,6 +1867,7 @@ def _render_reencode_with_video_args(
     else:
         canvas_width, canvas_height = output_size
 
+    rendered_overlays: list[dict] = []
     for index, overlay in enumerate(overlay_inputs):
         timeline_start = min(float(overlay["timeline_start"]), timeline_duration)
         timeline_end = min(float(overlay["timeline_end"]), timeline_duration)
@@ -1887,6 +1888,16 @@ def _render_reencode_with_video_args(
         target_width = max(2, round(canvas_width * scale / 2) * 2)
         target_height = max(2, round(canvas_height * scale / 2) * 2)
         input_index = index + 1
+        rendered_overlays.append(
+            {
+                **overlay,
+                "input_index": input_index,
+                "render_timeline_start": timeline_start,
+                "render_timeline_end": timeline_end,
+                "render_source_start": source_start,
+                "render_source_end": source_end,
+            }
+        )
         overlay_label = f"v2clip{index}"
         overlay_steps = [
             f"[{input_index}:v:0]trim=start={source_start:.6f}:end={source_end:.6f}",
@@ -1926,6 +1937,74 @@ def _render_reencode_with_video_args(
             f"eof_action=pass:shortest=0:format=auto{next_video_chain}"
         )
         video_chain = next_video_chain
+
+    audio_chain = "[basea]"
+    audio_mix_index = 0
+    for overlay in rendered_overlays:
+        if (
+            bool(overlay.get("muted", True))
+            or not bool(overlay.get("has_audio", False))
+        ):
+            continue
+        volume = max(0.0, min(float(overlay.get("audio_volume", 1.0)), 2.0))
+        if volume <= 0:
+            continue
+        timeline_start = float(overlay["render_timeline_start"])
+        source_start = float(overlay["render_source_start"])
+        source_end = float(overlay["render_source_end"])
+        clip_duration = source_end - source_start
+        if clip_duration <= 0:
+            continue
+        pan = max(-1.0, min(float(overlay.get("audio_pan", 0.0)), 1.0))
+        left_gain = 1.0 if pan <= 0 else 1.0 - pan
+        right_gain = 1.0 if pan >= 0 else 1.0 + pan
+        fade_in = max(
+            0.0,
+            min(float(overlay.get("audio_fade_in", 0.0)), clip_duration / 2),
+        )
+        fade_out = max(
+            0.0,
+            min(float(overlay.get("audio_fade_out", 0.0)), clip_duration / 2),
+        )
+        input_index = int(overlay["input_index"])
+        overlay_audio_label = f"v2audio{audio_mix_index}"
+        audio_steps = [
+            f"[{input_index}:a:0]atrim=start={source_start:.6f}:end={source_end:.6f}",
+            "asetpts=PTS-STARTPTS",
+            "aformat=sample_rates=48000:channel_layouts=stereo",
+            f"volume={volume:.3f}",
+        ]
+        if abs(pan) > 0.001:
+            audio_steps.append(
+                f"pan=stereo|c0={left_gain:.6f}*c0|c1={right_gain:.6f}*c1"
+            )
+        if fade_in > 0:
+            audio_steps.append(f"afade=t=in:st=0:d={fade_in:.6f}")
+        if fade_out > 0:
+            fade_start = max(0.0, clip_duration - fade_out)
+            audio_steps.append(
+                f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}"
+            )
+        delay_ms = max(0, round(timeline_start * 1000))
+        audio_steps.extend(
+            [
+                f"adelay=delays={delay_ms}:all=1",
+                "apad",
+                f"atrim=duration={timeline_duration:.6f}",
+                f"asetpts=PTS-STARTPTS[{overlay_audio_label}]",
+            ]
+        )
+        filter_complex += ";" + ",".join(audio_steps)
+        mixed_audio_label = f"a3mix{audio_mix_index}"
+        filter_complex += (
+            f";{audio_chain}[{overlay_audio_label}]"
+            "amix=inputs=2:duration=longest:normalize=0,"
+            f"atrim=duration={timeline_duration:.6f},"
+            f"asetpts=PTS-STARTPTS[{mixed_audio_label}]"
+        )
+        audio_chain = f"[{mixed_audio_label}]"
+        audio_mix_index += 1
+    filter_complex += f";{audio_chain}anull[outa]"
 
     caption_file = None
     if captions:

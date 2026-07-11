@@ -2665,12 +2665,14 @@ class _TimelineEditorBody extends StatelessWidget {
       videoOverlayTrackTargeted: controller.videoOverlayTrackTargeted,
       audioTrack1Targeted: controller.audioTrack1Targeted,
       audioTrack2Targeted: controller.audioTrack2Targeted,
+      audioTrack3Targeted: controller.audioTrack3Targeted,
       videoTrackLocked: controller.videoTrackLocked,
       videoOverlayTrackLocked: controller.videoOverlayTrackLocked,
       videoOverlayTrackVisible: controller.videoOverlayTrackVisible,
       audioTrackLocked: controller.audioTrackLocked,
       audioTrack1Locked: controller.audioTrack1Locked,
       audioTrack2Locked: controller.audioTrack2Locked,
+      audioTrack3Locked: controller.audioTrack3Locked,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onVideoOverlayChanged: context
@@ -2823,6 +2825,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudio2Target: context
           .read<EditorController>()
           .toggleAudioTrack2Target,
+      onToggleAudio3Target: context
+          .read<EditorController>()
+          .toggleAudioTrack3Target,
       onToggleVideoLock: context.read<EditorController>().toggleVideoTrackLock,
       onToggleAudio1Lock: context
           .read<EditorController>()
@@ -2830,6 +2835,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAudio2Lock: context
           .read<EditorController>()
           .toggleAudioTrack2Lock,
+      onToggleAudio3Lock: context
+          .read<EditorController>()
+          .toggleAudioTrack3Lock,
       onToggleClipEnabled: context
           .read<EditorController>()
           .toggleSelectedClipEnabled,
@@ -2846,6 +2854,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleVideoOverlayVisibility: context
           .read<EditorController>()
           .toggleVideoOverlayTrackVisibility,
+      onToggleVideoOverlayAudio: context
+          .read<EditorController>()
+          .toggleAllVideoOverlayAudio,
       onDeleteVideoOverlay: context
           .read<EditorController>()
           .deleteSelectedVideoOverlay,
