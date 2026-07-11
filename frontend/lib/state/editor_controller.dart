@@ -1840,6 +1840,9 @@ class EditorController extends ChangeNotifier {
         id,
         segments,
         captions: captions,
+        videoOverlays: videoOverlays
+            .where((overlay) => overlay.enabled)
+            .toList(),
         captionStyle: captionRenderStyle,
         aspectRatio: aspectRatio,
         includeCaptions: includeCaptions,
@@ -1897,6 +1900,9 @@ class EditorController extends ChangeNotifier {
             },
         ],
         captions: captions,
+        videoOverlays: videoOverlays
+            .where((overlay) => overlay.enabled)
+            .toList(),
         captionStyle: captionRenderStyle,
         aspectRatio: selectedExportProfiles.first,
         includeCaptions: includeCaptions,

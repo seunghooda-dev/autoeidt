@@ -1143,13 +1143,19 @@ def render_video_job(
         if not options.get("include_captions", False):
             captions = []
         caption_style = options.get("caption_style") or {}
+        render_kwargs = {
+            "aspect_ratio": str(options.get("aspect_ratio") or "16:9"),
+            "captions": captions,
+            "caption_style": caption_style,
+        }
+        video_overlays = options.get("video_overlays") or []
+        if video_overlays:
+            render_kwargs["video_overlays"] = video_overlays
         rendered_path = render_highlights(
             video_path,
             normalized,
             output_path,
-            aspect_ratio=str(options.get("aspect_ratio") or "16:9"),
-            captions=captions,
-            caption_style=caption_style,
+            **render_kwargs,
         )
         render_duration_seconds = _render_output_duration_seconds(normalized)
         render_size_bytes = _render_file_size_bytes(rendered_path)
@@ -1252,13 +1258,19 @@ def render_batch_video_job(
             aspect_ratio = str(
                 item.get("aspect_ratio") or options.get("aspect_ratio") or "9:16"
             )
+            render_kwargs = {
+                "aspect_ratio": aspect_ratio,
+                "captions": captions,
+                "caption_style": caption_style,
+            }
+            video_overlays = options.get("video_overlays") or []
+            if video_overlays:
+                render_kwargs["video_overlays"] = video_overlays
             rendered_path = render_highlights(
                 video_path,
                 normalized,
                 output_path,
-                aspect_ratio=aspect_ratio,
-                captions=captions,
-                caption_style=caption_style,
+                **render_kwargs,
             )
             render_duration_seconds = _render_output_duration_seconds(normalized)
             render_size_bytes = _render_file_size_bytes(rendered_path)

@@ -1587,6 +1587,7 @@ def _render_reencode_with_video_args(
     caption_style: dict | None = None,
     output_size: tuple[int, int] = (1920, 1080),
     processing_size: tuple[int, int] | None = None,
+    video_overlays: list[dict] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -1595,6 +1596,38 @@ def _render_reencode_with_video_args(
     audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
     source_width, source_height = _source_video_dimensions(video_path)
     render_width, render_height = processing_size or (source_width, source_height)
+    overlay_inputs: list[dict] = []
+    for raw_overlay in (video_overlays or [])[:16]:
+        if not raw_overlay.get("enabled", True):
+            continue
+        raw_path = str(raw_overlay.get("source_path") or "").strip()
+        if not raw_path:
+            raise ValueError("V2 overlay source path is required")
+        overlay_path = Path(raw_path).expanduser().resolve(strict=True)
+        if not overlay_path.is_file():
+            raise ValueError(f"V2 overlay source is not a file: {overlay_path}")
+        timeline_start = max(0.0, float(raw_overlay.get("timeline_start") or 0.0))
+        timeline_end = max(
+            timeline_start,
+            float(raw_overlay.get("timeline_end") or timeline_start),
+        )
+        source_start = max(0.0, float(raw_overlay.get("source_start") or 0.0))
+        source_end = max(
+            source_start,
+            float(raw_overlay.get("source_end") or source_start),
+        )
+        if timeline_end <= timeline_start or source_end <= source_start:
+            continue
+        overlay_inputs.append(
+            {
+                **raw_overlay,
+                "source_path": overlay_path,
+                "timeline_start": timeline_start,
+                "timeline_end": timeline_end,
+                "source_start": source_start,
+                "source_end": source_end,
+            }
+        )
     source_starts = [float(segment["start"]) for segment in segments]
     source_starts.extend(_segment_audio_start(segment) for segment in segments)
     input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)
@@ -1793,7 +1826,7 @@ def _render_reencode_with_video_args(
         filters.append(
             ",".join(audio_steps)
         )
-    video_output, audio_output, _ = _compose_segment_streams(
+    video_output, audio_output, timeline_duration = _compose_segment_streams(
         filters,
         segments,
         output_durations,
@@ -1827,6 +1860,73 @@ def _render_reencode_with_video_args(
         )
         video_chain = "[framedv]"
 
+    if aspect_ratio == "9:16":
+        canvas_width, canvas_height = 1080, 1920
+    elif aspect_ratio == "1:1":
+        canvas_width = canvas_height = min(output_size)
+    else:
+        canvas_width, canvas_height = output_size
+
+    for index, overlay in enumerate(overlay_inputs):
+        timeline_start = min(float(overlay["timeline_start"]), timeline_duration)
+        timeline_end = min(float(overlay["timeline_end"]), timeline_duration)
+        if timeline_end <= timeline_start:
+            continue
+        source_start = float(overlay["source_start"])
+        source_end = min(
+            float(overlay["source_end"]),
+            source_start + (timeline_end - timeline_start),
+        )
+        if source_end <= source_start:
+            continue
+        scale = max(0.1, min(float(overlay.get("scale", 0.35)), 1.0))
+        opacity = max(0.0, min(float(overlay.get("opacity", 1.0)), 1.0))
+        position_x = max(-1.0, min(float(overlay.get("position_x", 0.6)), 1.0))
+        position_y = max(-1.0, min(float(overlay.get("position_y", -0.55)), 1.0))
+        rotation = max(-180.0, min(float(overlay.get("rotation", 0.0)), 180.0))
+        target_width = max(2, round(canvas_width * scale / 2) * 2)
+        target_height = max(2, round(canvas_height * scale / 2) * 2)
+        input_index = index + 1
+        overlay_label = f"v2clip{index}"
+        overlay_steps = [
+            f"[{input_index}:v:0]trim=start={source_start:.6f}:end={source_end:.6f}",
+            "setpts=PTS-STARTPTS",
+            f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease",
+            f"fps={RENDER_FRAME_RATE_LABEL}",
+            "settb=AVTB",
+            "format=rgba",
+        ]
+        if abs(rotation) > 0.000001:
+            radians = math.radians(rotation)
+            overlay_steps.append(
+                f"rotate={radians:.9f}:ow=rotw(iw):oh=roth(ih):c=black@0"
+            )
+        if opacity < 0.9999:
+            overlay_steps.append(f"colorchannelmixer=aa={opacity:.6f}")
+        overlay_steps.extend(
+            [
+                f"setpts=PTS+{timeline_start:.6f}/TB",
+                f"format=rgba[{overlay_label}]",
+            ]
+        )
+        filter_complex += ";" + ",".join(overlay_steps)
+        next_video_chain = f"[v2base{index}]"
+        overlay_x = (
+            f"({canvas_width}-w)/2+({position_x:.6f})*"
+            f"({canvas_width}-w)/2"
+        )
+        overlay_y = (
+            f"({canvas_height}-h)/2+({position_y:.6f})*"
+            f"({canvas_height}-h)/2"
+        )
+        filter_complex += (
+            f";{video_chain}[{overlay_label}]overlay="
+            f"x='{overlay_x}':y='{overlay_y}':"
+            f"enable='between(t,{timeline_start:.6f},{timeline_end:.6f})':"
+            f"eof_action=pass:shortest=0:format=auto{next_video_chain}"
+        )
+        video_chain = next_video_chain
+
     caption_file = None
     if captions:
         caption_file = _write_caption_srt(
@@ -1854,6 +1954,11 @@ def _render_reencode_with_video_args(
             f"{input_seek:.6f}",
             "-i",
             str(video_path),
+            *[
+                argument
+                for overlay in overlay_inputs
+                for argument in ("-i", str(overlay["source_path"]))
+            ],
             "-filter_complex",
             filter_complex,
             "-map",
@@ -1888,6 +1993,7 @@ def render_highlights_reencoded(
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
     caption_style: dict | None = None,
+    video_overlays: list[dict] | None = None,
 ) -> Path:
     settings = get_settings()
     if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
@@ -1900,6 +2006,7 @@ def render_highlights_reencoded(
                 aspect_ratio=aspect_ratio,
                 captions=captions,
                 caption_style=caption_style,
+                video_overlays=video_overlays,
             )
         except FFmpegError:
             pass
@@ -1912,6 +2019,7 @@ def render_highlights_reencoded(
         aspect_ratio=aspect_ratio,
         captions=captions,
         caption_style=caption_style,
+        video_overlays=video_overlays,
     )
 
 
@@ -2067,6 +2175,7 @@ def render_highlights(
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
     caption_style: dict | None = None,
+    video_overlays: list[dict] | None = None,
 ) -> Path:
     normalized = sorted(
         segments,
@@ -2082,4 +2191,5 @@ def render_highlights(
         aspect_ratio=aspect_ratio,
         captions=captions,
         caption_style=caption_style,
+        video_overlays=video_overlays,
     )

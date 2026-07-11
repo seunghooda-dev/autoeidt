@@ -2366,6 +2366,27 @@ void main() {
                 audioEnd: 11,
                 audioMuted: true,
               ),
+            ]
+            ..videoOverlays = const [
+              VideoOverlayClip(
+                id: 'v2-enabled',
+                sourcePath: r'C:\media\broll.mov',
+                sourceName: 'broll.mov',
+                timelineStart: 0,
+                timelineEnd: 2,
+                sourceStart: 0,
+                sourceEnd: 2,
+              ),
+              VideoOverlayClip(
+                id: 'v2-disabled',
+                sourcePath: r'C:\media\unused.mov',
+                sourceName: 'unused.mov',
+                timelineStart: 0,
+                timelineEnd: 2,
+                sourceStart: 0,
+                sourceEnd: 2,
+                enabled: false,
+              ),
             ];
 
       expect(controller.renderSafetyBlockCount, greaterThan(0));
@@ -2378,6 +2399,7 @@ void main() {
       expect(apiClient.renderSegments.single.videoEnabled, isTrue);
       expect(apiClient.renderSegments.single.audioMuted, isFalse);
       expect(apiClient.renderSegments.single.audioNormalize, isTrue);
+      expect(apiClient.renderVideoOverlays.single.id, 'v2-enabled');
       expect(
         apiClient.renderSegments.single.duration,
         greaterThanOrEqualTo(2.0),
@@ -2408,6 +2430,17 @@ void main() {
                 script: '공식 출처가 확인된 설명입니다',
                 audioNormalize: true,
               ),
+            ]
+            ..videoOverlays = const [
+              VideoOverlayClip(
+                id: 'v2-multi',
+                sourcePath: r'C:\media\broll.mov',
+                sourceName: 'broll.mov',
+                timelineStart: 2,
+                timelineEnd: 8,
+                sourceStart: 0,
+                sourceEnd: 6,
+              ),
             ];
 
       controller.setExportProfiles({'16:9', '9:16', '1:1'});
@@ -2421,6 +2454,7 @@ void main() {
       expect(apiClient.renderRequested, isFalse);
       expect(apiClient.batchRenderRequested, isTrue);
       expect(apiClient.batchRenderItems, hasLength(3));
+      expect(apiClient.batchVideoOverlays.single.id, 'v2-multi');
       expect(
         apiClient.batchRenderItems.map((item) => item['aspect_ratio']).toList(),
         ['16:9', '9:16', '1:1'],
@@ -3440,6 +3474,8 @@ class _RecordingApiClient extends ApiClient {
   bool renderRequested = false;
   bool batchRenderRequested = false;
   List<HighlightSegment> renderSegments = const [];
+  List<VideoOverlayClip> renderVideoOverlays = const [];
+  List<VideoOverlayClip> batchVideoOverlays = const [];
   List<Map<String, dynamic>> batchRenderItems = const [];
   String? savedProjectJobId;
   ProjectState? savedProject;
@@ -3456,6 +3492,7 @@ class _RecordingApiClient extends ApiClient {
     String jobId,
     List<HighlightSegment> segments, {
     List<CaptionSegment> captions = const [],
+    List<VideoOverlayClip> videoOverlays = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
@@ -3463,6 +3500,7 @@ class _RecordingApiClient extends ApiClient {
   }) async {
     renderRequested = true;
     renderSegments = List<HighlightSegment>.of(segments);
+    renderVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
   }
 
   @override
@@ -3470,12 +3508,14 @@ class _RecordingApiClient extends ApiClient {
     String jobId,
     List<Map<String, dynamic>> items, {
     List<CaptionSegment> captions = const [],
+    List<VideoOverlayClip> videoOverlays = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '9:16',
     bool includeCaptions = true,
   }) async {
     batchRenderRequested = true;
     batchRenderItems = List<Map<String, dynamic>>.of(items);
+    batchVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
   }
 
   @override

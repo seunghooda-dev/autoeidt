@@ -281,6 +281,7 @@ class ApiClient {
     String jobId,
     List<HighlightSegment> segments, {
     List<CaptionSegment> captions = const [],
+    List<VideoOverlayClip> videoOverlays = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
@@ -290,6 +291,7 @@ class ApiClient {
       '$baseUrl/api/jobs/$jobId/render',
       data: {
         'segments': segments.map((item) => item.toJson()).toList(),
+        'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
         'captions': captions.map((item) => item.toJson()).toList(),
         'caption_style': (captionStyle ?? CaptionRenderStyle.preset('news'))
             .toJson(),
@@ -304,6 +306,7 @@ class ApiClient {
     String jobId,
     List<Map<String, dynamic>> items, {
     List<CaptionSegment> captions = const [],
+    List<VideoOverlayClip> videoOverlays = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '9:16',
     bool includeCaptions = true,
@@ -312,6 +315,7 @@ class ApiClient {
       '$baseUrl/api/jobs/$jobId/batch-render',
       data: {
         'items': items,
+        'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
         'captions': captions.map((item) => item.toJson()).toList(),
         'caption_style': (captionStyle ?? CaptionRenderStyle.preset('shorts'))
             .toJson(),

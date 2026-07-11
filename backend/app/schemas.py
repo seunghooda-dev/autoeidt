@@ -580,6 +580,7 @@ class VideoOverlayClip(BaseModel):
 
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
+    video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "16:9"
@@ -652,6 +653,7 @@ class JobSummaryResponse(BaseModel):
 
 class BatchRenderRequest(BaseModel):
     items: list[BatchRenderItem]
+    video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "9:16"

@@ -515,6 +515,7 @@ def render_job(
     settings = get_settings()
     segments = [segment.model_dump() for segment in payload.segments]
     render_options = {
+        "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,
@@ -568,6 +569,7 @@ def batch_render_job(
         for item in payload.items
     ]
     render_options = {
+        "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,

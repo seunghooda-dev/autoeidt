@@ -55,6 +55,62 @@ def test_render_reencode_forces_30p_non_drop_output(
     assert "atrim=start=2.000000:end=4.000000" in filter_complex
 
 
+def test_render_composites_v2_overlay_before_captions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+    overlay_path = tmp_path / "broll.mov"
+    overlay_path.write_bytes(b"overlay")
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [{"order": 1, "start": 0, "end": 12, "reason": "base"}],
+        tmp_path / "overlay-output.mp4",
+        video_overlays=[
+            {
+                "id": "v2-1",
+                "source_path": str(overlay_path),
+                "source_name": "broll.mov",
+                "timeline_start": 2,
+                "timeline_end": 8,
+                "source_start": 1,
+                "source_end": 7,
+                "opacity": 0.8,
+                "scale": 0.4,
+                "position_x": 0.5,
+                "position_y": -0.4,
+            }
+        ],
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+    input_paths = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-i"
+    ]
+    assert str(overlay_path.resolve()) in input_paths
+    assert "[1:v:0]trim=start=1.000000:end=7.000000" in filter_complex
+    assert "scale=768:432:force_original_aspect_ratio=decrease" in filter_complex
+    assert "colorchannelmixer=aa=0.800000" in filter_complex
+    assert "setpts=PTS+2.000000/TB" in filter_complex
+    assert "enable='between(t,2.000000,8.000000)'" in filter_complex
+    assert "[v2base0]fps=30,format=yuv420p[outv]" in filter_complex
+
+
 def test_render_builds_video_and_constant_power_audio_transitions(
     tmp_path: Path,
     monkeypatch,
