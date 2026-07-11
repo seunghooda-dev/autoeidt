@@ -237,7 +237,8 @@ class LocalEngineService {
           featureSet.contains('cancellable_jobs_v1') &&
           featureSet.contains('recent_jobs_v1') &&
           featureSet.contains('timeline_30p_ndf') &&
-          featureSet.contains('v2_overlay_render_v1');
+          featureSet.contains('v2_overlay_render_v1') &&
+          featureSet.contains('v2_overlay_program_preview_v1');
     } catch (_) {
       return false;
     }

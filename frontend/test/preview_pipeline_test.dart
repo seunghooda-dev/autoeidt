@@ -352,6 +352,75 @@ void main() {
     }
   });
 
+  test(
+    'program preview maps only overlapping V2 media into its window',
+    () async {
+      final originalPlatform = VideoPlayerPlatform.instance;
+      final platform = _FakeVideoPlayerPlatform();
+      VideoPlayerPlatform.instance = platform;
+      final api = _ProxyApiClient();
+      final controller = EditorController(
+        apiClient: api,
+        engineService: _ReadyEngineService(),
+        autoStartEngine: false,
+      );
+
+      try {
+        await controller.openMediaFile(
+          PlatformFile(
+            name: 'broadcast.mxf',
+            size: 1024,
+            path: r'C:\media\broadcast.mxf',
+          ),
+        );
+        await _waitUntil(
+          () =>
+              (controller.videoController?.value.isInitialized ?? false) &&
+              !controller.isPreparingPreview,
+        );
+        controller
+          ..segments = const [
+            HighlightSegment(order: 1, start: 10, end: 40, reason: 'base clip'),
+          ]
+          ..videoOverlays = const [
+            VideoOverlayClip(
+              id: 'v2-overlap',
+              sourcePath: r'C:\media\broll.mov',
+              sourceName: 'broll.mov',
+              timelineStart: 4,
+              timelineEnd: 12,
+              sourceStart: 2,
+              sourceEnd: 10,
+            ),
+            VideoOverlayClip(
+              id: 'v2-outside',
+              sourcePath: r'C:\media\later.mov',
+              sourceName: 'later.mov',
+              timelineStart: 20,
+              timelineEnd: 24,
+              sourceStart: 0,
+              sourceEnd: 4,
+            ),
+          ]
+          ..selectedSegmentOrder = 1;
+
+        await controller.setPreviewMonitorMode('program');
+
+        final overlays = api.requestedVideoOverlays.last;
+        expect(overlays, hasLength(1));
+        expect(overlays.single.id, 'v2-overlap');
+        expect(overlays.single.timelineStart, 4);
+        expect(overlays.single.timelineEnd, 8);
+        expect(overlays.single.sourceStart, 2);
+        expect(overlays.single.sourceEnd, 6);
+      } finally {
+        controller.dispose();
+        await platform.close();
+        VideoPlayerPlatform.instance = originalPlatform;
+      }
+    },
+  );
+
   test('program playback continues into the next effect window', () async {
     final originalPlatform = VideoPlayerPlatform.instance;
     final platform = _FakeVideoPlayerPlatform();
@@ -796,6 +865,7 @@ class _ProxyApiClient extends ApiClient {
   final List<double> requestedStarts = [];
   final List<double> requestedDurations = [];
   final List<HighlightSegment?> requestedSegments = [];
+  final List<List<VideoOverlayClip>> requestedVideoOverlays = [];
   final List<String> requestedAspectRatios = [];
 
   @override
@@ -817,6 +887,7 @@ class _ProxyApiClient extends ApiClient {
     double startSeconds = 0,
     double? durationSeconds,
     HighlightSegment? segment,
+    List<VideoOverlayClip> videoOverlays = const [],
     String aspectRatio = '16:9',
   }) async {
     final duration = durationSeconds ?? segment?.outputDuration ?? 8;
@@ -824,6 +895,7 @@ class _ProxyApiClient extends ApiClient {
     requestedStarts.add(startSeconds);
     requestedDurations.add(duration);
     requestedSegments.add(segment);
+    requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
     requestedAspectRatios.add(aspectRatio);
     return LocalPreviewInfo(
       url:
@@ -845,6 +917,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
     double startSeconds = 0,
     double? durationSeconds,
     HighlightSegment? segment,
+    List<VideoOverlayClip> videoOverlays = const [],
     String aspectRatio = '16:9',
   }) async {
     if (segment != null &&
@@ -854,6 +927,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       requestedStarts.add(startSeconds);
       requestedDurations.add(durationSeconds ?? segment.outputDuration);
       requestedSegments.add(segment);
+      requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
       requestedAspectRatios.add(aspectRatio);
       throw StateError('simulated prefetch failure');
     }
@@ -862,6 +936,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       startSeconds: startSeconds,
       durationSeconds: durationSeconds,
       segment: segment,
+      videoOverlays: videoOverlays,
       aspectRatio: aspectRatio,
     );
   }

@@ -292,6 +292,8 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
 ) -> None:
     source = tmp_path / "source.mxf"
     source.write_bytes(b"broadcast-source")
+    overlay_source = tmp_path / "broll.mov"
+    overlay_source.write_bytes(b"overlay-source")
     calls: list[dict] = []
 
     def fake_render(
@@ -308,6 +310,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
                 "video_args": video_args,
                 "output_size": kwargs.get("output_size"),
                 "processing_size": kwargs.get("processing_size"),
+                "video_overlays": kwargs.get("video_overlays"),
             }
         )
         output_path.write_bytes(b"preview")
@@ -331,11 +334,28 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
         ],
     }
 
-    output, cached, source_start, duration = (
-        ffmpeg_service.create_program_preview_proxy(source, segment)
+    overlays = [
+        {
+            "id": "v2-preview",
+            "source_path": str(overlay_source),
+            "source_name": "broll.mov",
+            "timeline_start": 1,
+            "timeline_end": 2,
+            "source_start": 0,
+            "source_end": 1,
+        }
+    ]
+    output, cached, source_start, duration = ffmpeg_service.create_program_preview_proxy(
+        source,
+        segment,
+        video_overlays=overlays,
     )
     cached_output, cached_again, _, _ = (
-        ffmpeg_service.create_program_preview_proxy(source, segment)
+        ffmpeg_service.create_program_preview_proxy(
+            source,
+            segment,
+            video_overlays=overlays,
+        )
     )
 
     assert output == cached_output
@@ -355,6 +375,22 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     ]
     assert calls[0]["output_size"] == (960, 540)
     assert calls[0]["processing_size"] == (960, 540)
+    assert calls[0]["video_overlays"][0]["id"] == "v2-preview"
+    assert calls[0]["video_overlays"][0]["source_path"] == str(
+        overlay_source.resolve()
+    )
+
+    overlay_source.write_bytes(b"updated-overlay-source")
+    changed_output, changed_cached, _, _ = (
+        ffmpeg_service.create_program_preview_proxy(
+            source,
+            segment,
+            video_overlays=overlays,
+        )
+    )
+    assert changed_output != output
+    assert changed_cached is False
+    assert len(calls) == 2
 
 
 def test_program_preview_window_remaps_effects_audio_and_fades(

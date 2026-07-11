@@ -429,11 +429,7 @@ void main() {
     final directory = await io.Directory.systemTemp.createTemp(
       'autoedit_project_file_test',
     );
-    addTearDown(() async {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    });
+    addTearDown(() => _deleteTestDirectory(directory));
     final projectPath =
         '${directory.path}${io.Platform.pathSeparator}news.autoedit.json';
     final controller = EditorController(autoStartEngine: false)
@@ -495,11 +491,7 @@ void main() {
       final directory = await io.Directory.systemTemp.createTemp(
         'autoedit_recovery_service_test',
       );
-      addTearDown(() async {
-        if (await directory.exists()) {
-          await directory.delete(recursive: true);
-        }
-      });
+      addTearDown(() => _deleteTestDirectory(directory));
 
       final service = ProjectRecoveryService(
         directory: directory,
@@ -574,11 +566,7 @@ void main() {
     final directory = await io.Directory.systemTemp.createTemp(
       'autoedit_recovery_session_test',
     );
-    addTearDown(() async {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    });
+    addTearDown(() => _deleteTestDirectory(directory));
     final service = ProjectRecoveryService(directory: directory);
 
     expect(await service.beginSession(), isNull);
@@ -595,11 +583,7 @@ void main() {
       final directory = await io.Directory.systemTemp.createTemp(
         'autoedit_recovery_rotation_test',
       );
-      addTearDown(() async {
-        if (await directory.exists()) {
-          await directory.delete(recursive: true);
-        }
-      });
+      addTearDown(() => _deleteTestDirectory(directory));
 
       var tick = 0;
       final service = ProjectRecoveryService(
@@ -652,11 +636,7 @@ void main() {
     final directory = await io.Directory.systemTemp.createTemp(
       'autoedit_controller_recovery_test',
     );
-    addTearDown(() async {
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    });
+    addTearDown(() => _deleteTestDirectory(directory));
 
     final service = ProjectRecoveryService(
       directory: directory,
@@ -740,11 +720,7 @@ void main() {
       final directory = await io.Directory.systemTemp.createTemp(
         'autoedit_session_restore_test',
       );
-      addTearDown(() async {
-        if (await directory.exists()) {
-          await directory.delete(recursive: true);
-        }
-      });
+      addTearDown(() => _deleteTestDirectory(directory));
       final service = ProjectRecoveryService(directory: directory);
       await service.saveProject(
         const ProjectState(
@@ -3450,6 +3426,24 @@ Future<void> _waitForRecoveryInitialization(EditorController controller) async {
   }
   if (!controller.hasInitializedRecoverySession) {
     throw TimeoutException('recovery session initialization timed out');
+  }
+}
+
+Future<void> _deleteTestDirectory(io.Directory directory) async {
+  io.FileSystemException? lastError;
+  for (var attempt = 0; attempt < 10; attempt++) {
+    try {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+      return;
+    } on io.FileSystemException catch (error) {
+      lastError = error;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
+  if (await directory.exists() && lastError != null) {
+    throw lastError;
   }
 }
 

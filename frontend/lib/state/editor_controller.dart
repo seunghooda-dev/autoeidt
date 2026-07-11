@@ -49,7 +49,9 @@ class EditorController extends ChangeNotifier {
       unawaited(ensureLocalEngine());
     }
     if (_projectRecoveryEnabled) {
-      unawaited(_initializeRecoverySession());
+      final initialization = _initializeRecoverySession();
+      _recoveryInitialization = initialization;
+      unawaited(initialization);
     }
   }
 
@@ -66,6 +68,7 @@ class EditorController extends ChangeNotifier {
   Timer? _pollTimer;
   Timer? _stylePollTimer;
   Timer? _recoverySaveTimer;
+  Future<void>? _recoveryInitialization;
   Timer? _reverseShuttleTimer;
   Timer? _timelineThumbnailTimer;
   final List<_EditorSnapshot> _undoStack = [];
@@ -2268,6 +2271,7 @@ class EditorController extends ChangeNotifier {
     if (!_projectRecoveryEnabled) {
       return;
     }
+    await _awaitRecoveryInitialization();
     try {
       final snapshot = await _recoveryService.readSnapshot();
       if (snapshot == null) {
@@ -2291,6 +2295,7 @@ class EditorController extends ChangeNotifier {
     if (!_projectRecoveryEnabled || !hasRecoverableProject) {
       return;
     }
+    await _awaitRecoveryInitialization();
     try {
       final project = projectState;
       final snapshot = await _recoveryService.saveProject(
@@ -2316,6 +2321,7 @@ class EditorController extends ChangeNotifier {
     if (!_projectRecoveryEnabled) {
       return;
     }
+    await _awaitRecoveryInitialization();
     try {
       final snapshot = await _recoveryService.readVersion(id);
       if (snapshot == null) {
@@ -2461,6 +2467,7 @@ class EditorController extends ChangeNotifier {
     selectedSegmentOrder = null;
     renderUrl = null;
     notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void updateVideoOverlay(VideoOverlayClip updated) {
@@ -2476,6 +2483,7 @@ class EditorController extends ChangeNotifier {
     selectedVideoOverlayId = updated.id;
     renderUrl = null;
     notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void selectVideoOverlay(String id) {
@@ -2497,6 +2505,7 @@ class EditorController extends ChangeNotifier {
     selectedVideoOverlayId = null;
     renderUrl = null;
     notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void toggleSelectedVideoOverlayEnabled() {
@@ -7366,7 +7375,67 @@ class EditorController extends ChangeNotifier {
   }
 
   String _programPreviewSignature(HighlightSegment segment) =>
-      '$exportAspectRatio|${jsonEncode(segment.toJson())}';
+      '$exportAspectRatio|${jsonEncode(segment.toJson())}|'
+      '${jsonEncode(videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList())}';
+
+  List<VideoOverlayClip> _videoOverlaysForProgramWindow(
+    HighlightSegment segment,
+    double sourceStart,
+    double duration,
+  ) {
+    final span = _programSpanForOrder(segment.order);
+    if (span == null || duration <= 0) {
+      return const [];
+    }
+    final outputWindowOffset =
+        (sourceStart - segment.start) / math.max(0.1, segment.playbackSpeed);
+    final sequenceWindowStart = span.sequenceStart + outputWindowOffset;
+    final sequenceWindowEnd = sequenceWindowStart + duration;
+    final mapped = <VideoOverlayClip>[];
+    for (final overlay in videoOverlays) {
+      if (!overlay.enabled) {
+        continue;
+      }
+      final overlapStart = math.max(overlay.timelineStart, sequenceWindowStart);
+      final overlapEnd = math.min(overlay.timelineEnd, sequenceWindowEnd);
+      if (overlapEnd - overlapStart < timecodeFrameDurationSeconds / 2) {
+        continue;
+      }
+      final sourceOffset = overlapStart - overlay.timelineStart;
+      final mappedSourceStart = snapSecondsToFrame(
+        overlay.sourceStart + sourceOffset,
+      );
+      final mappedDuration = math.min(
+        overlapEnd - overlapStart,
+        overlay.sourceEnd - mappedSourceStart,
+      );
+      if (mappedDuration < timecodeFrameDurationSeconds / 2) {
+        continue;
+      }
+      final localStart = snapSecondsToFrame(overlapStart - sequenceWindowStart);
+      mapped.add(
+        overlay.copyWith(
+          timelineStart: localStart,
+          timelineEnd: snapSecondsToFrame(localStart + mappedDuration),
+          sourceStart: mappedSourceStart,
+          sourceEnd: snapSecondsToFrame(mappedSourceStart + mappedDuration),
+        ),
+      );
+    }
+    return mapped;
+  }
+
+  void _refreshProgramPreviewAfterOverlayEdit() {
+    if (!isProgramMonitor) {
+      return;
+    }
+    final segment =
+        _programSpanAt(_programPlayheadSeconds)?.segment ??
+        previewActiveSegment;
+    if (segment != null) {
+      _scheduleProgramPreviewRefresh(segment);
+    }
+  }
 
   ({double sourceStart, double duration}) _programPreviewWindowFor(
     HighlightSegment segment,
@@ -7434,6 +7503,11 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _programPreviewPrefetchKey = key;
+    final previewOverlays = _videoOverlaysForProgramWindow(
+      segment,
+      nextWindow.sourceStart,
+      nextWindow.duration,
+    );
     _programPreviewPrefetchFuture = () async {
       try {
         return await _apiClient.createLocalPreview(
@@ -7441,6 +7515,7 @@ class EditorController extends ChangeNotifier {
           startSeconds: nextWindow.sourceStart,
           durationSeconds: nextWindow.duration,
           segment: segment,
+          videoOverlays: previewOverlays,
           aspectRatio: exportAspectRatio,
         );
       } catch (_) {
@@ -7458,10 +7533,10 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> _refreshProgramPreview(int order) async {
-    if (!isProgramMonitor || selectedSegmentOrder != order) {
+    if (!isProgramMonitor || _programSegmentOrder != order) {
       return;
     }
-    final segment = selectedSegment;
+    final segment = _programSpanForOrder(order)?.segment;
     final path = selectedFile?.path;
     if (segment == null || kIsWeb || path == null || path.isEmpty) {
       return;
@@ -7473,7 +7548,7 @@ class EditorController extends ChangeNotifier {
       focusSeconds: sourceSeconds,
       programSegment: segment,
     );
-    if (isProgramMonitor && selectedSegmentOrder == order) {
+    if (isProgramMonitor && _programSegmentOrder == order) {
       await _seekProgramTo(playhead, autoplay: false);
     }
   }
@@ -7566,6 +7641,13 @@ class EditorController extends ChangeNotifier {
     var reusedController = false;
     try {
       await _ensureLocalEngineForApi();
+      final previewOverlays = programSegment == null
+          ? const <VideoOverlayClip>[]
+          : _videoOverlaysForProgramWindow(
+              programSegment,
+              sourceStart,
+              requestedDuration,
+            );
       LocalPreviewInfo preview;
       if (prefetchedPreview != null) {
         preview =
@@ -7575,6 +7657,7 @@ class EditorController extends ChangeNotifier {
               startSeconds: sourceStart,
               durationSeconds: requestedDuration,
               segment: programSegment,
+              videoOverlays: previewOverlays,
               aspectRatio: exportAspectRatio,
             );
       } else {
@@ -7583,6 +7666,7 @@ class EditorController extends ChangeNotifier {
           startSeconds: sourceStart,
           durationSeconds: requestedDuration,
           segment: programSegment,
+          videoOverlays: previewOverlays,
           aspectRatio: exportAspectRatio,
         );
       }
@@ -9741,6 +9825,10 @@ class EditorController extends ChangeNotifier {
     if (!_projectRecoveryEnabled || _isDisposed || !hasRecoverableProject) {
       return;
     }
+    await _awaitRecoveryInitialization();
+    if (_isDisposed || !hasRecoverableProject) {
+      return;
+    }
     final project = projectState;
     final payload = jsonEncode(project.toJson());
     if (payload == _lastRecoveryPayload) {
@@ -9821,6 +9909,13 @@ class EditorController extends ChangeNotifier {
 
   void _markProjectSaved() {
     _savedProjectRevision = _projectRevision;
+  }
+
+  Future<void> _awaitRecoveryInitialization() async {
+    final initialization = _recoveryInitialization;
+    if (initialization != null) {
+      await initialization;
+    }
   }
 
   void _clearHistory() {

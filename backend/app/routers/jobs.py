@@ -224,6 +224,9 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
                     aspect_ratio=payload.aspect_ratio,
                     source_start_seconds=payload.start_seconds,
                     duration_seconds=payload.duration_seconds,
+                    video_overlays=[
+                        overlay.model_dump() for overlay in payload.video_overlays
+                    ],
                 )
             )
         else:
@@ -232,7 +235,7 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
                 start_seconds=payload.start_seconds,
                 duration_seconds=payload.duration_seconds,
             )
-    except FFmpegError as exc:
+    except (FFmpegError, OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LocalPreviewResponse(
         preview_url=f"/api/jobs/preview/{preview_path.name}",

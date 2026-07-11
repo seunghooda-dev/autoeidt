@@ -104,6 +104,7 @@ class ApiClient {
     double startSeconds = 0,
     double? durationSeconds,
     HighlightSegment? segment,
+    List<VideoOverlayClip> videoOverlays = const [],
     String aspectRatio = '16:9',
   }) async {
     final data = <String, Object>{'path': path, 'start_seconds': startSeconds};
@@ -112,6 +113,9 @@ class ApiClient {
     }
     if (segment != null) {
       data['segment'] = segment.toJson();
+      data['video_overlays'] = videoOverlays
+          .map((overlay) => overlay.toJson())
+          .toList();
       data['aspect_ratio'] = aspectRatio;
     }
     final response = await _dio.post<Map<String, dynamic>>(

@@ -2029,6 +2029,7 @@ def create_program_preview_proxy(
     aspect_ratio: str = "16:9",
     source_start_seconds: float | None = None,
     duration_seconds: float | None = None,
+    video_overlays: list[dict] | None = None,
 ) -> tuple[Path, bool, float, float]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
@@ -2120,8 +2121,18 @@ def create_program_preview_proxy(
     audio_source_start = _segment_audio_start(full_segment) + source_offset
     normalized_segment["audio_start"] = audio_source_start
     normalized_segment["audio_end"] = audio_source_start + source_duration
+    normalized_overlays = [dict(overlay) for overlay in (video_overlays or [])[:16]]
+    overlay_cache_sources: list[str] = []
+    for overlay in normalized_overlays:
+        source_path = Path(str(overlay.get("source_path") or "")).expanduser()
+        resolved_overlay = source_path.resolve(strict=True)
+        stat_overlay = resolved_overlay.stat()
+        overlay["source_path"] = str(resolved_overlay)
+        overlay_cache_sources.append(
+            f"{resolved_overlay}|{stat_overlay.st_size}|{stat_overlay.st_mtime_ns}"
+        )
     cache_payload = json.dumps(
-        normalized_segment,
+        {"segment": normalized_segment, "video_overlays": normalized_overlays},
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
@@ -2130,6 +2141,7 @@ def create_program_preview_proxy(
         f"program-preview-v3-windowed-540p|{normalized_aspect_ratio}|"
         f"{cache_payload}|"
         f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
+        f"|{'|'.join(overlay_cache_sources)}"
     )
     cache_key = f"program_{sha1(cache_identity.encode('utf-8')).hexdigest()}"
     preview_dir = settings.data_dir / "preview_proxies"
@@ -2160,6 +2172,7 @@ def create_program_preview_proxy(
                 aspect_ratio=normalized_aspect_ratio,
                 output_size=output_size,
                 processing_size=(960, 540),
+                video_overlays=normalized_overlays,
             )
             temp_path.replace(output_path)
         finally:
