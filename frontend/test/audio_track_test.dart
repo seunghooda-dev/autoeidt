@@ -413,9 +413,18 @@ void main() {
     controller.redo();
     expect(controller.selectedVideoOverlay?.timelineStart, 5.0);
 
+    controller.applySelectedVideoOverlayPreset('bottom_right');
+    expect(controller.selectedVideoOverlay?.scale, 0.35);
+    expect(controller.selectedVideoOverlay?.positionX, 0.6);
+    expect(controller.selectedVideoOverlay?.positionY, 0.55);
+    controller.setSelectedVideoOverlayOpacity(0.65);
+    expect(controller.selectedVideoOverlay?.opacity, 0.65);
+
     controller.toggleVideoOverlayTrackLock();
     controller.updateVideoOverlay(moved.copyWith(timelineStart: 8));
+    controller.setSelectedVideoOverlayOpacity(0.2);
     expect(controller.selectedVideoOverlay?.timelineStart, 5.0);
+    expect(controller.selectedVideoOverlay?.opacity, 0.65);
     controller.deleteSelectedVideoOverlay();
     expect(controller.videoOverlays, hasLength(1));
 

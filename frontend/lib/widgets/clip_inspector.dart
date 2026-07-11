@@ -13,6 +13,13 @@ class ClipInspector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final selectedOverlay = controller.selectedVideoOverlay;
+    if (selectedOverlay != null) {
+      return _VideoOverlayInspector(
+        controller: controller,
+        overlay: selectedOverlay,
+      );
+    }
     final selected = controller.selectedSegment;
     if (selected == null) {
       return Center(
@@ -513,6 +520,275 @@ class ClipInspector extends StatelessWidget {
               : editor.setSelectedAudioFadeOut,
         ),
       ],
+    );
+  }
+}
+
+class _VideoOverlayInspector extends StatelessWidget {
+  const _VideoOverlayInspector({
+    required this.controller,
+    required this.overlay,
+  });
+
+  final EditorController controller;
+  final VideoOverlayClip overlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final editor = context.read<EditorController>();
+    final enabled = !controller.videoOverlayTrackLocked;
+    return ListView(
+      key: const Key('video-overlay-inspector'),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.layers_outlined, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'V2 Overlay',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    overlay.sourceName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: controller.selectedVideoOverlayIsOffline
+                          ? colorScheme.error
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (controller.videoOverlayTrackLocked)
+              const Tooltip(
+                message: 'V2 track locked',
+                child: Icon(Icons.lock, size: 18),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _TimecodeRow(
+          label: 'V2',
+          start: formatSeconds(overlay.timelineStart),
+          end: formatSeconds(overlay.timelineEnd),
+        ),
+        const SizedBox(height: 8),
+        _TimecodeRow(
+          label: 'SRC',
+          start: formatSeconds(overlay.sourceStart),
+          end: formatSeconds(overlay.sourceEnd),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: FilterChip(
+                selected: overlay.enabled,
+                onSelected: enabled
+                    ? (_) => editor.toggleSelectedVideoOverlayEnabled()
+                    : null,
+                avatar: Icon(
+                  overlay.enabled
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 18,
+                ),
+                label: Text(overlay.enabled ? 'V2 표시' : 'V2 숨김'),
+              ),
+            ),
+            const SizedBox(width: 6),
+            IconButton.outlined(
+              tooltip: '변형 초기화',
+              onPressed: enabled
+                  ? editor.resetSelectedVideoOverlayTransform
+                  : null,
+              icon: const Icon(Icons.restart_alt),
+            ),
+          ],
+        ),
+        if (controller.selectedVideoOverlayIsOffline) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.45),
+              border: Border.all(color: colorScheme.error),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.link_off, size: 17, color: colorScheme.error),
+                const SizedBox(width: 7),
+                const Expanded(child: Text('Source offline')),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        _InspectorSectionHeader(
+          icon: Icons.picture_in_picture_alt_outlined,
+          label: 'Picture in Picture',
+          resetTooltip: 'PIP 변형 초기화',
+          onReset: enabled ? editor.resetSelectedVideoOverlayTransform : null,
+        ),
+        const SizedBox(height: 7),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _OverlayPresetButton(
+              tooltip: '전체 화면',
+              icon: Icons.fullscreen,
+              onPressed: enabled
+                  ? () => editor.applySelectedVideoOverlayPreset('full')
+                  : null,
+            ),
+            _OverlayPresetButton(
+              tooltip: '왼쪽 위 PIP',
+              icon: Icons.north_west,
+              onPressed: enabled
+                  ? () => editor.applySelectedVideoOverlayPreset('top_left')
+                  : null,
+            ),
+            _OverlayPresetButton(
+              tooltip: '오른쪽 위 PIP',
+              icon: Icons.north_east,
+              onPressed: enabled
+                  ? () => editor.applySelectedVideoOverlayPreset('top_right')
+                  : null,
+            ),
+            _OverlayPresetButton(
+              tooltip: '오른쪽 아래 PIP',
+              icon: Icons.south_east,
+              onPressed: enabled
+                  ? () => editor.applySelectedVideoOverlayPreset('bottom_right')
+                  : null,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _PropertySlider(
+          key: const Key('overlay-opacity'),
+          icon: Icons.opacity,
+          label: 'Opacity',
+          value: overlay.opacity,
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(overlay.opacity * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedVideoOverlayOpacity : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-scale'),
+          icon: Icons.zoom_out_map,
+          label: 'Scale',
+          value: overlay.scale,
+          min: 0.1,
+          max: 1,
+          divisions: 90,
+          valueLabel: '${(overlay.scale * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedVideoOverlayScale : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-position-x'),
+          icon: Icons.swap_horiz,
+          label: 'Position X',
+          value: overlay.positionX,
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: '${(overlay.positionX * 100).round()}',
+          onChanged: enabled ? editor.setSelectedVideoOverlayPositionX : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-position-y'),
+          icon: Icons.swap_vert,
+          label: 'Position Y',
+          value: overlay.positionY,
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: '${(overlay.positionY * 100).round()}',
+          onChanged: enabled ? editor.setSelectedVideoOverlayPositionY : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('overlay-rotation'),
+          icon: Icons.rotate_right,
+          label: 'Rotation',
+          value: overlay.rotation,
+          min: -180,
+          max: 180,
+          divisions: 360,
+          valueLabel: '${overlay.rotation.round()}°',
+          onChanged: enabled ? editor.setSelectedVideoOverlayRotation : null,
+        ),
+        const SizedBox(height: 14),
+        Text(
+          overlay.sourcePath,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: enabled ? editor.duplicateSelectedVideoOverlay : null,
+              icon: const Icon(Icons.copy_outlined, size: 17),
+              label: const Text('Duplicate'),
+            ),
+            OutlinedButton.icon(
+              onPressed: enabled
+                  ? () => unawaited(editor.relinkSelectedVideoOverlay())
+                  : null,
+              icon: const Icon(Icons.link, size: 17),
+              label: const Text('Relink'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: enabled ? editor.deleteSelectedVideoOverlay : null,
+              icon: const Icon(Icons.delete_outline, size: 17),
+              label: const Text('Delete'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _OverlayPresetButton extends StatelessWidget {
+  const _OverlayPresetButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.outlined(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
     );
   }
 }

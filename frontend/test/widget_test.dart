@@ -118,6 +118,72 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('clip inspector exposes editable V2 PIP properties', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+      ]
+      ..videoOverlays = const [
+        VideoOverlayClip(
+          id: 'v2-inspector',
+          sourcePath: r'C:\media\broll.mov',
+          sourceName: 'broll.mov',
+          timelineStart: 4,
+          timelineEnd: 10,
+          sourceStart: 2,
+          sourceEnd: 8,
+          opacity: 0.8,
+          scale: 0.45,
+          positionX: 0.5,
+          positionY: -0.4,
+          rotation: 5,
+        ),
+      ]
+      ..selectedVideoOverlayId = 'v2-inspector';
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 380, child: ClipInspector())),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('video-overlay-inspector')), findsOneWidget);
+    expect(find.text('V2 Overlay'), findsOneWidget);
+    expect(find.text('broll.mov'), findsOneWidget);
+    expect(find.byKey(const Key('overlay-opacity')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-scale')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-position-x')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-position-y')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-rotation')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('전체 화면'));
+    await tester.pump();
+    expect(controller.selectedVideoOverlay!.scale, 1);
+    expect(controller.selectedVideoOverlay!.positionX, 0);
+    expect(controller.selectedVideoOverlay!.positionY, 0);
+    expect(controller.selectedVideoOverlay!.rotation, 0);
+
+    await tester.tap(find.text('Duplicate'));
+    await tester.pump();
+    expect(controller.videoOverlays, hasLength(2));
+
+    controller.selectSegment(1);
+    await tester.pump();
+    expect(controller.selectedVideoOverlay, isNull);
+    expect(find.text('Clip 1'), findsOneWidget);
+    controller.dispose();
+  });
+
   testWidgets('preview loading state can queue playback', (tester) async {
     var toggleCount = 0;
     await tester.pumpWidget(

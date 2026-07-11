@@ -685,6 +685,14 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
+  bool get selectedVideoOverlayIsOffline {
+    final path = selectedVideoOverlay?.sourcePath;
+    return !kIsWeb &&
+        path != null &&
+        path.isNotEmpty &&
+        !io.File(path).existsSync();
+  }
+
   double get selectedMotionLocalTime {
     final selected = selectedSegment;
     if (selected == null) {
@@ -2516,6 +2524,126 @@ class EditorController extends ChangeNotifier {
     updateVideoOverlay(overlay.copyWith(enabled: !overlay.enabled));
   }
 
+  void setSelectedVideoOverlayOpacity(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(opacity: value.clamp(0.0, 1.0).toDouble()),
+    );
+  }
+
+  void setSelectedVideoOverlayScale(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(scale: value.clamp(0.1, 1.0).toDouble()),
+    );
+  }
+
+  void setSelectedVideoOverlayPositionX(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(positionX: value.clamp(-1.0, 1.0).toDouble()),
+    );
+  }
+
+  void setSelectedVideoOverlayPositionY(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(positionY: value.clamp(-1.0, 1.0).toDouble()),
+    );
+  }
+
+  void setSelectedVideoOverlayRotation(double value) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(rotation: value.clamp(-180.0, 180.0).toDouble()),
+    );
+  }
+
+  void applySelectedVideoOverlayPreset(String preset) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null) {
+      return;
+    }
+    final values = switch (preset) {
+      'full' => (scale: 1.0, x: 0.0, y: 0.0),
+      'top_left' => (scale: 0.35, x: -0.6, y: -0.55),
+      'bottom_right' => (scale: 0.35, x: 0.6, y: 0.55),
+      _ => (scale: 0.35, x: 0.6, y: -0.55),
+    };
+    updateVideoOverlay(
+      overlay.copyWith(
+        scale: values.scale,
+        positionX: values.x,
+        positionY: values.y,
+        rotation: 0,
+        opacity: 1,
+      ),
+    );
+  }
+
+  void resetSelectedVideoOverlayTransform() {
+    applySelectedVideoOverlayPreset('top_right');
+  }
+
+  void duplicateSelectedVideoOverlay() {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || videoOverlayTrackLocked) {
+      return;
+    }
+    final duration = overlay.timelineDuration;
+    final sequenceDuration = outputDurationSeconds;
+    final requestedStart = overlay.timelineEnd + timecodeFrameDurationSeconds;
+    final start = requestedStart + duration <= sequenceDuration
+        ? requestedStart
+        : math.max(0.0, overlay.timelineStart - duration);
+    final duplicate = overlay.copyWith(
+      id: 'v2-${DateTime.now().microsecondsSinceEpoch}',
+      timelineStart: snapSecondsToFrame(start),
+      timelineEnd: snapSecondsToFrame(start + duration),
+    );
+    _commitHistory();
+    videoOverlays = [...videoOverlays, duplicate]
+      ..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    selectedVideoOverlayId = duplicate.id;
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  Future<void> relinkSelectedVideoOverlay() async {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || videoOverlayTrackLocked) {
+      return;
+    }
+    final files = await pickMediaAssets(allowMultiple: false);
+    if (files.isEmpty) {
+      return;
+    }
+    final replacement = files.first;
+    final path = replacement.path;
+    if (path == null || path.isEmpty) {
+      return;
+    }
+    updateVideoOverlay(
+      overlay.copyWith(sourcePath: path, sourceName: replacement.name),
+    );
+  }
+
   void toggleVideoOverlayTrackTarget() {
     videoOverlayTrackTargeted = !videoOverlayTrackTargeted;
     notifyListeners();
@@ -2534,15 +2662,17 @@ class EditorController extends ChangeNotifier {
   void selectSegment(int order) {
     if (segments.any((segment) => segment.order == order)) {
       selectedSegmentOrder = order;
+      selectedVideoOverlayId = null;
       notifyListeners();
     }
   }
 
   void clearSegmentSelection() {
-    if (selectedSegmentOrder == null) {
+    if (selectedSegmentOrder == null && selectedVideoOverlayId == null) {
       return;
     }
     selectedSegmentOrder = null;
+    selectedVideoOverlayId = null;
     notifyListeners();
   }
 
@@ -2922,10 +3052,13 @@ class EditorController extends ChangeNotifier {
 
   void selectSegmentAt(double seconds) {
     final segment = _segmentAtTimelinePoint(seconds);
-    if (segment == null || selectedSegmentOrder == segment.order) {
+    if (segment == null ||
+        (selectedSegmentOrder == segment.order &&
+            selectedVideoOverlayId == null)) {
       return;
     }
     selectedSegmentOrder = segment.order;
+    selectedVideoOverlayId = null;
     notifyListeners();
   }
 
@@ -2950,10 +3083,11 @@ class EditorController extends ChangeNotifier {
         ? fallbackIndex
         : (currentIndex + direction).clamp(0, segments.length - 1).toInt();
     final targetOrder = segments[targetIndex].order;
-    if (selectedSegmentOrder == targetOrder) {
+    if (selectedSegmentOrder == targetOrder && selectedVideoOverlayId == null) {
       return;
     }
     selectedSegmentOrder = targetOrder;
+    selectedVideoOverlayId = null;
     notifyListeners();
   }
 
