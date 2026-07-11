@@ -126,6 +126,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final controller = EditorController(autoStartEngine: false)
+      ..activeVideoTrackCount = 4
+      ..activeAudioTrackCount = 8
       ..segments = const [
         HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
       ]
@@ -165,11 +167,24 @@ void main() {
     expect(find.byKey(const Key('overlay-position-x')), findsOneWidget);
     expect(find.byKey(const Key('overlay-position-y')), findsOneWidget);
     expect(find.byKey(const Key('overlay-rotation')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-video-track')), findsOneWidget);
+    expect(find.byKey(const Key('overlay-audio-track')), findsOneWidget);
     expect(find.text('A3 Overlay Audio'), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-volume')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-pan')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-fade-in')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-fade-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('overlay-video-track')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('V4').last);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('overlay-audio-track')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A8').last);
+    await tester.pump();
+    expect(controller.selectedVideoOverlay!.videoTrack, 4);
+    expect(controller.selectedVideoOverlay!.audioTrack, 8);
 
     await tester.tap(find.byTooltip('전체 화면'));
     await tester.pump();
@@ -220,6 +235,44 @@ void main() {
 
     expect(find.text('AutoEdit'), findsOneWidget);
     expect(find.text('Import'), findsWidgets);
+  });
+
+  testWidgets('track menu activates video and audio tracks', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+      ];
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const HighlightEditorApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('track-activation-menu')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('track-activation-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Activate V3'));
+    await tester.pumpAndSettle();
+    expect(controller.activeVideoTrackCount, 3);
+    expect(find.byKey(const Key('track-header-v3')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('track-activation-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Activate A4'));
+    await tester.pumpAndSettle();
+    expect(controller.activeAudioTrackCount, 4);
+    expect(find.byKey(const Key('track-header-a4')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
   });
 
   testWidgets('source and program monitors expose distinct sequence time', (
@@ -668,7 +721,7 @@ void main() {
     );
     expect(overlay, findsOneWidget);
     expect(overlayAudio, findsOneWidget);
-    expect(find.text('broll.mov'), findsWidgets);
+    expect(find.textContaining('broll.mov'), findsNWidgets(2));
     await tester.tap(overlay);
     await tester.pump();
     expect(selectedOverlayId, 'v2-test');
@@ -677,6 +730,101 @@ void main() {
     await tester.pump();
     expect(changedOverlay, isNotNull);
     expect(changedOverlay!.timelineStart, greaterThan(5));
+  });
+
+  testWidgets('timeline activates and scrolls through V4 and A8 tracks', (
+    tester,
+  ) async {
+    var targetedVideoTrack = 0;
+    var targetedAudioTrack = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 230,
+            child: TimelineEditor(
+              duration: 30,
+              sequenceMode: true,
+              sourceDuration: 30,
+              activeVideoTrackCount: 4,
+              activeAudioTrackCount: 8,
+              targetedVideoOverlayTrack: 4,
+              targetedOverlayAudioTrack: 8,
+              segments: const [
+                HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+              ],
+              videoOverlays: const [
+                VideoOverlayClip(
+                  id: 'v4-a8-test',
+                  sourcePath: r'C:\media\layer.mov',
+                  sourceName: 'layer.mov',
+                  timelineStart: 5,
+                  timelineEnd: 10,
+                  sourceStart: 0,
+                  sourceEnd: 5,
+                  videoTrack: 4,
+                  audioTrack: 8,
+                ),
+              ],
+              playheadSeconds: 0,
+              selectedSegmentOrder: null,
+              selectedVideoOverlayId: 'v4-a8-test',
+              markIn: null,
+              markOut: null,
+              timelineMarkers: const [],
+              waveform: const [],
+              zoom: 1,
+              trackHeightScale: 1,
+              snappingEnabled: true,
+              videoTrackTargeted: true,
+              videoOverlayTrackTargeted: true,
+              audioTrack1Targeted: true,
+              audioTrack2Targeted: true,
+              videoTrackLocked: false,
+              videoOverlayTrackLocked: false,
+              audioTrackLocked: false,
+              audioTrack1Locked: false,
+              audioTrack2Locked: false,
+              razorTool: false,
+              onSegmentChanged: (_) {},
+              onScrub: (_) {},
+              onSegmentSelected: (_) {},
+              onToggleVideoOverlayTargetAt: (track) {
+                targetedVideoTrack = track;
+              },
+              onToggleOverlayAudioTargetAt: (track) {
+                targetedAudioTrack = track;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('track-header-v4')), findsOneWidget);
+    expect(find.byKey(const Key('track-header-v3')), findsOneWidget);
+    expect(find.byKey(const Key('track-header-a8')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('video-overlay-v4-a8-test')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('video-overlay-audio-v4-a8-test')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('V4'));
+    await tester.pump();
+    expect(targetedVideoTrack, 4);
+    await tester.scrollUntilVisible(
+      find.text('A8'),
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('A8'));
+    await tester.pump();
+    expect(targetedAudioTrack, 8);
   });
 
   testWidgets('timeline paints multiple cached video frames inside V1 clips', (

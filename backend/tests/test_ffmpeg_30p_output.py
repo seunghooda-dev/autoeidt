@@ -124,6 +124,65 @@ def test_render_composites_v2_overlay_before_captions(
     assert ";[a3mix0]anull[outa]" in filter_complex
 
 
+def test_render_layers_higher_video_tracks_last(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+    v2_path = tmp_path / "v2.mov"
+    v4_path = tmp_path / "v4.mov"
+    v2_path.write_bytes(b"v2")
+    v4_path.write_bytes(b"v4")
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [{"order": 1, "start": 0, "end": 6, "reason": "base"}],
+        tmp_path / "layered.mp4",
+        video_overlays=[
+            {
+                "id": "top",
+                "source_path": str(v4_path),
+                "timeline_start": 0,
+                "timeline_end": 2,
+                "source_start": 0,
+                "source_end": 2,
+                "video_track": 4,
+            },
+            {
+                "id": "lower",
+                "source_path": str(v2_path),
+                "timeline_start": 0,
+                "timeline_end": 2,
+                "source_start": 0,
+                "source_end": 2,
+                "video_track": 2,
+            },
+        ],
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+    input_paths = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-i"
+    ]
+    assert input_paths[1:] == [str(v2_path.resolve()), str(v4_path.resolve())]
+    assert filter_complex.index("[1:v:0]") < filter_complex.index("[2:v:0]")
+    assert filter_complex.index("[v2base0]") < filter_complex.index("[v2base1]")
+
+
 def test_render_builds_video_and_constant_power_audio_transitions(
     tmp_path: Path,
     monkeypatch,

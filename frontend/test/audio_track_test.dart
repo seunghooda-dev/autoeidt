@@ -290,8 +290,12 @@ void main() {
           audioPan: -0.25,
           audioFadeIn: 0.5,
           audioFadeOut: 0.75,
+          videoTrack: 4,
+          audioTrack: 8,
         ),
       ],
+      activeVideoTrackCount: 4,
+      activeAudioTrackCount: 8,
       transcript: [
         TranscriptSegment(start: 10.5, end: 14.2, text: '보존되어야 하는 전체 STT 원문'),
       ],
@@ -376,6 +380,10 @@ void main() {
     expect(restored.videoOverlays.single.audioPan, -0.25);
     expect(restored.videoOverlays.single.audioFadeIn, 0.5);
     expect(restored.videoOverlays.single.audioFadeOut, 0.75);
+    expect(restored.videoOverlays.single.videoTrack, 4);
+    expect(restored.videoOverlays.single.audioTrack, 8);
+    expect(restored.activeVideoTrackCount, 4);
+    expect(restored.activeAudioTrackCount, 8);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
@@ -465,6 +473,77 @@ void main() {
     controller.toggleVideoOverlayTrackLock();
     controller.deleteSelectedVideoOverlay();
     expect(controller.videoOverlays, isEmpty);
+    controller.dispose();
+  });
+
+  test('video and audio tracks activate to V4 and A8 with safe removal', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base video'),
+      ];
+
+    expect(controller.activeVideoTrackCount, 2);
+    expect(controller.activeAudioTrackCount, 3);
+    controller.activateVideoTrack();
+    controller.activateVideoTrack();
+    controller.activateVideoTrack();
+    for (var index = 0; index < 6; index++) {
+      controller.activateAudioTrack();
+    }
+    expect(controller.activeVideoTrackCount, 4);
+    expect(controller.activeAudioTrackCount, 8);
+
+    controller.toggleVideoOverlayTrackTargetAt(4);
+    controller.toggleOverlayAudioTrackTargetAt(8);
+    controller.addVideoOverlay(
+      sourcePath: r'C:\media\layer.mov',
+      sourceName: 'layer.mov',
+      sourceDuration: 5,
+    );
+    expect(controller.selectedVideoOverlay?.videoTrack, 4);
+    expect(controller.selectedVideoOverlay?.audioTrack, 8);
+    expect(controller.canDeactivateVideoTrack, isFalse);
+    expect(controller.canDeactivateAudioTrack, isFalse);
+    controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.selectedVideoOverlay?.muted, isFalse);
+    controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.selectedVideoOverlay?.muted, isTrue);
+
+    controller.setSelectedVideoOverlayVideoTrack(3);
+    controller.setSelectedVideoOverlayAudioTrack(7);
+    expect(controller.selectedVideoOverlay?.videoTrack, 3);
+    expect(controller.selectedVideoOverlay?.audioTrack, 7);
+    controller.deactivateHighestVideoTrack();
+    controller.deactivateHighestAudioTrack();
+    expect(controller.activeVideoTrackCount, 3);
+    expect(controller.activeAudioTrackCount, 7);
+
+    controller.undo();
+    expect(controller.activeAudioTrackCount, 8);
+    controller.dispose();
+  });
+
+  test('adding an overlay reactivates and targets V2 and A3', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'base'),
+      ];
+    controller.deactivateHighestVideoTrack();
+    controller.deactivateHighestAudioTrack();
+    expect(controller.activeVideoTrackCount, 1);
+    expect(controller.activeAudioTrackCount, 2);
+
+    controller.addVideoOverlay(
+      sourcePath: r'C:\media\overlay.mov',
+      sourceName: 'overlay.mov',
+    );
+
+    expect(controller.activeVideoTrackCount, 2);
+    expect(controller.activeAudioTrackCount, 3);
+    expect(controller.targetedVideoOverlayTrack, 2);
+    expect(controller.targetedOverlayAudioTrack, 3);
+    expect(controller.videoOverlayTrackTargeted, isTrue);
+    expect(controller.audioTrack3Targeted, isTrue);
     controller.dispose();
   });
 

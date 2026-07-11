@@ -181,6 +181,8 @@ class VideoOverlayClip {
     this.audioPan = 0.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
+    this.videoTrack = 2,
+    this.audioTrack = 3,
   });
 
   final String id;
@@ -201,6 +203,8 @@ class VideoOverlayClip {
   final double audioPan;
   final double audioFadeIn;
   final double audioFadeOut;
+  final int videoTrack;
+  final int audioTrack;
 
   double get timelineDuration => timelineEnd - timelineStart;
   double get sourceDuration => sourceEnd - sourceStart;
@@ -224,6 +228,8 @@ class VideoOverlayClip {
     double? audioPan,
     double? audioFadeIn,
     double? audioFadeOut,
+    int? videoTrack,
+    int? audioTrack,
   }) {
     return VideoOverlayClip(
       id: id ?? this.id,
@@ -244,6 +250,8 @@ class VideoOverlayClip {
       audioPan: audioPan ?? this.audioPan,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
+      videoTrack: videoTrack ?? this.videoTrack,
+      audioTrack: audioTrack ?? this.audioTrack,
     );
   }
 
@@ -296,6 +304,8 @@ class VideoOverlayClip {
       audioFadeOut: ((json['audio_fade_out'] as num?)?.toDouble() ?? 0.0)
           .clamp(0.0, 10.0)
           .toDouble(),
+      videoTrack: ((json['video_track'] as num?)?.toInt() ?? 2).clamp(2, 4),
+      audioTrack: ((json['audio_track'] as num?)?.toInt() ?? 3).clamp(3, 8),
     );
   }
 
@@ -318,6 +328,8 @@ class VideoOverlayClip {
     'audio_pan': audioPan,
     'audio_fade_in': audioFadeIn,
     'audio_fade_out': audioFadeOut,
+    'video_track': videoTrack.clamp(2, 4),
+    'audio_track': audioTrack.clamp(3, 8),
   };
 }
 

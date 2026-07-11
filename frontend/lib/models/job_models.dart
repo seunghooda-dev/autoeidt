@@ -872,6 +872,8 @@ class ProjectState {
     required this.duration,
     required this.segments,
     this.videoOverlays = const [],
+    this.activeVideoTrackCount = 2,
+    this.activeAudioTrackCount = 3,
     this.transcript = const [],
     required this.captions,
     required this.waveform,
@@ -899,6 +901,8 @@ class ProjectState {
   final String timelineTimecodeMode;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final int activeVideoTrackCount;
+  final int activeAudioTrackCount;
   final List<TranscriptSegment> transcript;
   final List<CaptionSegment> captions;
   final List<double> waveform;
@@ -924,6 +928,30 @@ class ProjectState {
     final rawShortsCandidates =
         json['shorts_candidates'] as List<dynamic>? ?? const [];
     final exportAspectRatio = json['export_aspect_ratio'] as String? ?? '16:9';
+    final videoOverlays = rawVideoOverlays
+        .whereType<Map>()
+        .map(
+          (item) => VideoOverlayClip.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .toList();
+    final highestVideoTrack = videoOverlays.fold<int>(
+      1,
+      (highest, overlay) =>
+          overlay.videoTrack > highest ? overlay.videoTrack : highest,
+    );
+    final highestAudioTrack = videoOverlays.fold<int>(
+      2,
+      (highest, overlay) =>
+          overlay.audioTrack > highest ? overlay.audioTrack : highest,
+    );
+    final activeVideoTrackCount =
+        ((json['active_video_track_count'] as num?)?.toInt() ?? 2)
+            .clamp(highestVideoTrack, 4)
+            .toInt();
+    final activeAudioTrackCount =
+        ((json['active_audio_track_count'] as num?)?.toInt() ?? 3)
+            .clamp(highestAudioTrack, 8)
+            .toInt();
     return ProjectState(
       name: json['name'] as String? ?? 'AutoEdit Project',
       jobId: json['job_id'] as String?,
@@ -935,13 +963,9 @@ class ProjectState {
             (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
-      videoOverlays: rawVideoOverlays
-          .whereType<Map>()
-          .map(
-            (item) =>
-                VideoOverlayClip.fromJson(Map<String, dynamic>.from(item)),
-          )
-          .toList(),
+      videoOverlays: videoOverlays,
+      activeVideoTrackCount: activeVideoTrackCount,
+      activeAudioTrackCount: activeAudioTrackCount,
       transcript: rawTranscript
           .whereType<Map>()
           .map(
@@ -988,6 +1012,8 @@ class ProjectState {
       'timeline_timecode_mode': 'non_drop',
       'segments': segments.map((item) => item.toJson()).toList(),
       'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
+      'active_video_track_count': activeVideoTrackCount.clamp(1, 4),
+      'active_audio_track_count': activeAudioTrackCount.clamp(2, 8),
       'transcript': transcript.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,

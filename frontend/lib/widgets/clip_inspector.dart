@@ -550,7 +550,7 @@ class _VideoOverlayInspector extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'V2 Overlay',
+                    'V${overlay.videoTrack} Overlay',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -569,15 +569,15 @@ class _VideoOverlayInspector extends StatelessWidget {
               ),
             ),
             if (controller.videoOverlayTrackLocked)
-              const Tooltip(
-                message: 'V2 track locked',
-                child: Icon(Icons.lock, size: 18),
+              Tooltip(
+                message: 'V${overlay.videoTrack} track locked',
+                child: const Icon(Icons.lock, size: 18),
               ),
           ],
         ),
         const SizedBox(height: 12),
         _TimecodeRow(
-          label: 'V2',
+          label: 'V${overlay.videoTrack}',
           start: formatSeconds(overlay.timelineStart),
           end: formatSeconds(overlay.timelineEnd),
         ),
@@ -586,6 +586,70 @@ class _VideoOverlayInspector extends StatelessWidget {
           label: 'SRC',
           start: formatSeconds(overlay.sourceStart),
           end: formatSeconds(overlay.sourceEnd),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                key: const Key('overlay-video-track'),
+                initialValue: overlay.videoTrack
+                    .clamp(2, controller.activeVideoTrackCount)
+                    .toInt(),
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Video track',
+                  prefixIcon: Icon(Icons.video_collection_outlined, size: 18),
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (
+                    var track = 2;
+                    track <= controller.activeVideoTrackCount;
+                    track += 1
+                  )
+                    DropdownMenuItem(value: track, child: Text('V$track')),
+                ],
+                onChanged: enabled
+                    ? (track) {
+                        if (track != null) {
+                          editor.setSelectedVideoOverlayVideoTrack(track);
+                        }
+                      }
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                key: const Key('overlay-audio-track'),
+                initialValue: overlay.audioTrack
+                    .clamp(3, controller.activeAudioTrackCount)
+                    .toInt(),
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Audio track',
+                  prefixIcon: Icon(Icons.graphic_eq, size: 18),
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (
+                    var track = 3;
+                    track <= controller.activeAudioTrackCount;
+                    track += 1
+                  )
+                    DropdownMenuItem(value: track, child: Text('A$track')),
+                ],
+                onChanged: controller.audioTrack3Locked
+                    ? null
+                    : (track) {
+                        if (track != null) {
+                          editor.setSelectedVideoOverlayAudioTrack(track);
+                        }
+                      },
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Row(
@@ -602,7 +666,11 @@ class _VideoOverlayInspector extends StatelessWidget {
                       : Icons.visibility_off_outlined,
                   size: 18,
                 ),
-                label: Text(overlay.enabled ? 'V2 표시' : 'V2 숨김'),
+                label: Text(
+                  overlay.enabled
+                      ? 'V${overlay.videoTrack} 표시'
+                      : 'V${overlay.videoTrack} 숨김',
+                ),
               ),
             ),
             const SizedBox(width: 6),
@@ -737,8 +805,8 @@ class _VideoOverlayInspector extends StatelessWidget {
         const SizedBox(height: 14),
         _InspectorSectionHeader(
           icon: Icons.graphic_eq,
-          label: 'A3 Overlay Audio',
-          resetTooltip: 'A3 오디오 초기화',
+          label: 'A${overlay.audioTrack} Overlay Audio',
+          resetTooltip: 'A${overlay.audioTrack} 오디오 초기화',
           onReset: controller.audioTrack3Locked
               ? null
               : editor.resetSelectedVideoOverlayAudio,
@@ -755,7 +823,11 @@ class _VideoOverlayInspector extends StatelessWidget {
                 : Icons.volume_up_outlined,
             size: 18,
           ),
-          label: Text(overlay.muted ? 'A3 음소거' : 'A3 활성'),
+          label: Text(
+            overlay.muted
+                ? 'A${overlay.audioTrack} 음소거'
+                : 'A${overlay.audioTrack} 활성',
+          ),
         ),
         const SizedBox(height: 8),
         _PropertySlider(

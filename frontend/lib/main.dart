@@ -1624,11 +1624,13 @@ class _MediaPanel extends StatelessWidget {
               !asset.isOffline &&
               editor.segments.isNotEmpty &&
               !editor.videoOverlayTrackLocked,
-          child: const ListTile(
+          child: ListTile(
             dense: true,
-            leading: Icon(Icons.layers_outlined),
-            title: Text('Add to V2 at playhead'),
-            subtitle: Text('B-roll / picture-in-picture'),
+            leading: const Icon(Icons.layers_outlined),
+            title: Text(
+              'Add to V${editor.videoOverlayTrackTargeted ? editor.targetedVideoOverlayTrack : 2} at playhead',
+            ),
+            subtitle: const Text('B-roll / picture-in-picture'),
           ),
         ),
         PopupMenuItem(
@@ -2208,6 +2210,11 @@ class _TimelinePanel extends StatelessWidget {
                         onPressed: editor.cycleTimelineTrackHeight,
                       ),
                       const SizedBox(width: 6),
+                      _TrackActivationMenu(
+                        controller: controller,
+                        editor: editor,
+                      ),
+                      const SizedBox(width: 6),
                       _AudioTrackBusMenu(
                         controller: controller,
                         editor: editor,
@@ -2303,7 +2310,7 @@ class _TimelineDropTarget extends StatelessWidget {
                         context
                             .watch<EditorController>()
                             .videoOverlayTrackTargeted
-                        ? 'Drop to place on V2 at playhead'
+                        ? 'Drop to place on V${context.watch<EditorController>().targetedVideoOverlayTrack} at playhead'
                         : 'Drop to analyze on V1/A1',
                   ),
                 ),
@@ -2666,6 +2673,10 @@ class _TimelineEditorBody extends StatelessWidget {
       audioTrack1Targeted: controller.audioTrack1Targeted,
       audioTrack2Targeted: controller.audioTrack2Targeted,
       audioTrack3Targeted: controller.audioTrack3Targeted,
+      activeVideoTrackCount: controller.activeVideoTrackCount,
+      activeAudioTrackCount: controller.activeAudioTrackCount,
+      targetedVideoOverlayTrack: controller.targetedVideoOverlayTrack,
+      targetedOverlayAudioTrack: controller.targetedOverlayAudioTrack,
       videoTrackLocked: controller.videoTrackLocked,
       videoOverlayTrackLocked: controller.videoOverlayTrackLocked,
       videoOverlayTrackVisible: controller.videoOverlayTrackVisible,
@@ -2848,6 +2859,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleVideoOverlayTarget: context
           .read<EditorController>()
           .toggleVideoOverlayTrackTarget,
+      onToggleVideoOverlayTargetAt: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackTargetAt,
       onToggleVideoOverlayLock: context
           .read<EditorController>()
           .toggleVideoOverlayTrackLock,
@@ -2857,6 +2871,12 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleVideoOverlayAudio: context
           .read<EditorController>()
           .toggleAllVideoOverlayAudio,
+      onToggleOverlayAudioTargetAt: context
+          .read<EditorController>()
+          .toggleOverlayAudioTrackTargetAt,
+      onToggleOverlayAudioAt: context
+          .read<EditorController>()
+          .toggleVideoOverlayAudioTrack,
       onDeleteVideoOverlay: context
           .read<EditorController>()
           .deleteSelectedVideoOverlay,
@@ -3217,6 +3237,114 @@ class _TrackControlButton extends StatelessWidget {
           minimumSize: const Size(0, 32),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackActivationMenu extends StatelessWidget {
+  const _TrackActivationMenu({required this.controller, required this.editor});
+
+  final EditorController controller;
+  final EditorController editor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PopupMenuButton<String>(
+      key: const Key('track-activation-menu'),
+      tooltip: '비디오·오디오 트랙 활성화',
+      onSelected: (value) {
+        switch (value) {
+          case 'add-video':
+            editor.activateVideoTrack();
+            break;
+          case 'remove-video':
+            editor.deactivateHighestVideoTrack();
+            break;
+          case 'add-audio':
+            editor.activateAudioTrack();
+            break;
+          case 'remove-audio':
+            editor.deactivateHighestAudioTrack();
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          value: 'add-video',
+          enabled: controller.canActivateVideoTrack,
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.video_call_outlined),
+            title: Text(
+              controller.canActivateVideoTrack
+                  ? 'Activate V${controller.activeVideoTrackCount + 1}'
+                  : 'Video tracks maxed at V4',
+            ),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'remove-video',
+          enabled: controller.canDeactivateVideoTrack,
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.video_collection_outlined),
+            title: Text('Deactivate V${controller.activeVideoTrackCount}'),
+            subtitle: controller.canDeactivateVideoTrack
+                ? const Text('Highest empty video track')
+                : const Text('Track contains a clip or V1 is the minimum'),
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'add-audio',
+          enabled: controller.canActivateAudioTrack,
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.add_chart),
+            title: Text(
+              controller.canActivateAudioTrack
+                  ? 'Activate A${controller.activeAudioTrackCount + 1}'
+                  : 'Audio tracks maxed at A8',
+            ),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'remove-audio',
+          enabled: controller.canDeactivateAudioTrack,
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.multitrack_audio),
+            title: Text('Deactivate A${controller.activeAudioTrackCount}'),
+            subtitle: controller.canDeactivateAudioTrack
+                ? const Text('Highest empty audio track')
+                : const Text('Track contains a clip or A2 is the minimum'),
+          ),
+        ),
+      ],
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: colorScheme.outline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_to_queue, size: 16, color: colorScheme.onSurface),
+            const SizedBox(width: 6),
+            Text(
+              'V${controller.activeVideoTrackCount} / A${controller.activeAudioTrackCount}',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );

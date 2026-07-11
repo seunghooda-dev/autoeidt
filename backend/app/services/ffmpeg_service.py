@@ -1629,6 +1629,12 @@ def _render_reencode_with_video_args(
                 "has_audio": _audio_stream_count(overlay_path) > 0,
             }
         )
+    overlay_inputs.sort(
+        key=lambda overlay: (
+            max(2, min(int(overlay.get("video_track", 2)), 4)),
+            float(overlay["timeline_start"]),
+        )
+    )
     source_starts = [float(segment["start"]) for segment in segments]
     source_starts.extend(_segment_audio_start(segment) for segment in segments)
     input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)

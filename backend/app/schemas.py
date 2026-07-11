@@ -364,6 +364,8 @@ class VideoOverlayClip(BaseModel):
     audio_pan: float = 0.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
+    video_track: int = 2
+    audio_track: int = 3
 
     @field_validator(
         "timeline_start", "timeline_end", "source_start", "source_end", mode="before"
@@ -414,6 +416,16 @@ class VideoOverlayClip(BaseModel):
     @classmethod
     def audio_fade_is_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("video_track")
+    @classmethod
+    def video_track_is_safe(cls, value: int) -> int:
+        return max(2, min(int(value), 4))
+
+    @field_validator("audio_track")
+    @classmethod
+    def audio_track_is_safe(cls, value: int) -> int:
+        return max(3, min(int(value), 8))
 
 
 class LocalPreviewRequest(BaseModel):
@@ -722,6 +734,8 @@ class ProjectState(BaseModel):
     timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     segments: list[HighlightSegment] = Field(default_factory=list)
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list)
+    active_video_track_count: int = Field(default=2, ge=1, le=4)
+    active_audio_track_count: int = Field(default=3, ge=2, le=8)
     transcript: list[TranscriptSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
@@ -766,6 +780,22 @@ class ProjectState(BaseModel):
             else "16:9"
         )
         self.selected_export_profiles = normalized or [fallback]
+        highest_video_track = max(
+            (overlay.video_track for overlay in self.video_overlays),
+            default=1,
+        )
+        highest_audio_track = max(
+            (overlay.audio_track for overlay in self.video_overlays),
+            default=2,
+        )
+        self.active_video_track_count = max(
+            self.active_video_track_count,
+            highest_video_track,
+        )
+        self.active_audio_track_count = max(
+            self.active_audio_track_count,
+            highest_audio_track,
+        )
         return self
 
 

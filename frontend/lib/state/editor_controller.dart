@@ -132,6 +132,10 @@ class EditorController extends ChangeNotifier {
   bool audioTrack1Targeted = true;
   bool audioTrack2Targeted = true;
   bool audioTrack3Targeted = true;
+  int activeVideoTrackCount = 2;
+  int activeAudioTrackCount = 3;
+  int targetedVideoOverlayTrack = 2;
+  int targetedOverlayAudioTrack = 3;
   bool videoTrackLocked = false;
   bool videoOverlayTrackLocked = false;
   bool videoOverlayTrackVisible = true;
@@ -1191,6 +1195,8 @@ class EditorController extends ChangeNotifier {
       duration: duration,
       segments: segments,
       videoOverlays: videoOverlays,
+      activeVideoTrackCount: activeVideoTrackCount,
+      activeAudioTrackCount: activeAudioTrackCount,
       transcript: transcript,
       captions: captions,
       waveform: waveform,
@@ -1502,6 +1508,10 @@ class EditorController extends ChangeNotifier {
     audioTrack1Targeted = true;
     audioTrack2Targeted = true;
     audioTrack3Targeted = true;
+    activeVideoTrackCount = 2;
+    activeAudioTrackCount = 3;
+    targetedVideoOverlayTrack = 2;
+    targetedOverlayAudioTrack = 3;
     videoTrackLocked = false;
     videoOverlayTrackLocked = false;
     videoOverlayTrackVisible = true;
@@ -1858,9 +1868,9 @@ class EditorController extends ChangeNotifier {
         id,
         segments,
         captions: captions,
-        videoOverlays: videoOverlays
-            .where((overlay) => overlay.enabled)
-            .toList(),
+        videoOverlays: videoOverlayTrackVisible
+            ? videoOverlays.where((overlay) => overlay.enabled).toList()
+            : const [],
         captionStyle: captionRenderStyle,
         aspectRatio: aspectRatio,
         includeCaptions: includeCaptions,
@@ -1918,9 +1928,9 @@ class EditorController extends ChangeNotifier {
             },
         ],
         captions: captions,
-        videoOverlays: videoOverlays
-            .where((overlay) => overlay.enabled)
-            .toList(),
+        videoOverlays: videoOverlayTrackVisible
+            ? videoOverlays.where((overlay) => overlay.enabled).toList()
+            : const [],
         captionStyle: captionRenderStyle,
         aspectRatio: selectedExportProfiles.first,
         includeCaptions: includeCaptions,
@@ -2440,6 +2450,20 @@ class EditorController extends ChangeNotifier {
     if (videoOverlayTrackLocked || sourcePath.trim().isEmpty) {
       return;
     }
+    _commitHistory();
+    if (activeVideoTrackCount < 2) {
+      activeVideoTrackCount = 2;
+    }
+    if (activeAudioTrackCount < 3) {
+      activeAudioTrackCount = 3;
+    }
+    final videoTrack =
+        (videoOverlayTrackTargeted ? targetedVideoOverlayTrack : 2)
+            .clamp(2, activeVideoTrackCount)
+            .toInt();
+    final audioTrack = targetedOverlayAudioTrack
+        .clamp(3, activeAudioTrackCount)
+        .toInt();
     final sequenceDuration = math.max(
       timecodeFrameDurationSeconds,
       outputDurationSeconds,
@@ -2474,10 +2498,15 @@ class EditorController extends ChangeNotifier {
       timelineEnd: snapSecondsToFrame(start + clipDuration),
       sourceStart: normalizedSourceStart,
       sourceEnd: snapSecondsToFrame(normalizedSourceStart + clipDuration),
+      videoTrack: videoTrack,
+      audioTrack: audioTrack,
     );
-    _commitHistory();
     videoOverlays = [...videoOverlays, overlay]
       ..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    targetedVideoOverlayTrack = videoTrack;
+    targetedOverlayAudioTrack = audioTrack;
+    videoOverlayTrackTargeted = true;
+    audioTrack3Targeted = audioTrack == 3;
     selectedVideoOverlayId = overlay.id;
     selectedSegmentOrder = null;
     renderUrl = null;
@@ -2579,6 +2608,31 @@ class EditorController extends ChangeNotifier {
     updateVideoOverlay(
       overlay.copyWith(rotation: value.clamp(-180.0, 180.0).toDouble()),
     );
+  }
+
+  void setSelectedVideoOverlayVideoTrack(int track) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || videoOverlayTrackLocked) {
+      return;
+    }
+    final normalized = track.clamp(2, activeVideoTrackCount).toInt();
+    updateVideoOverlay(overlay.copyWith(videoTrack: normalized));
+    targetedVideoOverlayTrack = normalized;
+    videoOverlayTrackTargeted = true;
+  }
+
+  void setSelectedVideoOverlayAudioTrack(int track) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || audioTrack3Locked) {
+      return;
+    }
+    final normalized = track.clamp(3, activeAudioTrackCount).toInt();
+    updateVideoOverlay(
+      overlay.copyWith(audioTrack: normalized),
+      audioOnly: true,
+    );
+    targetedOverlayAudioTrack = normalized;
+    audioTrack3Targeted = normalized == 3;
   }
 
   void toggleSelectedVideoOverlayAudioMute() {
@@ -2728,6 +2782,18 @@ class EditorController extends ChangeNotifier {
 
   void toggleVideoOverlayTrackTarget() {
     videoOverlayTrackTargeted = !videoOverlayTrackTargeted;
+    if (videoOverlayTrackTargeted && targetedVideoOverlayTrack < 2) {
+      targetedVideoOverlayTrack = 2;
+    }
+    notifyListeners();
+  }
+
+  void toggleVideoOverlayTrackTargetAt(int track) {
+    if (track < 2 || track > activeVideoTrackCount) {
+      return;
+    }
+    targetedVideoOverlayTrack = track;
+    videoOverlayTrackTargeted = true;
     notifyListeners();
   }
 
@@ -2743,6 +2809,16 @@ class EditorController extends ChangeNotifier {
 
   void toggleAudioTrack3Target() {
     audioTrack3Targeted = !audioTrack3Targeted;
+    targetedOverlayAudioTrack = 3;
+    notifyListeners();
+  }
+
+  void toggleOverlayAudioTrackTargetAt(int track) {
+    if (track < 3 || track > activeAudioTrackCount) {
+      return;
+    }
+    targetedOverlayAudioTrack = track;
+    audioTrack3Targeted = track == 3;
     notifyListeners();
   }
 
@@ -2769,6 +2845,102 @@ class EditorController extends ChangeNotifier {
     renderUrl = null;
     notifyListeners();
     _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  void toggleVideoOverlayAudioTrack(int track) {
+    if (audioTrack3Locked || track < 3 || track > activeAudioTrackCount) {
+      return;
+    }
+    final trackOverlays = videoOverlays.where(
+      (overlay) => overlay.audioTrack == track,
+    );
+    if (trackOverlays.isEmpty) {
+      return;
+    }
+    final muteTrack = trackOverlays.any(
+      (overlay) => !overlay.muted && overlay.audioVolume > 0,
+    );
+    _commitHistory();
+    videoOverlays = [
+      for (final overlay in videoOverlays)
+        if (overlay.audioTrack == track)
+          overlay.copyWith(
+            muted: muteTrack,
+            audioVolume: !muteTrack && overlay.audioVolume <= 0
+                ? 1
+                : overlay.audioVolume,
+          )
+        else
+          overlay,
+    ];
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  bool get canActivateVideoTrack => activeVideoTrackCount < 4;
+  bool get canActivateAudioTrack => activeAudioTrackCount < 8;
+  bool get canDeactivateVideoTrack =>
+      activeVideoTrackCount > 1 &&
+      !videoOverlays.any(
+        (overlay) => overlay.videoTrack == activeVideoTrackCount,
+      );
+  bool get canDeactivateAudioTrack =>
+      activeAudioTrackCount > 2 &&
+      !videoOverlays.any(
+        (overlay) => overlay.audioTrack == activeAudioTrackCount,
+      );
+
+  void activateVideoTrack() {
+    if (!canActivateVideoTrack) {
+      return;
+    }
+    _commitHistory();
+    activeVideoTrackCount += 1;
+    targetedVideoOverlayTrack = activeVideoTrackCount;
+    videoOverlayTrackTargeted = true;
+    notifyListeners();
+  }
+
+  void deactivateHighestVideoTrack() {
+    if (!canDeactivateVideoTrack) {
+      return;
+    }
+    _commitHistory();
+    activeVideoTrackCount -= 1;
+    if (targetedVideoOverlayTrack > activeVideoTrackCount) {
+      targetedVideoOverlayTrack = activeVideoTrackCount >= 2
+          ? activeVideoTrackCount
+          : 1;
+      videoOverlayTrackTargeted = activeVideoTrackCount >= 2;
+    }
+    notifyListeners();
+  }
+
+  void activateAudioTrack() {
+    if (!canActivateAudioTrack) {
+      return;
+    }
+    _commitHistory();
+    activeAudioTrackCount += 1;
+    targetedOverlayAudioTrack = activeAudioTrackCount;
+    audioTrack3Targeted = activeAudioTrackCount == 3;
+    notifyListeners();
+  }
+
+  void deactivateHighestAudioTrack() {
+    if (!canDeactivateAudioTrack) {
+      return;
+    }
+    _commitHistory();
+    activeAudioTrackCount -= 1;
+    if (targetedOverlayAudioTrack > activeAudioTrackCount) {
+      targetedOverlayAudioTrack = activeAudioTrackCount >= 3
+          ? activeAudioTrackCount
+          : 2;
+      audioTrack3Targeted = targetedOverlayAudioTrack == 3;
+    }
+    notifyListeners();
   }
 
   void selectSegment(int order) {
@@ -7622,7 +7794,7 @@ class EditorController extends ChangeNotifier {
 
   String _programPreviewSignature(HighlightSegment segment) =>
       '$exportAspectRatio|${jsonEncode(segment.toJson())}|'
-      '${jsonEncode(videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList())}';
+      '${jsonEncode(videoOverlayTrackVisible ? videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList() : const [])}';
 
   List<VideoOverlayClip> _videoOverlaysForProgramWindow(
     HighlightSegment segment,
@@ -7630,7 +7802,7 @@ class EditorController extends ChangeNotifier {
     double duration,
   ) {
     final span = _programSpanForOrder(segment.order);
-    if (span == null || duration <= 0) {
+    if (span == null || duration <= 0 || !videoOverlayTrackVisible) {
       return const [];
     }
     final outputWindowOffset =
@@ -10015,6 +10187,12 @@ class EditorController extends ChangeNotifier {
     _programCutPending = false;
     segments = _reorderSegments(project.segments);
     videoOverlays = List<VideoOverlayClip>.of(project.videoOverlays);
+    activeVideoTrackCount = project.activeVideoTrackCount.clamp(1, 4).toInt();
+    activeAudioTrackCount = project.activeAudioTrackCount.clamp(2, 8).toInt();
+    targetedVideoOverlayTrack = activeVideoTrackCount >= 2 ? 2 : 1;
+    targetedOverlayAudioTrack = activeAudioTrackCount >= 3 ? 3 : 2;
+    videoOverlayTrackTargeted = activeVideoTrackCount >= 2;
+    audioTrack3Targeted = activeAudioTrackCount >= 3;
     selectedVideoOverlayId = null;
     transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
@@ -10100,6 +10278,10 @@ class EditorController extends ChangeNotifier {
       createdAt: DateTime.now(),
       segments: List<HighlightSegment>.of(segments),
       videoOverlays: List<VideoOverlayClip>.of(videoOverlays),
+      activeVideoTrackCount: activeVideoTrackCount,
+      activeAudioTrackCount: activeAudioTrackCount,
+      targetedVideoOverlayTrack: targetedVideoOverlayTrack,
+      targetedOverlayAudioTrack: targetedOverlayAudioTrack,
       captions: List<CaptionSegment>.of(captions),
       timelineMarkers: List<TimelineMarker>.of(timelineMarkers),
       selectedSegmentOrder: selectedSegmentOrder,
@@ -10116,6 +10298,12 @@ class EditorController extends ChangeNotifier {
   void _restoreSnapshot(_EditorSnapshot snapshot) {
     segments = _reorderSegments(snapshot.segments);
     videoOverlays = List<VideoOverlayClip>.of(snapshot.videoOverlays);
+    activeVideoTrackCount = snapshot.activeVideoTrackCount;
+    activeAudioTrackCount = snapshot.activeAudioTrackCount;
+    targetedVideoOverlayTrack = snapshot.targetedVideoOverlayTrack;
+    targetedOverlayAudioTrack = snapshot.targetedOverlayAudioTrack;
+    videoOverlayTrackTargeted = targetedVideoOverlayTrack >= 2;
+    audioTrack3Targeted = targetedOverlayAudioTrack == 3;
     captions = [
       for (var index = 0; index < snapshot.captions.length; index++)
         snapshot.captions[index].copyWith(order: index + 1),
@@ -10611,6 +10799,10 @@ class _EditorSnapshot {
     required this.createdAt,
     required this.segments,
     required this.videoOverlays,
+    required this.activeVideoTrackCount,
+    required this.activeAudioTrackCount,
+    required this.targetedVideoOverlayTrack,
+    required this.targetedOverlayAudioTrack,
     required this.captions,
     required this.timelineMarkers,
     required this.selectedSegmentOrder,
@@ -10626,6 +10818,10 @@ class _EditorSnapshot {
   final DateTime createdAt;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final int activeVideoTrackCount;
+  final int activeAudioTrackCount;
+  final int targetedVideoOverlayTrack;
+  final int targetedOverlayAudioTrack;
   final List<CaptionSegment> captions;
   final List<TimelineMarker> timelineMarkers;
   final int? selectedSegmentOrder;

@@ -181,6 +181,10 @@ class TimelineEditor extends StatefulWidget {
     required this.audioTrack1Targeted,
     required this.audioTrack2Targeted,
     this.audioTrack3Targeted = true,
+    this.activeVideoTrackCount = 2,
+    this.activeAudioTrackCount = 3,
+    this.targetedVideoOverlayTrack = 2,
+    this.targetedOverlayAudioTrack = 3,
     required this.videoTrackLocked,
     this.videoOverlayTrackLocked = false,
     this.videoOverlayTrackVisible = true,
@@ -272,9 +276,12 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
     this.onToggleVideoOverlayTarget,
+    this.onToggleVideoOverlayTargetAt,
     this.onToggleVideoOverlayLock,
     this.onToggleVideoOverlayVisibility,
     this.onToggleVideoOverlayAudio,
+    this.onToggleOverlayAudioTargetAt,
+    this.onToggleOverlayAudioAt,
     this.onDeleteVideoOverlay,
     this.onZoomDelta,
   });
@@ -298,6 +305,10 @@ class TimelineEditor extends StatefulWidget {
   final bool audioTrack1Targeted;
   final bool audioTrack2Targeted;
   final bool audioTrack3Targeted;
+  final int activeVideoTrackCount;
+  final int activeAudioTrackCount;
+  final int targetedVideoOverlayTrack;
+  final int targetedOverlayAudioTrack;
   final bool videoTrackLocked;
   final bool videoOverlayTrackLocked;
   final bool videoOverlayTrackVisible;
@@ -389,9 +400,12 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
   final VoidCallback? onToggleVideoOverlayTarget;
+  final ValueChanged<int>? onToggleVideoOverlayTargetAt;
   final VoidCallback? onToggleVideoOverlayLock;
   final VoidCallback? onToggleVideoOverlayVisibility;
   final VoidCallback? onToggleVideoOverlayAudio;
+  final ValueChanged<int>? onToggleOverlayAudioTargetAt;
+  final ValueChanged<int>? onToggleOverlayAudioAt;
   final VoidCallback? onDeleteVideoOverlay;
   final ValueChanged<double>? onZoomDelta;
 
@@ -400,25 +414,35 @@ class TimelineEditor extends StatefulWidget {
 }
 
 class _TimelineLayout {
-  const _TimelineLayout({required double scale})
-    : scale = scale < 0.75
-          ? 0.75
-          : scale > 1.35
-          ? 1.35
-          : scale;
+  const _TimelineLayout({
+    required double scale,
+    required this.activeVideoTracks,
+    required this.activeAudioTracks,
+  }) : scale = scale < 0.75
+           ? 0.75
+           : scale > 1.35
+           ? 1.35
+           : scale;
 
   final double scale;
+  final int activeVideoTracks;
+  final int activeAudioTracks;
   double get rulerHeight => 30;
   double get overlayTop => rulerHeight + 2;
   double get laneHeight => 27 * scale;
   double get laneGap => 2;
-  double get videoTop => overlayTop + laneHeight + laneGap;
-  double get audio1Top => videoTop + laneHeight + laneGap;
-  double get audio2Top => audio1Top + laneHeight + laneGap;
-  double get audio3Top => audio2Top + laneHeight + laneGap;
-  double get footerTop => audio3Top + laneHeight + 4;
+  double videoTrackTop(int track) =>
+      overlayTop + (activeVideoTracks - track) * (laneHeight + laneGap);
+  double get videoTop => videoTrackTop(1);
+  double get audioTracksTop => videoTop + laneHeight + laneGap;
+  double audioTrackTop(int track) =>
+      audioTracksTop + (track - 1) * (laneHeight + laneGap);
+  double get audio1Top => audioTrackTop(1);
+  double get audio2Top => audioTrackTop(2);
+  double get audio3Top => audioTrackTop(3);
+  double get footerTop => audioTrackTop(activeAudioTracks) + laneHeight + 4;
   double get canvasHeight => footerTop + 28;
-  double get trackBottom => audio3Top + laneHeight;
+  double get trackBottom => audioTrackTop(activeAudioTracks) + laneHeight;
 }
 
 class _TimelineEditorState extends State<TimelineEditor> {
@@ -433,6 +457,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
   _DragTrack? _activeTrack;
   bool _isScrubbing = false;
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
   double _lastViewportWidth = 0;
   double? _pendingZoomFocalRatio;
   double? _pendingZoomViewportX;
@@ -442,8 +467,11 @@ class _TimelineEditorState extends State<TimelineEditor> {
   Offset? _pointerDownPosition;
   bool _pointerDragging = false;
   bool _followPlayheadScheduled = false;
-  _TimelineLayout get _layout =>
-      _TimelineLayout(scale: widget.trackHeightScale);
+  _TimelineLayout get _layout => _TimelineLayout(
+    scale: widget.trackHeightScale,
+    activeVideoTracks: widget.activeVideoTrackCount.clamp(1, 4).toInt(),
+    activeAudioTracks: widget.activeAudioTrackCount.clamp(2, 8).toInt(),
+  );
 
   List<_TimelinePlacement> get _placements =>
       _buildTimelinePlacements(widget.segments);
@@ -516,6 +544,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -535,187 +564,242 @@ class _TimelineEditorState extends State<TimelineEditor> {
               ? 'Sequence timeline ${formatSeconds(widget.duration)}'
               : 'Source timeline ${formatSeconds(widget.duration)}',
           child: SizedBox(
-            height: layout.canvasHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: _trackHeaderWidth,
-                  child: _TimelineTrackHeaders(
-                    layout: layout,
-                    segments: widget.segments,
-                    overlayTargeted: widget.videoOverlayTrackTargeted,
-                    videoTargeted: widget.videoTrackTargeted,
-                    audio1Targeted: widget.audioTrack1Targeted,
-                    audio2Targeted: widget.audioTrack2Targeted,
-                    audio3Targeted: widget.audioTrack3Targeted,
-                    videoLocked: widget.videoTrackLocked,
-                    overlayLocked: widget.videoOverlayTrackLocked,
-                    overlayVisible: widget.videoOverlayTrackVisible,
-                    audio1Locked:
-                        widget.audioTrackLocked || widget.audioTrack1Locked,
-                    audio2Locked:
-                        widget.audioTrackLocked || widget.audioTrack2Locked,
-                    audio3Locked: widget.audioTrack3Locked,
-                    overlayAudioEnabled:
-                        widget.videoOverlays.isEmpty ||
-                        widget.videoOverlays.any(
-                          (overlay) =>
-                              !overlay.muted && overlay.audioVolume > 0,
+            height: constraints.maxHeight.isFinite
+                ? constraints.maxHeight
+                : layout.canvasHeight,
+            child: Scrollbar(
+              controller: _verticalScrollController,
+              thumbVisibility:
+                  constraints.maxHeight.isFinite &&
+                  layout.canvasHeight > constraints.maxHeight,
+              child: SingleChildScrollView(
+                key: const Key('timeline-vertical-scroll'),
+                controller: _verticalScrollController,
+                child: SizedBox(
+                  height: layout.canvasHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: _trackHeaderWidth,
+                        child: _TimelineTrackHeaders(
+                          layout: layout,
+                          segments: widget.segments,
+                          videoOverlays: widget.videoOverlays,
+                          activeVideoTrackCount: layout.activeVideoTracks,
+                          activeAudioTrackCount: layout.activeAudioTracks,
+                          targetedVideoOverlayTrack:
+                              widget.targetedVideoOverlayTrack,
+                          targetedOverlayAudioTrack:
+                              widget.targetedOverlayAudioTrack,
+                          overlayTargeted: widget.videoOverlayTrackTargeted,
+                          videoTargeted: widget.videoTrackTargeted,
+                          audio1Targeted: widget.audioTrack1Targeted,
+                          audio2Targeted: widget.audioTrack2Targeted,
+                          audio3Targeted: widget.audioTrack3Targeted,
+                          videoLocked: widget.videoTrackLocked,
+                          overlayLocked: widget.videoOverlayTrackLocked,
+                          overlayVisible: widget.videoOverlayTrackVisible,
+                          audio1Locked:
+                              widget.audioTrackLocked ||
+                              widget.audioTrack1Locked,
+                          audio2Locked:
+                              widget.audioTrackLocked ||
+                              widget.audioTrack2Locked,
+                          audio3Locked: widget.audioTrack3Locked,
+                          onToggleVideoTarget: widget.onToggleVideoTarget,
+                          onToggleOverlayTarget:
+                              widget.onToggleVideoOverlayTarget,
+                          onToggleOverlayTargetAt:
+                              widget.onToggleVideoOverlayTargetAt,
+                          onToggleAudio1Target: widget.onToggleAudio1Target,
+                          onToggleAudio2Target: widget.onToggleAudio2Target,
+                          onToggleAudio3Target: widget.onToggleAudio3Target,
+                          onToggleVideoLock: widget.onToggleVideoLock,
+                          onToggleOverlayLock: widget.onToggleVideoOverlayLock,
+                          onToggleOverlayVisibility:
+                              widget.onToggleVideoOverlayVisibility,
+                          onToggleAudio1Lock: widget.onToggleAudio1Lock,
+                          onToggleAudio2Lock: widget.onToggleAudio2Lock,
+                          onToggleAudio3Lock: widget.onToggleAudio3Lock,
+                          onToggleAudio1: widget.onToggleAllAudioChannel1,
+                          onToggleAudio2: widget.onToggleAllAudioChannel2,
+                          onToggleAudio3: widget.onToggleVideoOverlayAudio,
+                          onToggleOverlayAudioTargetAt:
+                              widget.onToggleOverlayAudioTargetAt,
+                          onToggleOverlayAudioAt: widget.onToggleOverlayAudioAt,
                         ),
-                    onToggleVideoTarget: widget.onToggleVideoTarget,
-                    onToggleOverlayTarget: widget.onToggleVideoOverlayTarget,
-                    onToggleAudio1Target: widget.onToggleAudio1Target,
-                    onToggleAudio2Target: widget.onToggleAudio2Target,
-                    onToggleAudio3Target: widget.onToggleAudio3Target,
-                    onToggleVideoLock: widget.onToggleVideoLock,
-                    onToggleOverlayLock: widget.onToggleVideoOverlayLock,
-                    onToggleOverlayVisibility:
-                        widget.onToggleVideoOverlayVisibility,
-                    onToggleAudio1Lock: widget.onToggleAudio1Lock,
-                    onToggleAudio2Lock: widget.onToggleAudio2Lock,
-                    onToggleAudio3Lock: widget.onToggleAudio3Lock,
-                    onToggleAudio1: widget.onToggleAllAudioChannel1,
-                    onToggleAudio2: widget.onToggleAllAudioChannel2,
-                    onToggleAudio3: widget.onToggleVideoOverlayAudio,
-                  ),
-                ),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-                Expanded(
-                  key: const Key('timeline-scroll-area'),
-                  child: Listener(
-                    onPointerSignal: _handlePointerSignal,
-                    child: Scrollbar(
-                      controller: _scrollController,
-                      thumbVisibility: widget.zoom > 1.0,
-                      child: SingleChildScrollView(
-                        controller: _scrollController,
-                        scrollDirection: Axis.horizontal,
-                        physics: _pointerDragging
-                            ? const NeverScrollableScrollPhysics()
-                            : const ClampingScrollPhysics(),
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                      Expanded(
+                        key: const Key('timeline-scroll-area'),
                         child: Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (event) => _handlePointerDown(event),
-                          onPointerMove: (event) =>
-                              _handlePointerMove(event, width),
-                          onPointerUp: _handlePointerEnd,
-                          onPointerCancel: _handlePointerEnd,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTapDown: (details) =>
-                                _tap(details.localPosition, width),
-                            onSecondaryTapDown: (details) =>
-                                _showContextMenu(details, width),
-                            child: SizedBox(
-                              width: width,
-                              height: layout.canvasHeight,
-                              child: CustomPaint(
-                                key: const Key('timeline-canvas'),
-                                painter: _TimelinePainter(
-                                  layout: layout,
-                                  duration: widget.duration,
-                                  segments: widget.segments,
-                                  playheadSeconds: widget.playheadSeconds,
-                                  selectedSegmentOrder:
-                                      widget.selectedSegmentOrder,
-                                  markIn: widget.markIn,
-                                  markOut: widget.markOut,
-                                  timelineMarkers: widget.timelineMarkers,
-                                  waveform: widget.waveform,
-                                  timelineThumbnails: widget.timelineThumbnails,
-                                  activeIndex: _activeIndex,
-                                  activeEdge: _activeEdge,
-                                  activeTrack: _activeTrack,
-                                  videoTrackLocked: widget.videoTrackLocked,
-                                  audioTrack1Locked:
-                                      widget.audioTrackLocked ||
-                                      widget.audioTrack1Locked,
-                                  audioTrack2Locked:
-                                      widget.audioTrackLocked ||
-                                      widget.audioTrack2Locked,
-                                  colorScheme: Theme.of(context).colorScheme,
-                                  sequenceMode: widget.sequenceMode,
-                                  sourceDuration:
-                                      widget.sourceDuration ?? widget.duration,
-                                ),
-                                child: Stack(
-                                  children: [
-                                    if (widget.sequenceMode)
-                                      for (final overlay
-                                          in widget.videoOverlays)
-                                        _VideoOverlayBlock(
-                                          overlay: overlay,
-                                          duration: widget.duration,
-                                          canvasWidth: width,
-                                          top: layout.overlayTop + 2,
-                                          height: layout.laneHeight - 4,
-                                          selected:
-                                              widget.selectedVideoOverlayId ==
-                                              overlay.id,
-                                          locked:
-                                              widget.videoOverlayTrackLocked,
-                                          trackVisible:
-                                              widget.videoOverlayTrackVisible,
-                                          onSelected:
-                                              widget.onVideoOverlaySelected,
-                                          onChanged:
-                                              widget.onVideoOverlayChanged,
-                                          onDelete: widget.onDeleteVideoOverlay,
-                                        ),
-                                    if (widget.sequenceMode)
-                                      for (final overlay
-                                          in widget.videoOverlays)
-                                        _VideoOverlayAudioBlock(
-                                          overlay: overlay,
-                                          duration: widget.duration,
-                                          canvasWidth: width,
-                                          top: layout.audio3Top + 2,
-                                          height: layout.laneHeight - 4,
-                                          selected:
-                                              widget.selectedVideoOverlayId ==
-                                              overlay.id,
-                                          locked: widget.audioTrack3Locked,
-                                          onSelected:
-                                              widget.onVideoOverlaySelected,
-                                        ),
-                                    Align(
-                                      alignment: Alignment.bottomLeft,
-                                      child: Padding(
-                                        padding: EdgeInsets.only(
-                                          top: layout.footerTop,
-                                          left: 6,
-                                        ),
-                                        child: SizedBox(
-                                          width: math.max(0, width - 12),
-                                          child: Text(
-                                            widget.sequenceMode
-                                                ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}'
-                                                : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.labelSmall,
+                          onPointerSignal: _handlePointerSignal,
+                          child: Scrollbar(
+                            controller: _scrollController,
+                            thumbVisibility: widget.zoom > 1.0,
+                            child: SingleChildScrollView(
+                              controller: _scrollController,
+                              scrollDirection: Axis.horizontal,
+                              physics: _pointerDragging
+                                  ? const NeverScrollableScrollPhysics()
+                                  : const ClampingScrollPhysics(),
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerDown: (event) =>
+                                    _handlePointerDown(event),
+                                onPointerMove: (event) =>
+                                    _handlePointerMove(event, width),
+                                onPointerUp: _handlePointerEnd,
+                                onPointerCancel: _handlePointerEnd,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTapDown: (details) =>
+                                      _tap(details.localPosition, width),
+                                  onSecondaryTapDown: (details) =>
+                                      _showContextMenu(details, width),
+                                  child: SizedBox(
+                                    width: width,
+                                    height: layout.canvasHeight,
+                                    child: CustomPaint(
+                                      key: const Key('timeline-canvas'),
+                                      painter: _TimelinePainter(
+                                        layout: layout,
+                                        duration: widget.duration,
+                                        segments: widget.segments,
+                                        playheadSeconds: widget.playheadSeconds,
+                                        selectedSegmentOrder:
+                                            widget.selectedSegmentOrder,
+                                        markIn: widget.markIn,
+                                        markOut: widget.markOut,
+                                        timelineMarkers: widget.timelineMarkers,
+                                        waveform: widget.waveform,
+                                        timelineThumbnails:
+                                            widget.timelineThumbnails,
+                                        activeIndex: _activeIndex,
+                                        activeEdge: _activeEdge,
+                                        activeTrack: _activeTrack,
+                                        videoTrackLocked:
+                                            widget.videoTrackLocked,
+                                        audioTrack1Locked:
+                                            widget.audioTrackLocked ||
+                                            widget.audioTrack1Locked,
+                                        audioTrack2Locked:
+                                            widget.audioTrackLocked ||
+                                            widget.audioTrack2Locked,
+                                        colorScheme: Theme.of(
+                                          context,
+                                        ).colorScheme,
+                                        sequenceMode: widget.sequenceMode,
+                                        sourceDuration:
+                                            widget.sourceDuration ??
+                                            widget.duration,
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          if (widget.sequenceMode)
+                                            for (final overlay
+                                                in widget.videoOverlays)
+                                              _VideoOverlayBlock(
+                                                overlay: overlay,
+                                                duration: widget.duration,
+                                                canvasWidth: width,
+                                                top:
+                                                    layout.videoTrackTop(
+                                                      overlay.videoTrack
+                                                          .clamp(
+                                                            2,
+                                                            layout
+                                                                .activeVideoTracks,
+                                                          )
+                                                          .toInt(),
+                                                    ) +
+                                                    2,
+                                                height: layout.laneHeight - 4,
+                                                selected:
+                                                    widget
+                                                        .selectedVideoOverlayId ==
+                                                    overlay.id,
+                                                locked: widget
+                                                    .videoOverlayTrackLocked,
+                                                trackVisible: widget
+                                                    .videoOverlayTrackVisible,
+                                                onSelected: widget
+                                                    .onVideoOverlaySelected,
+                                                onChanged: widget
+                                                    .onVideoOverlayChanged,
+                                                onDelete:
+                                                    widget.onDeleteVideoOverlay,
+                                              ),
+                                          if (widget.sequenceMode)
+                                            for (final overlay
+                                                in widget.videoOverlays)
+                                              _VideoOverlayAudioBlock(
+                                                overlay: overlay,
+                                                duration: widget.duration,
+                                                canvasWidth: width,
+                                                top:
+                                                    layout.audioTrackTop(
+                                                      overlay.audioTrack
+                                                          .clamp(
+                                                            3,
+                                                            layout
+                                                                .activeAudioTracks,
+                                                          )
+                                                          .toInt(),
+                                                    ) +
+                                                    2,
+                                                height: layout.laneHeight - 4,
+                                                selected:
+                                                    widget
+                                                        .selectedVideoOverlayId ==
+                                                    overlay.id,
+                                                locked:
+                                                    widget.audioTrack3Locked,
+                                                onSelected: widget
+                                                    .onVideoOverlaySelected,
+                                              ),
+                                          Align(
+                                            alignment: Alignment.bottomLeft,
+                                            child: Padding(
+                                              padding: EdgeInsets.only(
+                                                top: layout.footerTop,
+                                                left: 6,
+                                              ),
+                                              child: SizedBox(
+                                                width: math.max(0, width - 12),
+                                                child: Text(
+                                                  widget.sequenceMode
+                                                      ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}'
+                                                      : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.labelSmall,
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                        ],
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -2328,11 +2412,11 @@ class _VideoOverlayBlockState extends State<_VideoOverlayBlock> {
         PopupMenuItem<String>(
           value: 'delete',
           enabled: !widget.locked,
-          child: const ListTile(
+          child: ListTile(
             dense: true,
-            leading: Icon(Icons.delete_outline),
-            title: Text('Delete V2 clip'),
-            subtitle: Text('Delete'),
+            leading: const Icon(Icons.delete_outline),
+            title: Text('Delete V${widget.overlay.videoTrack} clip'),
+            subtitle: const Text('Delete'),
           ),
         ),
       ],
@@ -2396,7 +2480,7 @@ class _VideoOverlayBlockState extends State<_VideoOverlayBlock> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          overlay.sourceName,
+                          'V${overlay.videoTrack} ${overlay.sourceName}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelSmall
@@ -2550,7 +2634,7 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'A3 ${overlay.sourceName}  ${(overlay.audioVolume * 100).round()}%',
+                      'A${overlay.audioTrack} ${overlay.sourceName}  ${(overlay.audioVolume * 100).round()}%',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -2579,6 +2663,11 @@ class _TimelineTrackHeaders extends StatelessWidget {
   const _TimelineTrackHeaders({
     required this.layout,
     required this.segments,
+    required this.videoOverlays,
+    required this.activeVideoTrackCount,
+    required this.activeAudioTrackCount,
+    required this.targetedVideoOverlayTrack,
+    required this.targetedOverlayAudioTrack,
     required this.overlayTargeted,
     required this.videoTargeted,
     required this.audio1Targeted,
@@ -2590,9 +2679,9 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.audio1Locked,
     required this.audio2Locked,
     required this.audio3Locked,
-    required this.overlayAudioEnabled,
     required this.onToggleVideoTarget,
     required this.onToggleOverlayTarget,
+    required this.onToggleOverlayTargetAt,
     required this.onToggleAudio1Target,
     required this.onToggleAudio2Target,
     required this.onToggleAudio3Target,
@@ -2605,10 +2694,17 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.onToggleAudio1,
     required this.onToggleAudio2,
     required this.onToggleAudio3,
+    required this.onToggleOverlayAudioTargetAt,
+    required this.onToggleOverlayAudioAt,
   });
 
   final _TimelineLayout layout;
   final List<HighlightSegment> segments;
+  final List<VideoOverlayClip> videoOverlays;
+  final int activeVideoTrackCount;
+  final int activeAudioTrackCount;
+  final int targetedVideoOverlayTrack;
+  final int targetedOverlayAudioTrack;
   final bool overlayTargeted;
   final bool videoTargeted;
   final bool audio1Targeted;
@@ -2620,9 +2716,9 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final bool audio1Locked;
   final bool audio2Locked;
   final bool audio3Locked;
-  final bool overlayAudioEnabled;
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleOverlayTarget;
+  final ValueChanged<int>? onToggleOverlayTargetAt;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
   final VoidCallback? onToggleAudio3Target;
@@ -2635,6 +2731,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final VoidCallback? onToggleAudio1;
   final VoidCallback? onToggleAudio2;
   final VoidCallback? onToggleAudio3;
+  final ValueChanged<int>? onToggleOverlayAudioTargetAt;
+  final ValueChanged<int>? onToggleOverlayAudioAt;
 
   bool get _audio1Enabled =>
       segments.isEmpty ||
@@ -2647,6 +2745,39 @@ class _TimelineTrackHeaders extends StatelessWidget {
       segments.any(
         (segment) => !segment.audioMuted && segment.audioChannel2Enabled,
       );
+
+  bool _overlayAudioEnabledFor(int track) {
+    final clips = videoOverlays.where((overlay) => overlay.audioTrack == track);
+    return clips.isEmpty ||
+        clips.any((overlay) => !overlay.muted && overlay.audioVolume > 0);
+  }
+
+  void _toggleOverlayTarget(int track) {
+    final callback = onToggleOverlayTargetAt;
+    if (callback != null) {
+      callback(track);
+    } else {
+      onToggleOverlayTarget?.call();
+    }
+  }
+
+  void _toggleOverlayAudioTarget(int track) {
+    final callback = onToggleOverlayAudioTargetAt;
+    if (callback != null) {
+      callback(track);
+    } else if (track == 3) {
+      onToggleAudio3Target?.call();
+    }
+  }
+
+  void _toggleOverlayAudio(int track) {
+    final callback = onToggleOverlayAudioAt;
+    if (callback != null) {
+      callback(track);
+    } else {
+      onToggleAudio3?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2699,24 +2830,25 @@ class _TimelineTrackHeaders extends StatelessWidget {
                 ),
               ),
             ),
-            _TrackHeaderLane(
-              key: const Key('track-header-v2'),
-              top: layout.overlayTop,
-              height: layout.laneHeight,
-              patchLabel: 'V2',
-              trackLabel: 'Overlay / B-roll',
-              accent: _TimelinePainter._overlayClipColor,
-              targeted: overlayTargeted,
-              locked: overlayLocked,
-              mediaEnabled: overlayVisible,
-              mediaIcon: overlayVisible
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              mediaTooltip: overlayVisible ? 'V2 숨기기' : 'V2 표시',
-              onToggleTarget: onToggleOverlayTarget,
-              onToggleLock: onToggleOverlayLock,
-              onToggleMedia: onToggleOverlayVisibility,
-            ),
+            for (var track = activeVideoTrackCount; track >= 2; track -= 1)
+              _TrackHeaderLane(
+                key: Key('track-header-v$track'),
+                top: layout.videoTrackTop(track),
+                height: layout.laneHeight,
+                patchLabel: 'V$track',
+                trackLabel: track == 2 ? 'Overlay / B-roll' : 'Video $track',
+                accent: _TimelinePainter._overlayClipColor,
+                targeted: overlayTargeted && targetedVideoOverlayTrack == track,
+                locked: overlayLocked,
+                mediaEnabled: overlayVisible,
+                mediaIcon: overlayVisible
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                mediaTooltip: overlayVisible ? 'V$track 숨기기' : 'V$track 표시',
+                onToggleTarget: () => _toggleOverlayTarget(track),
+                onToggleLock: onToggleOverlayLock,
+                onToggleMedia: onToggleOverlayVisibility,
+              ),
             _TrackHeaderLane(
               key: const Key('track-header-v1'),
               top: layout.videoTop,
@@ -2768,30 +2900,37 @@ class _TimelineTrackHeaders extends StatelessWidget {
               onToggleLock: onToggleAudio2Lock,
               onToggleMedia: audio2Locked ? null : onToggleAudio2,
             ),
-            _TrackHeaderLane(
-              key: const Key('track-header-a3'),
-              top: layout.audio3Top,
-              height: layout.laneHeight,
-              patchLabel: 'A3',
-              trackLabel: 'Overlay Audio',
-              accent: _TimelinePainter._overlayAudioColor,
-              targeted: audio3Targeted,
-              locked: audio3Locked,
-              mediaEnabled: overlayAudioEnabled,
-              mediaIcon: overlayAudioEnabled
-                  ? Icons.volume_up_outlined
-                  : Icons.volume_off_outlined,
-              mediaTooltip: overlayAudioEnabled ? 'A3 전체 비활성화' : 'A3 전체 활성화',
-              onToggleTarget: onToggleAudio3Target,
-              onToggleLock: onToggleAudio3Lock,
-              onToggleMedia: audio3Locked ? null : onToggleAudio3,
-            ),
+            for (var track = 3; track <= activeAudioTrackCount; track += 1)
+              _TrackHeaderLane(
+                key: Key('track-header-a$track'),
+                top: layout.audioTrackTop(track),
+                height: layout.laneHeight,
+                patchLabel: 'A$track',
+                trackLabel: track == 3 ? 'Overlay Audio' : 'Audio $track',
+                accent: _TimelinePainter._overlayAudioColor,
+                targeted:
+                    targetedOverlayAudioTrack == track &&
+                    (track != 3 || audio3Targeted),
+                locked: audio3Locked,
+                mediaEnabled: _overlayAudioEnabledFor(track),
+                mediaIcon: _overlayAudioEnabledFor(track)
+                    ? Icons.volume_up_outlined
+                    : Icons.volume_off_outlined,
+                mediaTooltip: _overlayAudioEnabledFor(track)
+                    ? 'A$track 전체 비활성화'
+                    : 'A$track 전체 활성화',
+                onToggleTarget: () => _toggleOverlayAudioTarget(track),
+                onToggleLock: onToggleAudio3Lock,
+                onToggleMedia: audio3Locked
+                    ? null
+                    : () => _toggleOverlayAudio(track),
+              ),
             Positioned(
               left: 8,
               right: 8,
               top: layout.footerTop + 5,
               child: Text(
-                'V2 / V1 / A1 / A2 / A3  ·  30p NDF',
+                'V1-V$activeVideoTrackCount / A1-A$activeAudioTrackCount  ·  30p NDF',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -3019,11 +3158,25 @@ class _TimelinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final radius = Radius.circular(2);
-    _drawTrack(canvas, size, layout.overlayTop, radius, _overlayClipColor);
-    _drawTrack(canvas, size, layout.videoTop, radius, _videoClipColor);
-    _drawTrack(canvas, size, layout.audio1Top, radius, _audioClipColor);
-    _drawTrack(canvas, size, layout.audio2Top, radius, _audioClipColor);
-    _drawTrack(canvas, size, layout.audio3Top, radius, _overlayAudioColor);
+    for (var track = layout.activeVideoTracks; track >= 2; track -= 1) {
+      _drawTrack(
+        canvas,
+        size,
+        layout.videoTrackTop(track),
+        radius,
+        _overlayClipColor,
+      );
+    }
+    _drawTrack(canvas, size, layout.videoTrackTop(1), radius, _videoClipColor);
+    for (var track = 1; track <= layout.activeAudioTracks; track += 1) {
+      _drawTrack(
+        canvas,
+        size,
+        layout.audioTrackTop(track),
+        radius,
+        track <= 2 ? _audioClipColor : _overlayAudioColor,
+      );
+    }
     _drawInOutRange(canvas, size);
     _drawTicks(canvas, size);
     _drawSegments(canvas, size, radius);
@@ -3091,7 +3244,7 @@ class _TimelinePainter extends CustomPainter {
         left,
         layout.overlayTop - 7,
         math.max(2, right - left),
-        layout.audio3Top - layout.overlayTop + layout.laneHeight + 14,
+        layout.trackBottom - layout.overlayTop + 14,
       ),
       Radius.circular(6),
     );
