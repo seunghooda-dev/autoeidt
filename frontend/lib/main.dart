@@ -1599,6 +1599,7 @@ class _MediaPanel extends StatelessWidget {
     required bool active,
   }) async {
     final workspace = context.read<WorkspaceController>();
+    final editor = context.read<EditorController>();
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -1615,6 +1616,19 @@ class _MediaPanel extends StatelessWidget {
             dense: true,
             leading: Icon(Icons.play_circle_outline),
             title: Text('Open as source'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'overlay',
+          enabled:
+              !asset.isOffline &&
+              editor.segments.isNotEmpty &&
+              !editor.videoOverlayTrackLocked,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.layers_outlined),
+            title: Text('Add to V2 at playhead'),
+            subtitle: Text('B-roll / picture-in-picture'),
           ),
         ),
         PopupMenuItem(
@@ -1660,6 +1674,8 @@ class _MediaPanel extends StatelessWidget {
     }
     if (action == 'open') {
       await _activateMediaAssetPath(context, asset.path);
+    } else if (action == 'overlay') {
+      editor.addVideoOverlay(sourcePath: asset.path, sourceName: asset.name);
     } else if (action == 'relink') {
       await _relinkAsset(context, asset, active: active);
     } else if (action == 'favorite') {
@@ -2257,9 +2273,22 @@ class _TimelineDropTarget extends StatelessWidget {
         );
       },
       onAcceptWithDetails: (details) {
-        unawaited(
-          _activateMediaAssetPath(context, details.data, analyze: true),
+        final editor = context.read<EditorController>();
+        final asset = workspace.assets.firstWhere(
+          (asset) => asset.path == details.data,
         );
+        if (editor.videoOverlayTrackTargeted &&
+            !editor.videoOverlayTrackLocked &&
+            editor.segments.isNotEmpty) {
+          editor.addVideoOverlay(
+            sourcePath: asset.path,
+            sourceName: asset.name,
+          );
+        } else {
+          unawaited(
+            _activateMediaAssetPath(context, details.data, analyze: true),
+          );
+        }
       },
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;
@@ -2270,7 +2299,12 @@ class _TimelineDropTarget extends StatelessWidget {
               Positioned.fill(
                 child: IgnorePointer(
                   child: _TimelineDropOverlay(
-                    message: 'Drop to analyze on V1/A1',
+                    message:
+                        context
+                            .watch<EditorController>()
+                            .videoOverlayTrackTargeted
+                        ? 'Drop to place on V2 at playhead'
+                        : 'Drop to analyze on V1/A1',
                   ),
                 ),
               ),
@@ -2615,8 +2649,10 @@ class _TimelineEditorBody extends StatelessWidget {
       sourceDuration: controller.timelineSourceDuration,
       sequenceMode: controller.isProgramMonitor,
       segments: controller.segments,
+      videoOverlays: controller.videoOverlays,
       playheadSeconds: controller.monitorPositionSeconds,
       selectedSegmentOrder: controller.selectedSegmentOrder,
+      selectedVideoOverlayId: controller.selectedVideoOverlayId,
       markIn: controller.markIn,
       markOut: controller.markOut,
       timelineMarkers: controller.timelineMarkers,
@@ -2626,14 +2662,20 @@ class _TimelineEditorBody extends StatelessWidget {
       trackHeightScale: controller.timelineTrackHeightScale,
       snappingEnabled: controller.timelineSnappingEnabled,
       videoTrackTargeted: controller.videoTrackTargeted,
+      videoOverlayTrackTargeted: controller.videoOverlayTrackTargeted,
       audioTrack1Targeted: controller.audioTrack1Targeted,
       audioTrack2Targeted: controller.audioTrack2Targeted,
       videoTrackLocked: controller.videoTrackLocked,
+      videoOverlayTrackLocked: controller.videoOverlayTrackLocked,
+      videoOverlayTrackVisible: controller.videoOverlayTrackVisible,
       audioTrackLocked: controller.audioTrackLocked,
       audioTrack1Locked: controller.audioTrack1Locked,
       audioTrack2Locked: controller.audioTrack2Locked,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
+      onVideoOverlayChanged: context
+          .read<EditorController>()
+          .updateVideoOverlay,
       onScrub: (seconds) {
         context.read<EditorController>().seekMonitorTo(
           seconds,
@@ -2641,6 +2683,9 @@ class _TimelineEditorBody extends StatelessWidget {
         );
       },
       onSegmentSelected: context.read<EditorController>().selectSegment,
+      onVideoOverlaySelected: context
+          .read<EditorController>()
+          .selectVideoOverlay,
       onSetMarkIn: context.read<EditorController>().setMarkInAt,
       onSetMarkOut: context.read<EditorController>().setMarkOutAt,
       onClearMarks: context.read<EditorController>().clearMarks,
@@ -2792,6 +2837,18 @@ class _TimelineEditorBody extends StatelessWidget {
           .read<EditorController>()
           .toggleSelectedVideoEnabled,
       onResetAudioPan: context.read<EditorController>().resetSelectedAudioPan,
+      onToggleVideoOverlayTarget: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackTarget,
+      onToggleVideoOverlayLock: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackLock,
+      onToggleVideoOverlayVisibility: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackVisibility,
+      onDeleteVideoOverlay: context
+          .read<EditorController>()
+          .deleteSelectedVideoOverlay,
       onZoomDelta: context.read<EditorController>().zoomTimeline,
     );
   }

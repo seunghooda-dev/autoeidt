@@ -459,6 +459,7 @@ void main() {
     'timeline keeps professional track headers fixed and interactive',
     (tester) async {
       var videoTargetToggles = 0;
+      var overlayTargetToggles = 0;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -496,6 +497,7 @@ void main() {
                 onScrub: (_) {},
                 onSegmentSelected: (_) {},
                 onToggleVideoTarget: () => videoTargetToggles += 1,
+                onToggleVideoOverlayTarget: () => overlayTargetToggles += 1,
               ),
             ),
           ),
@@ -504,18 +506,96 @@ void main() {
 
       expect(find.byKey(const Key('timeline-track-headers')), findsOneWidget);
       expect(find.byKey(const Key('track-header-v1')), findsOneWidget);
+      expect(find.byKey(const Key('track-header-v2')), findsOneWidget);
       expect(find.byKey(const Key('track-header-a1')), findsOneWidget);
       expect(find.byKey(const Key('track-header-a2')), findsOneWidget);
       expect(find.text('SEQUENCE 01'), findsOneWidget);
       expect(find.text('Video 1'), findsOneWidget);
+      expect(find.text('Overlay / B-roll'), findsOneWidget);
       expect(find.text('Audio 1'), findsOneWidget);
       expect(find.text('Audio 2'), findsOneWidget);
 
       await tester.tap(find.text('V1'));
       await tester.pump();
       expect(videoTargetToggles, 1);
+      await tester.tap(find.text('V2'));
+      await tester.pump();
+      expect(overlayTargetToggles, 1);
     },
   );
+
+  testWidgets('V2 overlay clips can be selected and moved on sequence', (
+    tester,
+  ) async {
+    String? selectedOverlayId;
+    VideoOverlayClip? changedOverlay;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 280,
+            child: TimelineEditor(
+              duration: 30,
+              sequenceMode: true,
+              sourceDuration: 60,
+              segments: const [
+                HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+              ],
+              videoOverlays: const [
+                VideoOverlayClip(
+                  id: 'v2-test',
+                  sourcePath: r'C:\media\broll.mov',
+                  sourceName: 'broll.mov',
+                  timelineStart: 5,
+                  timelineEnd: 10,
+                  sourceStart: 0,
+                  sourceEnd: 5,
+                ),
+              ],
+              playheadSeconds: 0,
+              selectedSegmentOrder: null,
+              selectedVideoOverlayId: 'v2-test',
+              markIn: null,
+              markOut: null,
+              timelineMarkers: const [],
+              waveform: const [],
+              zoom: 1,
+              trackHeightScale: 1,
+              snappingEnabled: true,
+              videoTrackTargeted: true,
+              videoOverlayTrackTargeted: true,
+              audioTrack1Targeted: true,
+              audioTrack2Targeted: true,
+              videoTrackLocked: false,
+              videoOverlayTrackLocked: false,
+              audioTrackLocked: false,
+              audioTrack1Locked: false,
+              audioTrack2Locked: false,
+              razorTool: false,
+              onSegmentChanged: (_) {},
+              onVideoOverlayChanged: (overlay) => changedOverlay = overlay,
+              onScrub: (_) {},
+              onSegmentSelected: (_) {},
+              onVideoOverlaySelected: (id) => selectedOverlayId = id,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final overlay = find.byKey(const ValueKey('video-overlay-v2-test'));
+    expect(overlay, findsOneWidget);
+    expect(find.text('broll.mov'), findsOneWidget);
+    await tester.tap(overlay);
+    await tester.pump();
+    expect(selectedOverlayId, 'v2-test');
+
+    await tester.drag(overlay, const Offset(30, 0));
+    await tester.pump();
+    expect(changedOverlay, isNotNull);
+    expect(changedOverlay!.timelineStart, greaterThan(5));
+  });
 
   testWidgets('timeline paints multiple cached video frames inside V1 clips', (
     tester,
@@ -639,7 +719,7 @@ void main() {
     );
 
     final canvas = tester.getRect(find.byKey(const Key('timeline-canvas')));
-    final videoY = canvas.top + 50;
+    final videoY = canvas.top + 90;
     await tester.tapAt(Offset(canvas.left + canvas.width * 0.7, videoY));
     await tester.pump();
 
@@ -1485,7 +1565,7 @@ void main() {
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
     final menuPoint =
-        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 98);
+        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 132);
 
     await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
@@ -1592,7 +1672,7 @@ void main() {
     );
     final timelineTopLeft = timelineBox.localToGlobal(Offset.zero);
     final menuPoint =
-        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 98);
+        timelineTopLeft + Offset(timelineBox.size.width * 20 / 120, 132);
 
     await tester.tapAt(menuPoint, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();

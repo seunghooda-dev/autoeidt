@@ -164,8 +164,10 @@ class TimelineEditor extends StatefulWidget {
     super.key,
     required this.duration,
     required this.segments,
+    this.videoOverlays = const [],
     required this.playheadSeconds,
     required this.selectedSegmentOrder,
+    this.selectedVideoOverlayId,
     required this.markIn,
     required this.markOut,
     required this.timelineMarkers,
@@ -175,16 +177,21 @@ class TimelineEditor extends StatefulWidget {
     required this.trackHeightScale,
     required this.snappingEnabled,
     required this.videoTrackTargeted,
+    this.videoOverlayTrackTargeted = true,
     required this.audioTrack1Targeted,
     required this.audioTrack2Targeted,
     required this.videoTrackLocked,
+    this.videoOverlayTrackLocked = false,
+    this.videoOverlayTrackVisible = true,
     required this.audioTrackLocked,
     required this.audioTrack1Locked,
     required this.audioTrack2Locked,
     required this.razorTool,
     required this.onSegmentChanged,
+    this.onVideoOverlayChanged,
     required this.onScrub,
     required this.onSegmentSelected,
+    this.onVideoOverlaySelected,
     this.sequenceMode = false,
     this.sourceDuration,
     this.onSetMarkIn,
@@ -260,13 +267,19 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleClipEnabled,
     this.onToggleVideoEnabled,
     this.onResetAudioPan,
+    this.onToggleVideoOverlayTarget,
+    this.onToggleVideoOverlayLock,
+    this.onToggleVideoOverlayVisibility,
+    this.onDeleteVideoOverlay,
     this.onZoomDelta,
   });
 
   final double duration;
   final List<HighlightSegment> segments;
+  final List<VideoOverlayClip> videoOverlays;
   final double playheadSeconds;
   final int? selectedSegmentOrder;
+  final String? selectedVideoOverlayId;
   final double? markIn;
   final double? markOut;
   final List<TimelineMarker> timelineMarkers;
@@ -276,16 +289,21 @@ class TimelineEditor extends StatefulWidget {
   final double trackHeightScale;
   final bool snappingEnabled;
   final bool videoTrackTargeted;
+  final bool videoOverlayTrackTargeted;
   final bool audioTrack1Targeted;
   final bool audioTrack2Targeted;
   final bool videoTrackLocked;
+  final bool videoOverlayTrackLocked;
+  final bool videoOverlayTrackVisible;
   final bool audioTrackLocked;
   final bool audioTrack1Locked;
   final bool audioTrack2Locked;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
+  final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
+  final ValueChanged<String>? onVideoOverlaySelected;
   final bool sequenceMode;
   final double? sourceDuration;
   final ValueChanged<double>? onSetMarkIn;
@@ -361,6 +379,10 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleClipEnabled;
   final VoidCallback? onToggleVideoEnabled;
   final VoidCallback? onResetAudioPan;
+  final VoidCallback? onToggleVideoOverlayTarget;
+  final VoidCallback? onToggleVideoOverlayLock;
+  final VoidCallback? onToggleVideoOverlayVisibility;
+  final VoidCallback? onDeleteVideoOverlay;
   final ValueChanged<double>? onZoomDelta;
 
   @override
@@ -377,9 +399,10 @@ class _TimelineLayout {
 
   final double scale;
   double get rulerHeight => 30;
-  double get videoTop => rulerHeight + 2;
+  double get overlayTop => rulerHeight + 2;
   double get laneHeight => 38 * scale;
   double get laneGap => 2;
+  double get videoTop => overlayTop + laneHeight + laneGap;
   double get audio1Top => videoTop + laneHeight + laneGap;
   double get audio2Top => audio1Top + laneHeight + laneGap;
   double get footerTop => audio2Top + laneHeight + 4;
@@ -510,18 +533,25 @@ class _TimelineEditorState extends State<TimelineEditor> {
                   child: _TimelineTrackHeaders(
                     layout: layout,
                     segments: widget.segments,
+                    overlayTargeted: widget.videoOverlayTrackTargeted,
                     videoTargeted: widget.videoTrackTargeted,
                     audio1Targeted: widget.audioTrack1Targeted,
                     audio2Targeted: widget.audioTrack2Targeted,
                     videoLocked: widget.videoTrackLocked,
+                    overlayLocked: widget.videoOverlayTrackLocked,
+                    overlayVisible: widget.videoOverlayTrackVisible,
                     audio1Locked:
                         widget.audioTrackLocked || widget.audioTrack1Locked,
                     audio2Locked:
                         widget.audioTrackLocked || widget.audioTrack2Locked,
                     onToggleVideoTarget: widget.onToggleVideoTarget,
+                    onToggleOverlayTarget: widget.onToggleVideoOverlayTarget,
                     onToggleAudio1Target: widget.onToggleAudio1Target,
                     onToggleAudio2Target: widget.onToggleAudio2Target,
                     onToggleVideoLock: widget.onToggleVideoLock,
+                    onToggleOverlayLock: widget.onToggleVideoOverlayLock,
+                    onToggleOverlayVisibility:
+                        widget.onToggleVideoOverlayVisibility,
                     onToggleAudio1Lock: widget.onToggleAudio1Lock,
                     onToggleAudio2Lock: widget.onToggleAudio2Lock,
                     onToggleAudio1: widget.onToggleAllAudioChannel1,
@@ -591,27 +621,53 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                   sourceDuration:
                                       widget.sourceDuration ?? widget.duration,
                                 ),
-                                child: Align(
-                                  alignment: Alignment.bottomLeft,
-                                  child: Padding(
-                                    padding: EdgeInsets.only(
-                                      top: layout.footerTop,
-                                      left: 6,
-                                    ),
-                                    child: SizedBox(
-                                      width: math.max(0, width - 12),
-                                      child: Text(
-                                        widget.sequenceMode
-                                            ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}'
-                                            : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelSmall,
+                                child: Stack(
+                                  children: [
+                                    if (widget.sequenceMode)
+                                      for (final overlay
+                                          in widget.videoOverlays)
+                                        _VideoOverlayBlock(
+                                          overlay: overlay,
+                                          duration: widget.duration,
+                                          canvasWidth: width,
+                                          top: layout.overlayTop + 2,
+                                          height: layout.laneHeight - 4,
+                                          selected:
+                                              widget.selectedVideoOverlayId ==
+                                              overlay.id,
+                                          locked:
+                                              widget.videoOverlayTrackLocked,
+                                          trackVisible:
+                                              widget.videoOverlayTrackVisible,
+                                          onSelected:
+                                              widget.onVideoOverlaySelected,
+                                          onChanged:
+                                              widget.onVideoOverlayChanged,
+                                          onDelete: widget.onDeleteVideoOverlay,
+                                        ),
+                                    Align(
+                                      alignment: Alignment.bottomLeft,
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          top: layout.footerTop,
+                                          left: 6,
+                                        ),
+                                        child: SizedBox(
+                                          width: math.max(0, width - 12),
+                                          child: Text(
+                                            widget.sequenceMode
+                                                ? 'Sequence ${formatSeconds(widget.duration)}  |  Source ${formatSeconds(widget.sourceDuration ?? 0)}  |  ${widget.segments.length} clips  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}'
+                                                : 'Source ${formatSeconds(widget.duration)}  |  Output ${formatSeconds(_totalOutputSeconds())}  |  Transitions ${_transitionCount()}  |  Detached A/V ${_detachedAudioCount()}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.labelSmall,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -2110,20 +2166,308 @@ class _TimelineEditorState extends State<TimelineEditor> {
   }
 }
 
+enum _OverlayDragMode { move, trimStart, trimEnd }
+
+class _VideoOverlayBlock extends StatefulWidget {
+  const _VideoOverlayBlock({
+    required this.overlay,
+    required this.duration,
+    required this.canvasWidth,
+    required this.top,
+    required this.height,
+    required this.selected,
+    required this.locked,
+    required this.trackVisible,
+    required this.onSelected,
+    required this.onChanged,
+    required this.onDelete,
+  });
+
+  final VideoOverlayClip overlay;
+  final double duration;
+  final double canvasWidth;
+  final double top;
+  final double height;
+  final bool selected;
+  final bool locked;
+  final bool trackVisible;
+  final ValueChanged<String>? onSelected;
+  final ValueChanged<VideoOverlayClip>? onChanged;
+  final VoidCallback? onDelete;
+
+  @override
+  State<_VideoOverlayBlock> createState() => _VideoOverlayBlockState();
+}
+
+class _VideoOverlayBlockState extends State<_VideoOverlayBlock> {
+  VideoOverlayClip? _origin;
+  double _originGlobalX = 0;
+  _OverlayDragMode? _mode;
+
+  double get _pixelsPerSecond =>
+      widget.duration <= 0 ? 1 : widget.canvasWidth / widget.duration;
+
+  void _startDrag(DragStartDetails details, _OverlayDragMode mode) {
+    if (widget.locked || widget.onChanged == null) {
+      return;
+    }
+    widget.onSelected?.call(widget.overlay.id);
+    _origin = widget.overlay;
+    _originGlobalX = details.globalPosition.dx;
+    _mode = mode;
+  }
+
+  void _updateDrag(DragUpdateDetails details) {
+    final origin = _origin;
+    final mode = _mode;
+    final onChanged = widget.onChanged;
+    if (origin == null || mode == null || onChanged == null) {
+      return;
+    }
+    final delta = snapSecondsToFrame(
+      (details.globalPosition.dx - _originGlobalX) / _pixelsPerSecond,
+    );
+    final minimum = timecodeFrameDurationSeconds;
+    switch (mode) {
+      case _OverlayDragMode.move:
+        final duration = origin.timelineDuration;
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta)
+              .clamp(0.0, math.max(0.0, widget.duration - duration))
+              .toDouble(),
+        );
+        onChanged(
+          origin.copyWith(
+            timelineStart: start,
+            timelineEnd: snapSecondsToFrame(start + duration),
+          ),
+        );
+      case _OverlayDragMode.trimStart:
+        final maxStart = origin.timelineEnd - minimum;
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta).clamp(0.0, maxStart).toDouble(),
+        );
+        final sourceStart = snapSecondsToFrame(
+          (origin.sourceStart + (start - origin.timelineStart))
+              .clamp(0.0, origin.sourceEnd - minimum)
+              .toDouble(),
+        );
+        onChanged(
+          origin.copyWith(timelineStart: start, sourceStart: sourceStart),
+        );
+      case _OverlayDragMode.trimEnd:
+        final end = snapSecondsToFrame(
+          (origin.timelineEnd + delta)
+              .clamp(origin.timelineStart + minimum, widget.duration)
+              .toDouble(),
+        );
+        final sourceEnd = snapSecondsToFrame(
+          math.max(
+            origin.sourceStart + minimum,
+            origin.sourceEnd + (end - origin.timelineEnd),
+          ),
+        );
+        onChanged(origin.copyWith(timelineEnd: end, sourceEnd: sourceEnd));
+    }
+  }
+
+  void _endDrag(DragEndDetails details) {
+    _origin = null;
+    _mode = null;
+  }
+
+  Future<void> _showMenu(TapDownDetails details) async {
+    widget.onSelected?.call(widget.overlay.id);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'delete',
+          enabled: !widget.locked,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.delete_outline),
+            title: Text('Delete V2 clip'),
+            subtitle: Text('Delete'),
+          ),
+        ),
+      ],
+    );
+    if (action == 'delete') {
+      widget.onDelete?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final overlay = widget.overlay;
+    final colorScheme = Theme.of(context).colorScheme;
+    final left = widget.duration <= 0
+        ? 0.0
+        : overlay.timelineStart / widget.duration * widget.canvasWidth;
+    final width = math.max(
+      18.0,
+      overlay.timelineDuration /
+          math.max(widget.duration, 0.001) *
+          widget.canvasWidth,
+    );
+    final accent = _TimelinePainter._overlayClipColor;
+    return Positioned(
+      key: ValueKey('video-overlay-${overlay.id}'),
+      left: left,
+      top: widget.top,
+      width: width,
+      height: widget.height,
+      child: Opacity(
+        opacity: widget.trackVisible && overlay.enabled ? 1 : 0.38,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onSelected?.call(overlay.id),
+          onSecondaryTapDown: _showMenu,
+          onHorizontalDragStart: (details) =>
+              _startDrag(details, _OverlayDragMode.move),
+          onHorizontalDragUpdate: _updateDrag,
+          onHorizontalDragEnd: _endDrag,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: widget.selected ? 0.96 : 0.78),
+              border: Border.all(
+                color: widget.selected ? Colors.white : accent,
+                width: widget.selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  left: 7,
+                  right: 7,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.layers_outlined,
+                        size: 13,
+                        color: Color(0xFF071316),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          overlay.sourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: const Color(0xFF071316),
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!widget.locked) ...[
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerLeft,
+                    cursor: SystemMouseCursors.resizeLeft,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimStart),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerRight,
+                    cursor: SystemMouseCursors.resizeRight,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimEnd),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                ],
+                if (widget.locked)
+                  Positioned(
+                    right: 5,
+                    top: 5,
+                    child: Icon(
+                      Icons.lock,
+                      size: 12,
+                      color: colorScheme.surface,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlayTrimHandle extends StatelessWidget {
+  const _OverlayTrimHandle({
+    required this.alignment,
+    required this.cursor,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+  });
+
+  final Alignment alignment;
+  final MouseCursor cursor;
+  final GestureDragStartCallback onStart;
+  final GestureDragUpdateCallback onUpdate;
+  final GestureDragEndCallback onEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: MouseRegion(
+        cursor: cursor,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: onStart,
+          onHorizontalDragUpdate: onUpdate,
+          onHorizontalDragEnd: onEnd,
+          child: Container(
+            width: 7,
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimelineTrackHeaders extends StatelessWidget {
   const _TimelineTrackHeaders({
     required this.layout,
     required this.segments,
+    required this.overlayTargeted,
     required this.videoTargeted,
     required this.audio1Targeted,
     required this.audio2Targeted,
     required this.videoLocked,
+    required this.overlayLocked,
+    required this.overlayVisible,
     required this.audio1Locked,
     required this.audio2Locked,
     required this.onToggleVideoTarget,
+    required this.onToggleOverlayTarget,
     required this.onToggleAudio1Target,
     required this.onToggleAudio2Target,
     required this.onToggleVideoLock,
+    required this.onToggleOverlayLock,
+    required this.onToggleOverlayVisibility,
     required this.onToggleAudio1Lock,
     required this.onToggleAudio2Lock,
     required this.onToggleAudio1,
@@ -2132,16 +2476,22 @@ class _TimelineTrackHeaders extends StatelessWidget {
 
   final _TimelineLayout layout;
   final List<HighlightSegment> segments;
+  final bool overlayTargeted;
   final bool videoTargeted;
   final bool audio1Targeted;
   final bool audio2Targeted;
   final bool videoLocked;
+  final bool overlayLocked;
+  final bool overlayVisible;
   final bool audio1Locked;
   final bool audio2Locked;
   final VoidCallback? onToggleVideoTarget;
+  final VoidCallback? onToggleOverlayTarget;
   final VoidCallback? onToggleAudio1Target;
   final VoidCallback? onToggleAudio2Target;
   final VoidCallback? onToggleVideoLock;
+  final VoidCallback? onToggleOverlayLock;
+  final VoidCallback? onToggleOverlayVisibility;
   final VoidCallback? onToggleAudio1Lock;
   final VoidCallback? onToggleAudio2Lock;
   final VoidCallback? onToggleAudio1;
@@ -2211,6 +2561,24 @@ class _TimelineTrackHeaders extends StatelessWidget {
               ),
             ),
             _TrackHeaderLane(
+              key: const Key('track-header-v2'),
+              top: layout.overlayTop,
+              height: layout.laneHeight,
+              patchLabel: 'V2',
+              trackLabel: 'Overlay / B-roll',
+              accent: _TimelinePainter._overlayClipColor,
+              targeted: overlayTargeted,
+              locked: overlayLocked,
+              mediaEnabled: overlayVisible,
+              mediaIcon: overlayVisible
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              mediaTooltip: overlayVisible ? 'V2 숨기기' : 'V2 표시',
+              onToggleTarget: onToggleOverlayTarget,
+              onToggleLock: onToggleOverlayLock,
+              onToggleMedia: onToggleOverlayVisibility,
+            ),
+            _TrackHeaderLane(
               key: const Key('track-header-v1'),
               top: layout.videoTop,
               height: layout.laneHeight,
@@ -2266,7 +2634,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
               right: 8,
               top: layout.footerTop + 5,
               child: Text(
-                'V1 / A1 / A2  ·  30p NDF',
+                'V2 / V1 / A1 / A2  ·  30p NDF',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -2461,6 +2829,7 @@ class _TimelinePainter extends CustomPainter {
 
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
+  static const Color _overlayClipColor = Color(0xFF62B7C8);
   static const Color _videoClipColor = Color(0xFF79C98D);
   static const Color _videoClipActiveColor = Color(0xFF9BE3A9);
   static const Color _audioClipColor = Color(0xFFE7A66A);
@@ -2492,6 +2861,7 @@ class _TimelinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final radius = Radius.circular(2);
+    _drawTrack(canvas, size, layout.overlayTop, radius, _overlayClipColor);
     _drawTrack(canvas, size, layout.videoTop, radius, _videoClipColor);
     _drawTrack(canvas, size, layout.audio1Top, radius, _audioClipColor);
     _drawTrack(canvas, size, layout.audio2Top, radius, _audioClipColor);
@@ -2560,9 +2930,9 @@ class _TimelinePainter extends CustomPainter {
     final rangeRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(
         left,
-        layout.videoTop - 7,
+        layout.overlayTop - 7,
         math.max(2, right - left),
-        layout.audio2Top - layout.videoTop + layout.laneHeight + 14,
+        layout.audio2Top - layout.overlayTop + layout.laneHeight + 14,
       ),
       Radius.circular(6),
     );
@@ -2571,7 +2941,7 @@ class _TimelinePainter extends CustomPainter {
       Paint()..color = colorScheme.tertiary.withValues(alpha: 0.07),
     );
     canvas.drawRect(
-      Rect.fromLTWH(left, layout.videoTop - 5, math.max(2, right - left), 3),
+      Rect.fromLTWH(left, layout.overlayTop - 5, math.max(2, right - left), 3),
       Paint()..color = colorScheme.tertiary.withValues(alpha: 0.88),
     );
   }

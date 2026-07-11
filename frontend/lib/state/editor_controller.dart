@@ -113,6 +113,7 @@ class EditorController extends ChangeNotifier {
   List<TimelineMarker> timelineMarkers = [];
   String? renderUrl;
   int? selectedSegmentOrder;
+  String? selectedVideoOverlayId;
   double? markIn;
   double? markOut;
   bool includeCaptions = true;
@@ -124,9 +125,12 @@ class EditorController extends ChangeNotifier {
   bool timelineSnappingEnabled = true;
   String timelineTool = 'selection';
   bool videoTrackTargeted = true;
+  bool videoOverlayTrackTargeted = false;
   bool audioTrack1Targeted = true;
   bool audioTrack2Targeted = true;
   bool videoTrackLocked = false;
+  bool videoOverlayTrackLocked = false;
+  bool videoOverlayTrackVisible = true;
   bool audioTrackLocked = false;
   bool audioTrack1Locked = false;
   bool audioTrack2Locked = false;
@@ -660,6 +664,19 @@ class EditorController extends ChangeNotifier {
     for (final segment in segments) {
       if (segment.order == order) {
         return segment;
+      }
+    }
+    return null;
+  }
+
+  VideoOverlayClip? get selectedVideoOverlay {
+    final id = selectedVideoOverlayId;
+    if (id == null) {
+      return null;
+    }
+    for (final overlay in videoOverlays) {
+      if (overlay.id == id) {
+        return overlay;
       }
     }
     return null;
@@ -1451,21 +1468,26 @@ class EditorController extends ChangeNotifier {
     playbackShuttleDirection = 0;
     playbackShuttleRate = 1.0;
     segments = [];
+    videoOverlays = [];
     transcript = [];
     captions = [];
     waveform = [];
     timelineMarkers = [];
     renderUrl = null;
     selectedSegmentOrder = null;
+    selectedVideoOverlayId = null;
     markIn = null;
     markOut = null;
     uploadProgress = 0;
     timelineTool = 'selection';
     timelineSnappingEnabled = true;
     videoTrackTargeted = true;
+    videoOverlayTrackTargeted = false;
     audioTrack1Targeted = true;
     audioTrack2Targeted = true;
     videoTrackLocked = false;
+    videoOverlayTrackLocked = false;
+    videoOverlayTrackVisible = true;
     audioTrackLocked = false;
     audioTrack1Locked = false;
     audioTrack2Locked = false;
@@ -2379,6 +2401,119 @@ class EditorController extends ChangeNotifier {
     if (isProgramMonitor) {
       _scheduleProgramPreviewRefresh(normalized);
     }
+  }
+
+  void addVideoOverlay({
+    required String sourcePath,
+    required String sourceName,
+    double? timelineStart,
+    double sourceStart = 0,
+    double? sourceDuration,
+  }) {
+    if (videoOverlayTrackLocked || sourcePath.trim().isEmpty) {
+      return;
+    }
+    final sequenceDuration = math.max(
+      timecodeFrameDurationSeconds,
+      outputDurationSeconds,
+    );
+    final start = snapSecondsToFrame(
+      (timelineStart ?? monitorPositionSeconds)
+          .clamp(
+            0.0,
+            math.max(0.0, sequenceDuration - timecodeFrameDurationSeconds),
+          )
+          .toDouble(),
+    );
+    final available = math.max(
+      timecodeFrameDurationSeconds,
+      sequenceDuration - start,
+    );
+    final clipDuration = math.min(
+      available,
+      math.max(
+        timecodeFrameDurationSeconds,
+        math.min(sourceDuration ?? 5.0, 10.0),
+      ),
+    );
+    final normalizedSourceStart = snapSecondsToFrame(
+      math.max(0.0, sourceStart),
+    );
+    final overlay = VideoOverlayClip(
+      id: 'v2-${DateTime.now().microsecondsSinceEpoch}',
+      sourcePath: sourcePath,
+      sourceName: sourceName,
+      timelineStart: start,
+      timelineEnd: snapSecondsToFrame(start + clipDuration),
+      sourceStart: normalizedSourceStart,
+      sourceEnd: snapSecondsToFrame(normalizedSourceStart + clipDuration),
+    );
+    _commitHistory();
+    videoOverlays = [...videoOverlays, overlay]
+      ..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    selectedVideoOverlayId = overlay.id;
+    selectedSegmentOrder = null;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void updateVideoOverlay(VideoOverlayClip updated) {
+    if (videoOverlayTrackLocked ||
+        !videoOverlays.any((overlay) => overlay.id == updated.id)) {
+      return;
+    }
+    _commitHistory();
+    videoOverlays = [
+      for (final overlay in videoOverlays)
+        if (overlay.id == updated.id) updated else overlay,
+    ]..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    selectedVideoOverlayId = updated.id;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void selectVideoOverlay(String id) {
+    if (!videoOverlays.any((overlay) => overlay.id == id)) {
+      return;
+    }
+    selectedVideoOverlayId = id;
+    selectedSegmentOrder = null;
+    notifyListeners();
+  }
+
+  void deleteSelectedVideoOverlay() {
+    final id = selectedVideoOverlayId;
+    if (id == null || videoOverlayTrackLocked) {
+      return;
+    }
+    _commitHistory();
+    videoOverlays = videoOverlays.where((overlay) => overlay.id != id).toList();
+    selectedVideoOverlayId = null;
+    renderUrl = null;
+    notifyListeners();
+  }
+
+  void toggleSelectedVideoOverlayEnabled() {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null || videoOverlayTrackLocked) {
+      return;
+    }
+    updateVideoOverlay(overlay.copyWith(enabled: !overlay.enabled));
+  }
+
+  void toggleVideoOverlayTrackTarget() {
+    videoOverlayTrackTargeted = !videoOverlayTrackTargeted;
+    notifyListeners();
+  }
+
+  void toggleVideoOverlayTrackLock() {
+    videoOverlayTrackLocked = !videoOverlayTrackLocked;
+    notifyListeners();
+  }
+
+  void toggleVideoOverlayTrackVisibility() {
+    videoOverlayTrackVisible = !videoOverlayTrackVisible;
+    notifyListeners();
   }
 
   void selectSegment(int order) {
@@ -9544,6 +9679,7 @@ class EditorController extends ChangeNotifier {
     _programCutPending = false;
     segments = _reorderSegments(project.segments);
     videoOverlays = List<VideoOverlayClip>.of(project.videoOverlays);
+    selectedVideoOverlayId = null;
     transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
       for (var index = 0; index < project.captions.length; index++)
@@ -9623,9 +9759,11 @@ class EditorController extends ChangeNotifier {
     return _EditorSnapshot(
       createdAt: DateTime.now(),
       segments: List<HighlightSegment>.of(segments),
+      videoOverlays: List<VideoOverlayClip>.of(videoOverlays),
       captions: List<CaptionSegment>.of(captions),
       timelineMarkers: List<TimelineMarker>.of(timelineMarkers),
       selectedSegmentOrder: selectedSegmentOrder,
+      selectedVideoOverlayId: selectedVideoOverlayId,
       markIn: markIn,
       markOut: markOut,
       includeCaptions: includeCaptions,
@@ -9637,14 +9775,20 @@ class EditorController extends ChangeNotifier {
 
   void _restoreSnapshot(_EditorSnapshot snapshot) {
     segments = _reorderSegments(snapshot.segments);
+    videoOverlays = List<VideoOverlayClip>.of(snapshot.videoOverlays);
     captions = [
       for (var index = 0; index < snapshot.captions.length; index++)
         snapshot.captions[index].copyWith(order: index + 1),
     ];
     selectedSegmentOrder = snapshot.selectedSegmentOrder;
+    selectedVideoOverlayId = snapshot.selectedVideoOverlayId;
     if (selectedSegmentOrder != null &&
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
+    }
+    if (selectedVideoOverlayId != null &&
+        !videoOverlays.any((overlay) => overlay.id == selectedVideoOverlayId)) {
+      selectedVideoOverlayId = null;
     }
     markIn = snapshot.markIn;
     markOut = snapshot.markOut;
@@ -10119,9 +10263,11 @@ class _EditorSnapshot {
   const _EditorSnapshot({
     required this.createdAt,
     required this.segments,
+    required this.videoOverlays,
     required this.captions,
     required this.timelineMarkers,
     required this.selectedSegmentOrder,
+    required this.selectedVideoOverlayId,
     required this.markIn,
     required this.markOut,
     required this.includeCaptions,
@@ -10132,9 +10278,11 @@ class _EditorSnapshot {
 
   final DateTime createdAt;
   final List<HighlightSegment> segments;
+  final List<VideoOverlayClip> videoOverlays;
   final List<CaptionSegment> captions;
   final List<TimelineMarker> timelineMarkers;
   final int? selectedSegmentOrder;
+  final String? selectedVideoOverlayId;
   final double? markIn;
   final double? markOut;
   final bool includeCaptions;

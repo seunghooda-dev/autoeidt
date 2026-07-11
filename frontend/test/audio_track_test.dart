@@ -377,6 +377,54 @@ void main() {
     expect(restored.selectedShortsId, 3);
   });
 
+  test('V2 overlay clips support move trim lock and undo history', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base video'),
+      ];
+
+    controller.addVideoOverlay(
+      sourcePath: r'C:\media\broll.mov',
+      sourceName: 'broll.mov',
+      timelineStart: 2.01,
+      sourceDuration: 7.04,
+    );
+
+    expect(controller.videoOverlays, hasLength(1));
+    expect(controller.selectedSegmentOrder, isNull);
+    expect(controller.selectedVideoOverlay?.timelineStart, 2.0);
+    expect(
+      controller.selectedVideoOverlay?.timelineEnd,
+      closeTo(9.033333, 0.000001),
+    );
+
+    final moved = controller.selectedVideoOverlay!.copyWith(
+      timelineStart: 5,
+      timelineEnd: 11,
+      sourceStart: 1,
+      sourceEnd: 7,
+    );
+    controller.updateVideoOverlay(moved);
+    expect(controller.selectedVideoOverlay?.timelineStart, 5);
+    expect(controller.canUndo, isTrue);
+
+    controller.undo();
+    expect(controller.selectedVideoOverlay?.timelineStart, 2.0);
+    controller.redo();
+    expect(controller.selectedVideoOverlay?.timelineStart, 5.0);
+
+    controller.toggleVideoOverlayTrackLock();
+    controller.updateVideoOverlay(moved.copyWith(timelineStart: 8));
+    expect(controller.selectedVideoOverlay?.timelineStart, 5.0);
+    controller.deleteSelectedVideoOverlay();
+    expect(controller.videoOverlays, hasLength(1));
+
+    controller.toggleVideoOverlayTrackLock();
+    controller.deleteSelectedVideoOverlay();
+    expect(controller.videoOverlays, isEmpty);
+    controller.dispose();
+  });
+
   test('project file saves and reopens without losing editor data', () async {
     final directory = await io.Directory.systemTemp.createTemp(
       'autoedit_project_file_test',
