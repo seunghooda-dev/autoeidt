@@ -45,6 +45,24 @@ void main() {
       videoPositionX: -0.25,
       videoPositionY: 0.4,
       videoRotation: 12.5,
+      motionKeyframes: [
+        MotionKeyframe(
+          time: 0,
+          opacity: 0.65,
+          scale: 1.35,
+          positionX: -0.25,
+          positionY: 0.4,
+          rotation: 12.5,
+        ),
+        MotionKeyframe(
+          time: 4,
+          opacity: 1,
+          scale: 1.8,
+          positionX: 0.2,
+          positionY: -0.1,
+          rotation: 0,
+        ),
+      ],
       videoFadeIn: 0.2,
       videoFadeOut: 0.4,
       colorBrightness: 0.1,
@@ -86,6 +104,7 @@ void main() {
     expect(json['video_position_x'], -0.25);
     expect(json['video_position_y'], 0.4);
     expect(json['video_rotation'], 12.5);
+    expect((json['motion_keyframes'] as List).length, 2);
     expect(json['video_fade_in'], 0.2);
     expect(json['video_fade_out'], 0.4);
     expect(json['color_brightness'], 0.1);
@@ -123,6 +142,8 @@ void main() {
     expect(restored.videoPositionX, -0.25);
     expect(restored.videoPositionY, 0.4);
     expect(restored.videoRotation, 12.5);
+    expect(restored.motionKeyframes.length, 2);
+    expect(restored.motionKeyframes.last.scale, 1.8);
     expect(restored.videoFadeIn, 0.2);
     expect(restored.videoFadeOut, 0.4);
     expect(restored.colorBrightness, 0.1);
@@ -186,6 +207,41 @@ void main() {
     expect(controller.selectedSegment!.videoRotation, 18);
     controller.dispose();
   });
+
+  test(
+    'motion keyframes interpolate, auto-create and survive clip split',
+    () async {
+      final controller = EditorController(autoStartEngine: false)
+        ..duration = 20
+        ..segments = const [
+          HighlightSegment(order: 1, start: 0, end: 10, reason: 'animated'),
+        ]
+        ..selectedSegmentOrder = 1;
+
+      controller.setSelectedVideoScale(1.2);
+      controller.addOrUpdateSelectedMotionKeyframe();
+      expect(controller.selectedSegment!.motionKeyframes.length, 1);
+      expect(controller.selectedMotionHasKeyframeAtPlayhead, isTrue);
+
+      await controller.seekTo(5, autoplay: false);
+      controller.setSelectedVideoScale(2);
+      controller.setSelectedVideoOpacity(0.5);
+      expect(controller.selectedSegment!.motionKeyframes.length, 2);
+      expect(controller.selectedMotionHasKeyframeAtPlayhead, isTrue);
+
+      await controller.seekTo(2.5, autoplay: false);
+      expect(controller.selectedMotionValues.scale, closeTo(1.6, 0.001));
+      expect(controller.selectedMotionValues.opacity, closeTo(0.75, 0.001));
+      expect(controller.selectedMotionHasKeyframeAtPlayhead, isFalse);
+
+      controller.splitSelectedAt(5);
+      expect(controller.segments.length, 2);
+      expect(controller.segments.first.motionKeyframes.last.time, 5);
+      expect(controller.segments.last.motionKeyframes.first.time, 0);
+      expect(controller.segments.last.motionKeyframes.first.scale, 2);
+      controller.dispose();
+    },
+  );
 
   test('selected clip routes broadcast source channels to stereo output', () {
     final controller = EditorController(autoStartEngine: false)

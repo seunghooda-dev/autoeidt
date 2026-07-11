@@ -134,6 +134,7 @@ class HighlightSegment(BaseModel):
     video_position_x: float = 0.0
     video_position_y: float = 0.0
     video_rotation: float = 0.0
+    motion_keyframes: list[dict[str, float]] = Field(default_factory=list)
     video_fade_in: float = 0.0
     video_fade_out: float = 0.0
     color_brightness: float = 0.0
@@ -243,6 +244,37 @@ class HighlightSegment(BaseModel):
     def video_rotation_must_be_safe(cls, value: float) -> float:
         return max(-180.0, min(float(value), 180.0))
 
+    @field_validator("motion_keyframes", mode="before")
+    @classmethod
+    def motion_keyframes_must_be_safe(cls, value: Any) -> list[dict[str, float]]:
+        if not isinstance(value, list):
+            return []
+        output: list[dict[str, float]] = []
+        for item in value[:64]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                output.append(
+                    {
+                        "time": _snap_seconds_to_30p(max(0.0, float(item.get("time", 0.0)))),
+                        "opacity": max(0.0, min(float(item.get("opacity", 1.0)), 1.0)),
+                        "scale": max(1.0, min(float(item.get("scale", 1.0)), 3.0)),
+                        "position_x": max(
+                            -1.0, min(float(item.get("position_x", 0.0)), 1.0)
+                        ),
+                        "position_y": max(
+                            -1.0, min(float(item.get("position_y", 0.0)), 1.0)
+                        ),
+                        "rotation": max(
+                            -180.0, min(float(item.get("rotation", 0.0)), 180.0)
+                        ),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        output.sort(key=lambda item: item["time"])
+        return output
+
     @field_validator("color_brightness")
     @classmethod
     def color_brightness_must_be_safe(cls, value: float) -> float:
@@ -317,6 +349,8 @@ class LocalPreviewRequest(BaseModel):
     path: str
     start_seconds: float = 0.0
     duration_seconds: float | None = None
+    segment: HighlightSegment | None = None
+    aspect_ratio: str = "16:9"
 
 
 class LocalPreviewResponse(BaseModel):

@@ -1,6 +1,9 @@
 from app.services.ffmpeg_service import SilenceRange
 from app.services.llm_service import fallback_highlights, fallback_review_highlights
-from app.services.hybrid_cut import attach_script_preview
+from app.services.hybrid_cut import (
+    attach_script_preview,
+    refine_highlights_with_hybrid_cut,
+)
 from app.services.stt_service import fallback_transcript
 from app.tasks import _captions_from_transcript
 
@@ -106,3 +109,47 @@ def test_missing_stt_fallback_is_not_used_as_script_preview() -> None:
     preview = attach_script_preview({"start": 0, "end": 45}, transcript)
 
     assert preview == ""
+
+
+def test_hybrid_cut_remaps_motion_keyframes_to_each_remaining_piece() -> None:
+    refined = refine_highlights_with_hybrid_cut(
+        [
+            {
+                "start": 0,
+                "end": 10,
+                "reason": "animated",
+                "motion_keyframes": [
+                    {
+                        "time": 0,
+                        "opacity": 1,
+                        "scale": 1,
+                        "position_x": 0,
+                        "position_y": 0,
+                        "rotation": 0,
+                    },
+                    {
+                        "time": 10,
+                        "opacity": 0.5,
+                        "scale": 2,
+                        "position_x": 0.5,
+                        "position_y": -0.5,
+                        "rotation": 20,
+                    },
+                ],
+            }
+        ],
+        [SilenceRange(start=4, end=6, duration=2)],
+        [],
+        [],
+        min_piece_seconds=2,
+    )
+
+    assert len(refined) == 2
+    first, second = refined
+    assert first["motion_keyframes"][0]["time"] == 0
+    assert first["motion_keyframes"][-1]["time"] == 4
+    assert first["motion_keyframes"][-1]["scale"] == 1.4
+    assert second["motion_keyframes"][0]["time"] == 0
+    assert second["motion_keyframes"][0]["scale"] == 1.6
+    assert second["motion_keyframes"][-1]["time"] == 4
+    assert second["motion_keyframes"][-1]["scale"] == 2

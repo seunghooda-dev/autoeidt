@@ -2742,6 +2742,7 @@ class _TimelinePainter extends CustomPainter {
         label: 'V1 C${segment.order}',
         track: _DragTrack.video,
         hasVideoEffects:
+            segment.motionKeyframes.isNotEmpty ||
             (segment.videoOpacity - 1).abs() > 0.0001 ||
             (segment.videoScale - 1).abs() > 0.0001 ||
             segment.videoPositionX.abs() > 0.0001 ||
@@ -2752,6 +2753,11 @@ class _TimelinePainter extends CustomPainter {
             segment.colorBrightness.abs() > 0.0001 ||
             (segment.colorContrast - 1).abs() > 0.0001 ||
             (segment.colorSaturation - 1).abs() > 0.0001,
+        motionKeyframePositions: [
+          for (final keyframe in segment.motionKeyframes)
+            videoStart +
+                keyframe.time * (sequenceMode ? 1.0 : segment.playbackSpeed),
+        ],
         thumbnails: timelineThumbnailSampleFrames(segment)
             .map((frame) => timelineThumbnails[frame])
             .whereType<ui.Image>()
@@ -2862,6 +2868,7 @@ class _TimelinePainter extends CustomPainter {
     double? waveformSourceEnd,
     bool disabledPattern = false,
     bool hasVideoEffects = false,
+    List<double> motionKeyframePositions = const [],
     List<ui.Image> thumbnails = const [],
   }) {
     final left = _secondsToX(start, size.width);
@@ -2947,6 +2954,9 @@ class _TimelinePainter extends CustomPainter {
     );
     if (hasVideoEffects && track == _DragTrack.video && rect.width >= 72) {
       _drawFxBadge(canvas, rect);
+    }
+    if (track == _DragTrack.video && motionKeyframePositions.isNotEmpty) {
+      _drawMotionKeyframeMarkers(canvas, size, rect, motionKeyframePositions);
     }
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
@@ -3041,6 +3051,34 @@ class _TimelinePainter extends CustomPainter {
         badgeRect.center.dy - painter.height / 2,
       ),
     );
+  }
+
+  void _drawMotionKeyframeMarkers(
+    Canvas canvas,
+    Size size,
+    Rect rect,
+    List<double> positions,
+  ) {
+    final fill = Paint()..color = const Color(0xFFFFD166);
+    final stroke = Paint()
+      ..color = Colors.black.withValues(alpha: 0.78)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    for (final position in positions) {
+      final x = _secondsToX(
+        position,
+        size.width,
+      ).clamp(rect.left + 4, rect.right - 4).toDouble();
+      final center = Offset(x, rect.bottom - 8);
+      final path = Path()
+        ..moveTo(center.dx, center.dy - 4)
+        ..lineTo(center.dx + 4, center.dy)
+        ..lineTo(center.dx, center.dy + 4)
+        ..lineTo(center.dx - 4, center.dy)
+        ..close();
+      canvas.drawPath(path, fill);
+      canvas.drawPath(path, stroke);
+    }
   }
 
   void _drawVideoPresence(Canvas canvas, Rect rect) {

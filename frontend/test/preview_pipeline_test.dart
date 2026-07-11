@@ -89,7 +89,6 @@ void main() {
       );
       expect(controller.isLoadingTimelineThumbnails, isFalse);
     } finally {
-      await controller.videoController?.dispose();
       controller.dispose();
       await platform.close();
       await temporaryDirectory.delete(recursive: true);
@@ -208,7 +207,9 @@ void main() {
       );
 
       await _waitUntil(
-        () => controller.selectedSegmentOrder == 2,
+        () =>
+            controller.selectedSegmentOrder == 2 &&
+            (controller.currentPositionSeconds - 5).abs() < 0.05,
         describe: () =>
             'selected=${controller.selectedSegmentOrder} '
             'program=${controller.monitorPositionSeconds} '
@@ -222,12 +223,81 @@ void main() {
       expect(controller.currentPositionSeconds, closeTo(5, 0.05));
       expect(controller.videoController!.value.isPlaying, isTrue);
     } finally {
-      await controller.videoController?.dispose();
       controller.dispose();
       await platform.close();
       VideoPlayerPlatform.instance = originalPlatform;
     }
   });
+
+  test(
+    'program monitor requests an effect-aware selected clip proxy',
+    () async {
+      final originalPlatform = VideoPlayerPlatform.instance;
+      final platform = _FakeVideoPlayerPlatform();
+      VideoPlayerPlatform.instance = platform;
+      final api = _ProxyApiClient();
+      final controller = EditorController(
+        apiClient: api,
+        engineService: _ReadyEngineService(),
+        autoStartEngine: false,
+      );
+
+      try {
+        await controller.openMediaFile(
+          PlatformFile(
+            name: 'broadcast.mxf',
+            size: 1024,
+            path: r'C:\media\broadcast.mxf',
+          ),
+        );
+        await _waitUntil(
+          () =>
+              (controller.videoController?.value.isInitialized ?? false) &&
+              !controller.isPreparingPreview,
+        );
+        controller
+          ..segments = const [
+            HighlightSegment(
+              order: 1,
+              start: 10,
+              end: 14,
+              reason: 'animated clip',
+              motionKeyframes: [
+                MotionKeyframe(
+                  time: 0,
+                  opacity: 1,
+                  scale: 1,
+                  positionX: 0,
+                  positionY: 0,
+                  rotation: 0,
+                ),
+                MotionKeyframe(
+                  time: 4,
+                  opacity: 1,
+                  scale: 2,
+                  positionX: 0,
+                  positionY: 0,
+                  rotation: 0,
+                ),
+              ],
+            ),
+          ]
+          ..selectedSegmentOrder = 1;
+
+        await controller.setPreviewMonitorMode('program');
+        await _waitUntil(() => api.requestedSegments.isNotEmpty);
+
+        expect(api.requestedSegments.last?.motionKeyframes.length, 2);
+        expect(api.requestedSegments.last?.motionKeyframes.last.scale, 2);
+        expect(api.requestedAspectRatios.last, '16:9');
+        expect(controller.currentPositionSeconds, closeTo(10, 0.05));
+      } finally {
+        controller.dispose();
+        await platform.close();
+        VideoPlayerPlatform.instance = originalPlatform;
+      }
+    },
+  );
 
   test(
     'MXF preview starts quickly and continues in the next proxy window',
@@ -297,7 +367,6 @@ void main() {
         expect(continuedController.value.isPlaying, isTrue);
         expect(controller.currentPositionSeconds, closeTo(8, 0.001));
       } finally {
-        await controller.videoController?.dispose();
         controller.dispose();
         await platform.close();
         VideoPlayerPlatform.instance = originalPlatform;
@@ -363,7 +432,6 @@ void main() {
       expect(activeController.value.duration, const Duration(seconds: 10));
       expect(activeController.value.isPlaying, isTrue);
     } finally {
-      await controller.videoController?.dispose();
       controller.dispose();
       await platform.close();
       VideoPlayerPlatform.instance = originalPlatform;
@@ -407,7 +475,6 @@ void main() {
       expect(controller.isPreparingPreview, isFalse);
       expect(controller.errorMessage, isNull);
     } finally {
-      await controller.videoController?.dispose();
       controller.dispose();
       await platform.close();
       await temporaryDirectory.delete(recursive: true);
@@ -459,7 +526,6 @@ void main() {
       expect(controller.errorMessage, isNull);
       expect(controller.isPreparingPreview, isFalse);
     } finally {
-      await controller.videoController?.dispose();
       controller.dispose();
       await platform.close();
       await temporaryDirectory.delete(recursive: true);
@@ -535,6 +601,8 @@ class _ProxyApiClient extends ApiClient {
 
   final List<double> requestedStarts = [];
   final List<double> requestedDurations = [];
+  final List<HighlightSegment?> requestedSegments = [];
+  final List<String> requestedAspectRatios = [];
 
   @override
   Future<MediaProbeInfo> probeLocalMedia(String path) async {
@@ -554,14 +622,19 @@ class _ProxyApiClient extends ApiClient {
     String path, {
     double startSeconds = 0,
     double? durationSeconds,
+    HighlightSegment? segment,
+    String aspectRatio = '16:9',
   }) async {
-    final duration = durationSeconds ?? 8;
+    final duration = segment?.outputDuration ?? durationSeconds ?? 8;
+    final resolvedStart = segment?.start ?? startSeconds;
     requestedStarts.add(startSeconds);
     requestedDurations.add(duration);
+    requestedSegments.add(segment);
+    requestedAspectRatios.add(aspectRatio);
     return LocalPreviewInfo(
       url: 'https://preview.invalid/proxy-${requestedDurations.length}.mp4',
       localPath: localPreviewPath,
-      sourceStart: startSeconds,
+      sourceStart: resolvedStart,
       duration: duration,
     );
   }

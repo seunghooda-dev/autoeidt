@@ -91,11 +91,21 @@ void main() {
     await tester.pump();
 
     expect(find.text('Motion / Opacity'), findsOneWidget);
+    expect(find.byKey(const Key('clip-motion-keyframes')), findsOneWidget);
+    expect(
+      find.byKey(const Key('clip-motion-keyframe-toggle')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('clip-video-opacity')), findsOneWidget);
     expect(find.byKey(const Key('clip-video-scale')), findsOneWidget);
     expect(find.byKey(const Key('clip-video-position-x')), findsOneWidget);
     expect(find.byKey(const Key('clip-video-position-y')), findsOneWidget);
     expect(find.byKey(const Key('clip-video-rotation')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('clip-motion-keyframe-toggle')));
+    await tester.pump();
+    expect(controller.selectedSegment!.motionKeyframes.length, 1);
+    expect(controller.selectedMotionHasKeyframeAtPlayhead, isTrue);
 
     await tester.tap(find.byKey(const Key('clip-motion-reset')));
     await tester.pump();
@@ -104,6 +114,7 @@ void main() {
     expect(controller.selectedSegment!.videoPositionX, 0);
     expect(controller.selectedSegment!.videoPositionY, 0);
     expect(controller.selectedSegment!.videoRotation, 0);
+    expect(controller.selectedSegment!.motionKeyframes, isEmpty);
     controller.dispose();
   });
 

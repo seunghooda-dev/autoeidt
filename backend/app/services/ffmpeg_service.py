@@ -789,9 +789,115 @@ def _segment_video_rotation(segment: dict) -> float:
     return max(-180.0, min(value, 180.0))
 
 
+def _segment_motion_keyframes(
+    segment: dict,
+    output_duration: float,
+) -> list[dict[str, float]]:
+    output: list[dict[str, float]] = []
+    for item in segment.get("motion_keyframes", [])[:64]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            output.append(
+                {
+                    "time": max(
+                        0.0,
+                        min(float(item.get("time", 0.0)), output_duration),
+                    ),
+                    "opacity": max(
+                        0.0,
+                        min(
+                            float(item.get("opacity", _segment_video_opacity(segment))),
+                            1.0,
+                        ),
+                    ),
+                    "scale": max(
+                        1.0,
+                        min(
+                            float(item.get("scale", _segment_video_scale(segment))),
+                            3.0,
+                        ),
+                    ),
+                    "position_x": max(
+                        -1.0,
+                        min(
+                            float(
+                                item.get(
+                                    "position_x",
+                                    _segment_video_position(segment, "x"),
+                                )
+                            ),
+                            1.0,
+                        ),
+                    ),
+                    "position_y": max(
+                        -1.0,
+                        min(
+                            float(
+                                item.get(
+                                    "position_y",
+                                    _segment_video_position(segment, "y"),
+                                )
+                            ),
+                            1.0,
+                        ),
+                    ),
+                    "rotation": max(
+                        -180.0,
+                        min(
+                            float(
+                                item.get(
+                                    "rotation",
+                                    _segment_video_rotation(segment),
+                                )
+                            ),
+                            180.0,
+                        ),
+                    ),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    output.sort(key=lambda item: item["time"])
+    deduplicated: list[dict[str, float]] = []
+    for item in output:
+        if deduplicated and abs(deduplicated[-1]["time"] - item["time"]) < 1 / 60:
+            deduplicated[-1] = item
+        else:
+            deduplicated.append(item)
+    return deduplicated
+
+
+def _motion_track_expression(
+    keyframes: list[dict[str, float]],
+    field: str,
+    fallback: float,
+    variable: str,
+) -> str:
+    points = [(item["time"], item[field]) for item in keyframes]
+    if not points:
+        return f"{fallback:.6f}"
+    if len(points) == 1:
+        return f"{points[0][1]:.6f}"
+    expression = f"{points[-1][1]:.6f}"
+    for index in range(len(points) - 2, -1, -1):
+        left_time, left_value = points[index]
+        right_time, right_value = points[index + 1]
+        duration = max(1 / RENDER_FRAME_RATE, right_time - left_time)
+        interpolation = (
+            f"{left_value:.6f}+({right_value - left_value:.6f})*"
+            f"clip(({variable}-{left_time:.6f})/{duration:.6f},0,1)"
+        )
+        expression = (
+            f"if(lt({variable},{right_time:.6f}),{interpolation},{expression})"
+        )
+    return expression
+
+
 def _segment_has_motion_effect(segment: dict) -> bool:
     return any(
         (
+            bool(segment.get("motion_keyframes")),
             abs(_segment_video_opacity(segment) - 1.0) > 0.0001,
             abs(_segment_video_scale(segment) - 1.0) > 0.0001,
             abs(_segment_video_position(segment, "x")) > 0.0001,
@@ -1339,6 +1445,8 @@ def _render_reencode_with_video_args(
     aspect_ratio: str = "16:9",
     captions: list[dict] | None = None,
     caption_style: dict | None = None,
+    output_size: tuple[int, int] = (1920, 1080),
+    processing_size: tuple[int, int] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -1346,6 +1454,7 @@ def _render_reencode_with_video_args(
     audio_stream_count = _audio_stream_count(video_path)
     audio_channel_counts = _audio_channel_counts(video_path, audio_stream_count)
     source_width, source_height = _source_video_dimensions(video_path)
+    render_width, render_height = processing_size or (source_width, source_height)
     source_starts = [float(segment["start"]) for segment in segments]
     source_starts.extend(_segment_audio_start(segment) for segment in segments)
     input_seek = max(0.0, min(source_starts, default=0.0) - 2.0)
@@ -1374,6 +1483,14 @@ def _render_reencode_with_video_args(
             f"[0:v]trim=start={start:.6f}:end={end:.6f}",
             f"setpts=(PTS-STARTPTS)/{speed:.6f}",
         ]
+        if processing_size is not None:
+            video_steps.extend(
+                [
+                    f"scale={render_width}:{render_height}:"
+                    "force_original_aspect_ratio=decrease",
+                    f"pad={render_width}:{render_height}:(ow-iw)/2:(oh-ih)/2",
+                ]
+            )
         brightness = _segment_color_brightness(segment)
         contrast = _segment_color_contrast(segment)
         saturation = _segment_color_saturation(segment)
@@ -1389,37 +1506,91 @@ def _render_reencode_with_video_args(
         if not _segment_video_enabled(segment):
             video_steps.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
         if _segment_has_motion_effect(segment):
-            scale = _segment_video_scale(segment)
-            scaled_width = max(2, round(source_width * scale / 2) * 2)
-            scaled_height = max(2, round(source_height * scale / 2) * 2)
-            opacity = _segment_video_opacity(segment)
-            rotation_radians = math.radians(_segment_video_rotation(segment))
-            position_x = _segment_video_position(segment, "x")
-            position_y = _segment_video_position(segment, "y")
-            video_steps.extend(
-                [
-                    f"scale={scaled_width}:{scaled_height}",
-                    "format=rgba",
-                ]
-            )
-            if abs(rotation_radians) > 0.000001:
-                video_steps.append(
-                    f"rotate={rotation_radians:.9f}:ow=iw:oh=ih:c=black@0"
+            motion_keyframes = _segment_motion_keyframes(segment, output_duration)
+            if motion_keyframes:
+                scale_expression = _motion_track_expression(
+                    motion_keyframes,
+                    "scale",
+                    _segment_video_scale(segment),
+                    "ot",
                 )
-            if opacity < 0.9999:
-                video_steps.append(f"colorchannelmixer=aa={opacity:.6f}")
+                position_x_expression = _motion_track_expression(
+                    motion_keyframes,
+                    "position_x",
+                    _segment_video_position(segment, "x"),
+                    "ot",
+                )
+                position_y_expression = _motion_track_expression(
+                    motion_keyframes,
+                    "position_y",
+                    _segment_video_position(segment, "y"),
+                    "ot",
+                )
+                rotation_expression = _motion_track_expression(
+                    motion_keyframes,
+                    "rotation",
+                    _segment_video_rotation(segment),
+                    "t",
+                )
+                opacity_expression = _motion_track_expression(
+                    motion_keyframes,
+                    "opacity",
+                    _segment_video_opacity(segment),
+                    "T",
+                )
+                zoom_expression = f"2*({scale_expression})"
+                video_steps.extend(
+                    [
+                        "pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=black@0",
+                        "format=rgba",
+                        f"zoompan=z='{zoom_expression}':"
+                        f"x='(iw-iw/zoom)/2-({position_x_expression})*"
+                        "iw/(2*zoom)':"
+                        f"y='(ih-ih/zoom)/2-({position_y_expression})*"
+                        "ih/(2*zoom)':"
+                        f"d=1:s={render_width}x{render_height}:"
+                        f"fps={RENDER_FRAME_RATE_LABEL}",
+                        "format=rgba",
+                        f"rotate='({rotation_expression})*PI/180':"
+                        "ow=iw:oh=ih:c=black@0",
+                        "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                        f"a='alpha(X,Y)*({opacity_expression})'",
+                    ]
+                )
+                overlay_x = "0"
+                overlay_y = "0"
+            else:
+                scale = _segment_video_scale(segment)
+                scaled_width = max(2, round(render_width * scale / 2) * 2)
+                scaled_height = max(2, round(render_height * scale / 2) * 2)
+                opacity = _segment_video_opacity(segment)
+                rotation_radians = math.radians(_segment_video_rotation(segment))
+                position_x = _segment_video_position(segment, "x")
+                position_y = _segment_video_position(segment, "y")
+                video_steps.extend(
+                    [
+                        f"scale={scaled_width}:{scaled_height}",
+                        "format=rgba",
+                    ]
+                )
+                if abs(rotation_radians) > 0.000001:
+                    video_steps.append(
+                        f"rotate={rotation_radians:.9f}:ow=iw:oh=ih:c=black@0"
+                    )
+                if opacity < 0.9999:
+                    video_steps.append(f"colorchannelmixer=aa={opacity:.6f}")
+                overlay_x = (
+                    f"({render_width}-w)/2+({position_x:.6f})*{render_width}/2"
+                )
+                overlay_y = (
+                    f"({render_height}-h)/2+({position_y:.6f})*{render_height}/2"
+                )
             video_steps[-1] = f"{video_steps[-1]}[motion{index}]"
             filters.append(",".join(video_steps))
             filters.append(
-                f"color=c=black:s={source_width}x{source_height}:"
+                f"color=c=black:s={render_width}x{render_height}:"
                 f"d={output_duration:.6f}:r={RENDER_FRAME_RATE_LABEL}"
                 f"[motioncanvas{index}]"
-            )
-            overlay_x = (
-                f"({source_width}-w)/2+({position_x:.6f})*{source_width}/2"
-            )
-            overlay_y = (
-                f"({source_height}-h)/2+({position_y:.6f})*{source_height}/2"
             )
             video_steps = [
                 f"[motioncanvas{index}][motion{index}]overlay="
@@ -1498,14 +1669,22 @@ def _render_reencode_with_video_args(
         filter_complex += ";[basev]setsar=1[framedv]"
         video_chain = "[framedv]"
     elif aspect_ratio == "1:1":
+        square_size = min(output_size)
         filter_complex += (
-            ";[basev]scale=1080:1080:force_original_aspect_ratio=decrease,"
-            "pad=1080:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[framedv]"
+            f";[basev]scale={square_size}:{square_size}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={square_size}:{square_size}:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1[framedv]"
         )
         video_chain = "[framedv]"
     else:
-        filter_complex += ";[basev]scale=1920:1080:force_original_aspect_ratio=decrease," \
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[framedv]"
+        output_width, output_height = output_size
+        filter_complex += (
+            f";[basev]scale={output_width}:{output_height}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1[framedv]"
+        )
         video_chain = "[framedv]"
 
     caption_file = None
@@ -1594,6 +1773,70 @@ def render_highlights_reencoded(
         captions=captions,
         caption_style=caption_style,
     )
+
+
+def create_program_preview_proxy(
+    video_path: Path,
+    segment: dict,
+    aspect_ratio: str = "16:9",
+) -> tuple[Path, bool, float, float]:
+    settings = get_settings()
+    resolved = video_path.resolve(strict=True)
+    stat = resolved.stat()
+    normalized_aspect_ratio = (
+        aspect_ratio if aspect_ratio in {"16:9", "9:16", "1:1"} else "16:9"
+    )
+    normalized_segment = dict(segment)
+    normalized_segment["order"] = 1
+    source_start = max(0.0, float(normalized_segment.get("start") or 0.0))
+    source_end = max(source_start, float(normalized_segment.get("end") or source_start))
+    speed = _segment_playback_speed(normalized_segment)
+    output_duration = max(0.0, (source_end - source_start) / speed)
+    cache_payload = json.dumps(
+        normalized_segment,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    cache_identity = (
+        f"program-preview-v2-540p|{normalized_aspect_ratio}|{cache_payload}|"
+        f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
+    )
+    cache_key = f"program_{sha1(cache_identity.encode('utf-8')).hexdigest()}"
+    preview_dir = settings.data_dir / "preview_proxies"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    output_path = preview_dir / f"{cache_key}.mp4"
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return output_path, True, source_start, output_duration
+
+    with _preview_proxy_lock(cache_key):
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path, True, source_start, output_duration
+        temp_path = output_path.with_suffix(".tmp.mp4")
+        if temp_path.exists():
+            temp_path.unlink()
+        try:
+            output_size = (
+                (540, 960)
+                if normalized_aspect_ratio == "9:16"
+                else (540, 540)
+                if normalized_aspect_ratio == "1:1"
+                else (960, 540)
+            )
+            _render_reencode_with_video_args(
+                resolved,
+                [normalized_segment],
+                temp_path,
+                ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28"],
+                aspect_ratio=normalized_aspect_ratio,
+                output_size=output_size,
+                processing_size=(960, 540),
+            )
+            temp_path.replace(output_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+        return output_path, False, source_start, output_duration
 
 
 def render_highlights(

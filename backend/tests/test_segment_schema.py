@@ -14,6 +14,17 @@ def test_highlight_segment_accepts_track_controls() -> None:
         video_position_x=-3,
         video_position_y=3,
         video_rotation=270,
+        motion_keyframes=[
+            {
+                "time": -2,
+                "opacity": 4,
+                "scale": 8,
+                "position_x": -3,
+                "position_y": 3,
+                "rotation": 270,
+            },
+            {"time": 2.019, "opacity": 0.5, "scale": 1.4},
+        ],
         video_fade_in=20,
         video_fade_out=20,
         color_brightness=1,
@@ -44,6 +55,15 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.video_position_x == -1.0
     assert segment.video_position_y == 1.0
     assert segment.video_rotation == 180.0
+    assert segment.motion_keyframes[0] == {
+        "time": 0.0,
+        "opacity": 1.0,
+        "scale": 3.0,
+        "position_x": -1.0,
+        "position_y": 1.0,
+        "rotation": 180.0,
+    }
+    assert segment.motion_keyframes[1]["time"] == 2.033333
     assert segment.video_fade_in == 10.0
     assert segment.video_fade_out == 10.0
     assert segment.color_brightness == 0.3
@@ -108,6 +128,24 @@ def test_render_normalization_preserves_motion_and_opacity() -> None:
                 "video_position_x": -0.35,
                 "video_position_y": 0.2,
                 "video_rotation": 14.5,
+                "motion_keyframes": [
+                    {
+                        "time": 0,
+                        "opacity": 1,
+                        "scale": 1,
+                        "position_x": 0,
+                        "position_y": 0,
+                        "rotation": 0,
+                    },
+                    {
+                        "time": 3,
+                        "opacity": 0.6,
+                        "scale": 1.8,
+                        "position_x": 0.2,
+                        "position_y": -0.1,
+                        "rotation": 12,
+                    },
+                ],
             }
         ],
         duration=10,
@@ -119,6 +157,8 @@ def test_render_normalization_preserves_motion_and_opacity() -> None:
     assert normalized[0]["video_position_x"] == -0.35
     assert normalized[0]["video_position_y"] == 0.2
     assert normalized[0]["video_rotation"] == 14.5
+    assert len(normalized[0]["motion_keyframes"]) == 2
+    assert normalized[0]["motion_keyframes"][1]["scale"] == 1.8
 
 
 def test_caption_style_clamps_unsafe_values() -> None:

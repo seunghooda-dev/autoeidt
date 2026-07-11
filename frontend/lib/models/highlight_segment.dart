@@ -48,6 +48,119 @@ class ReframeKeyframe {
   Map<String, dynamic> toJson() => {'time': time, 'x': x, 'y': y};
 }
 
+class MotionKeyframe {
+  const MotionKeyframe({
+    required this.time,
+    required this.opacity,
+    required this.scale,
+    required this.positionX,
+    required this.positionY,
+    required this.rotation,
+  });
+
+  final double time;
+  final double opacity;
+  final double scale;
+  final double positionX;
+  final double positionY;
+  final double rotation;
+
+  MotionKeyframe copyWith({
+    double? time,
+    double? opacity,
+    double? scale,
+    double? positionX,
+    double? positionY,
+    double? rotation,
+  }) {
+    return MotionKeyframe(
+      time: time ?? this.time,
+      opacity: opacity ?? this.opacity,
+      scale: scale ?? this.scale,
+      positionX: positionX ?? this.positionX,
+      positionY: positionY ?? this.positionY,
+      rotation: rotation ?? this.rotation,
+    );
+  }
+
+  factory MotionKeyframe.fromJson(Map<String, dynamic> json) {
+    return MotionKeyframe(
+      time: snapSecondsToFrame(
+        ((json['time'] as num?)?.toDouble() ?? 0).clamp(0.0, double.infinity),
+      ),
+      opacity: ((json['opacity'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      scale: ((json['scale'] as num?)?.toDouble() ?? 1.0)
+          .clamp(1.0, 3.0)
+          .toDouble(),
+      positionX:
+          ((json['position_x'] as num?)?.toDouble() ??
+                  (json['positionX'] as num?)?.toDouble() ??
+                  0.0)
+              .clamp(-1.0, 1.0)
+              .toDouble(),
+      positionY:
+          ((json['position_y'] as num?)?.toDouble() ??
+                  (json['positionY'] as num?)?.toDouble() ??
+                  0.0)
+              .clamp(-1.0, 1.0)
+              .toDouble(),
+      rotation: ((json['rotation'] as num?)?.toDouble() ?? 0.0)
+          .clamp(-180.0, 180.0)
+          .toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'time': snapSecondsToFrame(time),
+    'opacity': opacity,
+    'scale': scale,
+    'position_x': positionX,
+    'position_y': positionY,
+    'rotation': rotation,
+  };
+}
+
+MotionKeyframe sampleMotionKeyframes({
+  required List<MotionKeyframe> keyframes,
+  required double time,
+  required MotionKeyframe fallback,
+}) {
+  if (keyframes.isEmpty) {
+    return fallback.copyWith(time: time);
+  }
+  final sorted = [...keyframes]..sort((a, b) => a.time.compareTo(b.time));
+  if (time <= sorted.first.time) {
+    return sorted.first.copyWith(time: time);
+  }
+  if (time >= sorted.last.time) {
+    return sorted.last.copyWith(time: time);
+  }
+  for (var index = 0; index < sorted.length - 1; index++) {
+    final left = sorted[index];
+    final right = sorted[index + 1];
+    if (time > right.time) {
+      continue;
+    }
+    final duration = math.max(
+      timecodeFrameDurationSeconds,
+      right.time - left.time,
+    );
+    final progress = ((time - left.time) / duration).clamp(0.0, 1.0).toDouble();
+    double lerp(double start, double end) => start + (end - start) * progress;
+    return MotionKeyframe(
+      time: time,
+      opacity: lerp(left.opacity, right.opacity),
+      scale: lerp(left.scale, right.scale),
+      positionX: lerp(left.positionX, right.positionX),
+      positionY: lerp(left.positionY, right.positionY),
+      rotation: lerp(left.rotation, right.rotation),
+    );
+  }
+  return fallback.copyWith(time: time);
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,
@@ -62,6 +175,7 @@ class HighlightSegment {
     this.videoPositionX = 0.0,
     this.videoPositionY = 0.0,
     this.videoRotation = 0.0,
+    this.motionKeyframes = const [],
     this.videoFadeIn = 0.0,
     this.videoFadeOut = 0.0,
     this.colorBrightness = 0.0,
@@ -105,6 +219,7 @@ class HighlightSegment {
   final double videoPositionX;
   final double videoPositionY;
   final double videoRotation;
+  final List<MotionKeyframe> motionKeyframes;
   final double videoFadeIn;
   final double videoFadeOut;
   final double colorBrightness;
@@ -156,6 +271,7 @@ class HighlightSegment {
     double? videoPositionX,
     double? videoPositionY,
     double? videoRotation,
+    List<MotionKeyframe>? motionKeyframes,
     double? videoFadeIn,
     double? videoFadeOut,
     double? colorBrightness,
@@ -199,6 +315,7 @@ class HighlightSegment {
       videoPositionX: videoPositionX ?? this.videoPositionX,
       videoPositionY: videoPositionY ?? this.videoPositionY,
       videoRotation: videoRotation ?? this.videoRotation,
+      motionKeyframes: motionKeyframes ?? this.motionKeyframes,
       videoFadeIn: videoFadeIn ?? this.videoFadeIn,
       videoFadeOut: videoFadeOut ?? this.videoFadeOut,
       colorBrightness: colorBrightness ?? this.colorBrightness,
@@ -277,6 +394,10 @@ class HighlightSegment {
                   0.0)
               .clamp(-180.0, 180.0)
               .toDouble(),
+      motionKeyframes: (json['motion_keyframes'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(MotionKeyframe.fromJson)
+          .toList(),
       videoFadeIn:
           (json['video_fade_in'] as num?)?.toDouble() ??
           (json['videoFadeIn'] as num?)?.toDouble() ??
@@ -412,6 +533,9 @@ class HighlightSegment {
       'video_position_x': videoPositionX,
       'video_position_y': videoPositionY,
       'video_rotation': videoRotation,
+      'motion_keyframes': motionKeyframes
+          .map((keyframe) => keyframe.toJson())
+          .toList(),
       'video_fade_in': videoFadeIn,
       'video_fade_out': videoFadeOut,
       'color_brightness': colorBrightness,

@@ -183,6 +183,7 @@ def _write_batch_render_manifest(
                         "video_position_x": segment.get("video_position_x", 0.0),
                         "video_position_y": segment.get("video_position_y", 0.0),
                         "video_rotation": segment.get("video_rotation", 0.0),
+                        "motion_keyframes": segment.get("motion_keyframes", []),
                         "focus_x": segment.get("focus_x", 0.5),
                         "focus_y": segment.get("focus_y", 0.42),
                         "focus_confidence": segment.get("focus_confidence", 0.0),
@@ -438,6 +439,83 @@ def _normalize_highlights(
         video_rotation = max(
             -180.0, min(float(item.get("video_rotation", 0.0)), 180.0)
         )
+        output_duration = max(0.0, (end - start) / playback_speed)
+        motion_keyframes: list[dict[str, float]] = []
+        for keyframe in item.get("motion_keyframes", []):
+            if not isinstance(keyframe, dict):
+                continue
+            try:
+                motion_keyframes.append(
+                    {
+                        "time": _round_timecode_seconds(
+                            max(
+                                0.0,
+                                min(float(keyframe.get("time", 0.0)), output_duration),
+                            )
+                        ),
+                        "opacity": round(
+                            max(
+                                0.0,
+                                min(float(keyframe.get("opacity", video_opacity)), 1.0),
+                            ),
+                            4,
+                        ),
+                        "scale": round(
+                            max(
+                                1.0,
+                                min(float(keyframe.get("scale", video_scale)), 3.0),
+                            ),
+                            4,
+                        ),
+                        "position_x": round(
+                            max(
+                                -1.0,
+                                min(
+                                    float(
+                                        keyframe.get("position_x", video_position_x)
+                                    ),
+                                    1.0,
+                                ),
+                            ),
+                            4,
+                        ),
+                        "position_y": round(
+                            max(
+                                -1.0,
+                                min(
+                                    float(
+                                        keyframe.get("position_y", video_position_y)
+                                    ),
+                                    1.0,
+                                ),
+                            ),
+                            4,
+                        ),
+                        "rotation": round(
+                            max(
+                                -180.0,
+                                min(
+                                    float(keyframe.get("rotation", video_rotation)),
+                                    180.0,
+                                ),
+                            ),
+                            4,
+                        ),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        motion_keyframes.sort(key=lambda keyframe: keyframe["time"])
+        deduplicated_motion_keyframes: list[dict[str, float]] = []
+        for keyframe in motion_keyframes[:64]:
+            if (
+                deduplicated_motion_keyframes
+                and abs(deduplicated_motion_keyframes[-1]["time"] - keyframe["time"])
+                < 1 / 60
+            ):
+                deduplicated_motion_keyframes[-1] = keyframe
+            else:
+                deduplicated_motion_keyframes.append(keyframe)
         video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
         video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
         color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
@@ -501,6 +579,7 @@ def _normalize_highlights(
                 "video_position_x": round(video_position_x, 3),
                 "video_position_y": round(video_position_y, 3),
                 "video_rotation": round(video_rotation, 3),
+                "motion_keyframes": deduplicated_motion_keyframes,
                 "video_fade_in": round(video_fade_in, 3),
                 "video_fade_out": round(video_fade_out, 3),
                 "color_brightness": round(color_brightness, 3),

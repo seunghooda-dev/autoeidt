@@ -118,6 +118,89 @@ def attach_script_preview(
     return ""
 
 
+def _sample_motion_keyframe(
+    keyframes: list[dict[str, float]],
+    time: float,
+) -> dict[str, float]:
+    if time <= keyframes[0]["time"]:
+        return dict(keyframes[0])
+    if time >= keyframes[-1]["time"]:
+        return dict(keyframes[-1])
+    for index in range(len(keyframes) - 1):
+        left = keyframes[index]
+        right = keyframes[index + 1]
+        if time > right["time"]:
+            continue
+        duration = max(1 / 30, right["time"] - left["time"])
+        progress = max(0.0, min((time - left["time"]) / duration, 1.0))
+        return {
+            "time": time,
+            **{
+                field: left[field] + (right[field] - left[field]) * progress
+                for field in (
+                    "opacity",
+                    "scale",
+                    "position_x",
+                    "position_y",
+                    "rotation",
+                )
+            },
+        }
+    return dict(keyframes[-1])
+
+
+def _remap_motion_keyframes(
+    highlight: dict[str, Any],
+    piece_start: float,
+    piece_end: float,
+) -> list[dict[str, float]]:
+    raw = highlight.get("motion_keyframes", [])
+    if not isinstance(raw, list) or not raw:
+        return []
+    speed = max(0.25, min(float(highlight.get("playback_speed", 1.0)), 4.0))
+    highlight_start = float(highlight["start"])
+    trim_start = max(0.0, (piece_start - highlight_start) / speed)
+    trim_end = max(trim_start, (piece_end - highlight_start) / speed)
+    keyframes: list[dict[str, float]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            keyframes.append(
+                {
+                    "time": max(0.0, float(item.get("time", 0.0))),
+                    "opacity": max(0.0, min(float(item.get("opacity", 1.0)), 1.0)),
+                    "scale": max(1.0, min(float(item.get("scale", 1.0)), 3.0)),
+                    "position_x": max(
+                        -1.0, min(float(item.get("position_x", 0.0)), 1.0)
+                    ),
+                    "position_y": max(
+                        -1.0, min(float(item.get("position_y", 0.0)), 1.0)
+                    ),
+                    "rotation": max(
+                        -180.0, min(float(item.get("rotation", 0.0)), 180.0)
+                    ),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    if not keyframes:
+        return []
+    keyframes.sort(key=lambda item: item["time"])
+    output = [_sample_motion_keyframe(keyframes, trim_start)]
+    output.extend(
+        dict(item)
+        for item in keyframes
+        if trim_start < item["time"] < trim_end
+    )
+    output.append(_sample_motion_keyframe(keyframes, trim_end))
+    for item in output:
+        item["time"] = round(max(0.0, item["time"] - trim_start), 6)
+        for field in item.keys() - {"time"}:
+            item[field] = round(item[field], 6)
+    return output
+
+
 def refine_highlights_with_hybrid_cut(
     highlights: list[dict[str, Any]],
     silence_ranges: list[SilenceRange],
@@ -161,6 +244,11 @@ def refine_highlights_with_hybrid_cut(
                     "video_position_x": float(highlight.get("video_position_x", 0.0)),
                     "video_position_y": float(highlight.get("video_position_y", 0.0)),
                     "video_rotation": float(highlight.get("video_rotation", 0.0)),
+                    "motion_keyframes": _remap_motion_keyframes(
+                        highlight,
+                        start,
+                        end,
+                    ),
                     "video_fade_in": float(highlight.get("video_fade_in", 0.0)),
                     "video_fade_out": float(highlight.get("video_fade_out", 0.0)),
                     "color_brightness": float(highlight.get("color_brightness", 0.0)),
@@ -171,6 +259,7 @@ def refine_highlights_with_hybrid_cut(
                     "focus_confidence": float(highlight.get("focus_confidence", 0.0)),
                     "focus_keyframes": list(highlight.get("focus_keyframes", [])),
                     "topic_id": int(highlight.get("topic_id", 0) or 0),
+                    "playback_speed": float(highlight.get("playback_speed", 1.0)),
                     "audio_pan": float(highlight.get("audio_pan", 0.0)),
                     "audio_normalize": bool(highlight.get("audio_normalize", False)),
                     "audio_loudness_target": float(

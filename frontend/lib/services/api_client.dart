@@ -103,10 +103,16 @@ class ApiClient {
     String path, {
     double startSeconds = 0,
     double? durationSeconds,
+    HighlightSegment? segment,
+    String aspectRatio = '16:9',
   }) async {
     final data = <String, Object>{'path': path, 'start_seconds': startSeconds};
     if (durationSeconds != null) {
       data['duration_seconds'] = durationSeconds;
+    }
+    if (segment != null) {
+      data['segment'] = segment.toJson();
+      data['aspect_ratio'] = aspectRatio;
     }
     final response = await _dio.post<Map<String, dynamic>>(
       '$baseUrl/api/jobs/preview-local',

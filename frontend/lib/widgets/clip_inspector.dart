@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +24,7 @@ class ClipInspector extends StatelessWidget {
     final editor = context.read<EditorController>();
     final avDriftFrames = controller.audioVideoLengthDriftFrames(selected);
     final hasAvDrift = controller.segmentHasAudioLengthDrift(selected);
+    final motion = controller.selectedMotionValues;
     return ListView(
       children: [
         Row(
@@ -168,15 +171,30 @@ class ClipInspector extends StatelessWidget {
               : editor.resetSelectedMotion,
         ),
         const SizedBox(height: 6),
+        _MotionKeyframeControl(
+          count: selected.motionKeyframes.length,
+          currentTime: controller.selectedMotionLocalTime,
+          atKeyframe: controller.selectedMotionHasKeyframeAtPlayhead,
+          enabled: !controller.videoTrackLocked,
+          onPrevious: () =>
+              unawaited(editor.jumpToSelectedMotionKeyframe(next: false)),
+          onToggle: editor.addOrUpdateSelectedMotionKeyframe,
+          onNext: () =>
+              unawaited(editor.jumpToSelectedMotionKeyframe(next: true)),
+          onDelete: controller.selectedMotionHasKeyframeAtPlayhead
+              ? editor.removeSelectedMotionKeyframe
+              : null,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
           key: const Key('clip-video-opacity'),
           icon: Icons.opacity,
           label: 'Opacity',
-          value: selected.videoOpacity.clamp(0.0, 1.0).toDouble(),
+          value: motion.opacity.clamp(0.0, 1.0).toDouble(),
           min: 0,
           max: 1,
           divisions: 100,
-          valueLabel: '${(selected.videoOpacity * 100).round()}%',
+          valueLabel: '${(motion.opacity * 100).round()}%',
           onChanged: controller.videoTrackLocked
               ? null
               : editor.setSelectedVideoOpacity,
@@ -186,11 +204,11 @@ class ClipInspector extends StatelessWidget {
           key: const Key('clip-video-scale'),
           icon: Icons.zoom_out_map,
           label: 'Scale',
-          value: selected.videoScale.clamp(1.0, 3.0).toDouble(),
+          value: motion.scale.clamp(1.0, 3.0).toDouble(),
           min: 1,
           max: 3,
           divisions: 200,
-          valueLabel: '${(selected.videoScale * 100).round()}%',
+          valueLabel: '${(motion.scale * 100).round()}%',
           onChanged: controller.videoTrackLocked
               ? null
               : editor.setSelectedVideoScale,
@@ -200,11 +218,11 @@ class ClipInspector extends StatelessWidget {
           key: const Key('clip-video-position-x'),
           icon: Icons.swap_horiz,
           label: 'Position X',
-          value: selected.videoPositionX.clamp(-1.0, 1.0).toDouble(),
+          value: motion.positionX.clamp(-1.0, 1.0).toDouble(),
           min: -1,
           max: 1,
           divisions: 200,
-          valueLabel: '${(selected.videoPositionX * 100).round()}',
+          valueLabel: '${(motion.positionX * 100).round()}',
           onChanged: controller.videoTrackLocked
               ? null
               : editor.setSelectedVideoPositionX,
@@ -214,11 +232,11 @@ class ClipInspector extends StatelessWidget {
           key: const Key('clip-video-position-y'),
           icon: Icons.swap_vert,
           label: 'Position Y',
-          value: selected.videoPositionY.clamp(-1.0, 1.0).toDouble(),
+          value: motion.positionY.clamp(-1.0, 1.0).toDouble(),
           min: -1,
           max: 1,
           divisions: 200,
-          valueLabel: '${(selected.videoPositionY * 100).round()}',
+          valueLabel: '${(motion.positionY * 100).round()}',
           onChanged: controller.videoTrackLocked
               ? null
               : editor.setSelectedVideoPositionY,
@@ -228,11 +246,11 @@ class ClipInspector extends StatelessWidget {
           key: const Key('clip-video-rotation'),
           icon: Icons.rotate_right,
           label: 'Rotation',
-          value: selected.videoRotation.clamp(-180.0, 180.0).toDouble(),
+          value: motion.rotation.clamp(-180.0, 180.0).toDouble(),
           min: -180,
           max: 180,
           divisions: 360,
-          valueLabel: '${selected.videoRotation.round()}°',
+          valueLabel: '${motion.rotation.round()}°',
           onChanged: controller.videoTrackLocked
               ? null
               : editor.setSelectedVideoRotation,
@@ -535,6 +553,106 @@ class _InspectorSectionHeader extends StatelessWidget {
           icon: const Icon(Icons.restart_alt, size: 18),
         ),
       ],
+    );
+  }
+}
+
+class _MotionKeyframeControl extends StatelessWidget {
+  const _MotionKeyframeControl({
+    required this.count,
+    required this.currentTime,
+    required this.atKeyframe,
+    required this.enabled,
+    required this.onPrevious,
+    required this.onToggle,
+    required this.onNext,
+    required this.onDelete,
+  });
+
+  final int count;
+  final double currentTime;
+  final bool atKeyframe;
+  final bool enabled;
+  final VoidCallback onPrevious;
+  final VoidCallback onToggle;
+  final VoidCallback onNext;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('clip-motion-keyframes'),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: count > 0
+            ? colorScheme.primaryContainer.withValues(alpha: 0.22)
+            : colorScheme.surfaceContainerHighest,
+        border: Border.all(
+          color: count > 0
+              ? colorScheme.primary.withValues(alpha: 0.55)
+              : colorScheme.outline,
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Tooltip(
+            message: count > 0 ? '키프레임 애니메이션 활성' : '정적 효과',
+            child: Icon(
+              count > 0 ? Icons.timer_outlined : Icons.timer_off_outlined,
+              size: 17,
+              color: count > 0
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              count == 0
+                  ? 'Keyframes · ${formatSeconds(currentTime)}'
+                  : '$count keyframes · ${formatSeconds(currentTime)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+          IconButton(
+            key: const Key('clip-motion-keyframe-previous'),
+            tooltip: '이전 키프레임',
+            visualDensity: VisualDensity.compact,
+            onPressed: enabled && count > 0 ? onPrevious : null,
+            icon: const Icon(Icons.skip_previous, size: 18),
+          ),
+          IconButton(
+            key: const Key('clip-motion-keyframe-toggle'),
+            tooltip: atKeyframe ? '현재 키프레임 갱신' : '현재 위치에 키프레임 추가',
+            visualDensity: VisualDensity.compact,
+            onPressed: enabled ? onToggle : null,
+            icon: Icon(
+              atKeyframe ? Icons.diamond : Icons.diamond_outlined,
+              size: 17,
+              color: atKeyframe ? colorScheme.primary : null,
+            ),
+          ),
+          IconButton(
+            key: const Key('clip-motion-keyframe-next'),
+            tooltip: '다음 키프레임',
+            visualDensity: VisualDensity.compact,
+            onPressed: enabled && count > 0 ? onNext : null,
+            icon: const Icon(Icons.skip_next, size: 18),
+          ),
+          IconButton(
+            key: const Key('clip-motion-keyframe-delete'),
+            tooltip: '현재 키프레임 삭제',
+            visualDensity: VisualDensity.compact,
+            onPressed: enabled ? onDelete : null,
+            icon: const Icon(Icons.delete_outline, size: 17),
+          ),
+        ],
+      ),
     );
   }
 }

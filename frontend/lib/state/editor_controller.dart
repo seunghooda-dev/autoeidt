@@ -153,6 +153,9 @@ class EditorController extends ChangeNotifier {
   Future<void>? _activeProxyRequest;
   double _previewSourceStartSeconds = 0;
   double? _previewSourceDurationSeconds;
+  int? _previewProgramSegmentOrder;
+  String? _previewProgramSegmentSignature;
+  Timer? _programPreviewRefreshTimer;
   double _manualPlayheadSeconds = 0;
   double _programPlayheadSeconds = 0;
   int? _programSegmentOrder;
@@ -590,8 +593,23 @@ class EditorController extends ChangeNotifier {
     if (controller == null || !controller.value.isInitialized) {
       return _manualPlayheadSeconds;
     }
+    final localSeconds = controller.value.position.inMilliseconds / 1000;
+    final programSegment = _previewProgramSegment;
     return _previewSourceStartSeconds +
-        controller.value.position.inMilliseconds / 1000;
+        localSeconds * (programSegment?.playbackSpeed ?? 1.0);
+  }
+
+  HighlightSegment? get _previewProgramSegment {
+    final order = _previewProgramSegmentOrder;
+    if (order == null) {
+      return null;
+    }
+    for (final segment in segments) {
+      if (segment.order == order) {
+        return segment;
+      }
+    }
+    return null;
   }
 
   bool get canUseProgramMonitor => segments.isNotEmpty;
@@ -634,6 +652,62 @@ class EditorController extends ChangeNotifier {
     }
     return null;
   }
+
+  double get selectedMotionLocalTime {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return 0;
+    }
+    final local = isProgramMonitor
+        ? monitorPositionSeconds - programStartForSegment(selected.order)
+        : (currentPositionSeconds - selected.start) / selected.playbackSpeed;
+    return _snapToFrame(local.clamp(0.0, selected.outputDuration).toDouble());
+  }
+
+  MotionKeyframe get selectedMotionValues {
+    final selected = selectedSegment;
+    final time = selectedMotionLocalTime;
+    if (selected == null) {
+      return MotionKeyframe(
+        time: time,
+        opacity: 1,
+        scale: 1,
+        positionX: 0,
+        positionY: 0,
+        rotation: 0,
+      );
+    }
+    return sampleMotionKeyframes(
+      keyframes: selected.motionKeyframes,
+      time: time,
+      fallback: MotionKeyframe(
+        time: time,
+        opacity: selected.videoOpacity,
+        scale: selected.videoScale,
+        positionX: selected.videoPositionX,
+        positionY: selected.videoPositionY,
+        rotation: selected.videoRotation,
+      ),
+    );
+  }
+
+  int get selectedMotionKeyframeIndex {
+    final selected = selectedSegment;
+    if (selected == null) {
+      return -1;
+    }
+    final time = selectedMotionLocalTime;
+    for (var index = 0; index < selected.motionKeyframes.length; index++) {
+      if ((selected.motionKeyframes[index].time - time).abs() <=
+          timecodeFrameDurationSeconds / 2 + 0.0001) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  bool get selectedMotionHasKeyframeAtPlayhead =>
+      selectedMotionKeyframeIndex >= 0;
 
   bool get canApplySelectedTransition =>
       selectedSegment != null &&
@@ -2240,6 +2314,9 @@ class EditorController extends ChangeNotifier {
     selectedSegmentOrder = normalized.order.clamp(1, segments.length).toInt();
     renderUrl = null;
     notifyListeners();
+    if (isProgramMonitor) {
+      _scheduleProgramPreviewRefresh(normalized);
+    }
   }
 
   void selectSegment(int order) {
@@ -3322,6 +3399,33 @@ class EditorController extends ChangeNotifier {
     if (selected == null || videoTrackLocked) {
       return;
     }
+    if (selected.motionKeyframes.isNotEmpty) {
+      final time = selectedMotionLocalTime;
+      final current = selectedMotionValues;
+      final next = current.copyWith(
+        time: time,
+        opacity: videoOpacity,
+        scale: videoScale,
+        positionX: videoPositionX,
+        positionY: videoPositionY,
+        rotation: videoRotation,
+      );
+      final keyframes = [...selected.motionKeyframes];
+      final existingIndex = selectedMotionKeyframeIndex;
+      if (existingIndex >= 0) {
+        keyframes[existingIndex] = next;
+      } else {
+        keyframes.add(next);
+      }
+      keyframes.sort((a, b) => a.time.compareTo(b.time));
+      updateSegment(
+        selected.copyWith(
+          motionKeyframes: keyframes,
+          source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+        ),
+      );
+      return;
+    }
     updateSegment(
       selected.copyWith(
         videoOpacity: videoOpacity,
@@ -3332,6 +3436,83 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void addOrUpdateSelectedMotionKeyframe() {
+    final selected = selectedSegment;
+    if (selected == null || videoTrackLocked) {
+      return;
+    }
+    final current = selectedMotionValues.copyWith(
+      time: selectedMotionLocalTime,
+    );
+    final keyframes = [...selected.motionKeyframes];
+    final existingIndex = selectedMotionKeyframeIndex;
+    if (existingIndex >= 0) {
+      keyframes[existingIndex] = current;
+    } else {
+      keyframes.add(current);
+    }
+    keyframes.sort((a, b) => a.time.compareTo(b.time));
+    updateSegment(
+      selected.copyWith(
+        motionKeyframes: keyframes,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void removeSelectedMotionKeyframe() {
+    final selected = selectedSegment;
+    final index = selectedMotionKeyframeIndex;
+    if (selected == null || videoTrackLocked || index < 0) {
+      return;
+    }
+    final removed = selected.motionKeyframes[index];
+    final keyframes = [...selected.motionKeyframes]..removeAt(index);
+    updateSegment(
+      selected.copyWith(
+        videoOpacity: keyframes.isEmpty ? removed.opacity : null,
+        videoScale: keyframes.isEmpty ? removed.scale : null,
+        videoPositionX: keyframes.isEmpty ? removed.positionX : null,
+        videoPositionY: keyframes.isEmpty ? removed.positionY : null,
+        videoRotation: keyframes.isEmpty ? removed.rotation : null,
+        motionKeyframes: keyframes,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  Future<void> jumpToSelectedMotionKeyframe({required bool next}) async {
+    final selected = selectedSegment;
+    if (selected == null || selected.motionKeyframes.isEmpty) {
+      return;
+    }
+    final current = selectedMotionLocalTime;
+    final threshold = timecodeFrameDurationSeconds / 2;
+    MotionKeyframe? target;
+    if (next) {
+      for (final keyframe in selected.motionKeyframes) {
+        if (keyframe.time > current + threshold) {
+          target = keyframe;
+          break;
+        }
+      }
+    } else {
+      for (final keyframe in selected.motionKeyframes.reversed) {
+        if (keyframe.time < current - threshold) {
+          target = keyframe;
+          break;
+        }
+      }
+    }
+    if (target == null) {
+      return;
+    }
+    final targetSeconds = isProgramMonitor
+        ? programStartForSegment(selected.order) + target.time
+        : selected.start + target.time * selected.playbackSpeed;
+    await seekMonitorTo(targetSeconds, autoplay: false);
   }
 
   void resetSelectedMotion() {
@@ -3346,6 +3527,7 @@ class EditorController extends ChangeNotifier {
         videoPositionX: 0,
         videoPositionY: 0,
         videoRotation: 0,
+        motionKeyframes: const [],
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
@@ -6387,7 +6569,9 @@ class EditorController extends ChangeNotifier {
     if (durationSeconds == null || durationSeconds <= 0) {
       return true;
     }
-    final endSeconds = _previewSourceStartSeconds + durationSeconds;
+    final endSeconds =
+        _previewSourceStartSeconds +
+        durationSeconds * (_previewProgramSegment?.playbackSpeed ?? 1.0);
     return seconds >=
             _previewSourceStartSeconds - timecodeFrameDurationSeconds &&
         seconds <= endSeconds - timecodeFrameDurationSeconds;
@@ -6398,7 +6582,9 @@ class EditorController extends ChangeNotifier {
     VideoPlayerController controller,
   ) {
     final durationSeconds = controller.value.duration.inMilliseconds / 1000;
-    final localSeconds = sourceSeconds - _previewSourceStartSeconds;
+    final localSeconds =
+        (sourceSeconds - _previewSourceStartSeconds) /
+        (_previewProgramSegment?.playbackSpeed ?? 1.0);
     if (durationSeconds <= 0) {
       return math.max(0, localSeconds);
     }
@@ -6432,6 +6618,14 @@ class EditorController extends ChangeNotifier {
           selectedSpan?.sequenceStart ??
           _programPlayheadSeconds.clamp(0.0, outputDurationSeconds).toDouble();
       await _seekProgramTo(target, autoplay: false);
+    } else if (_previewProgramSegmentOrder != null) {
+      final path = selectedFile?.path;
+      if (!kIsWeb && path != null && path.isNotEmpty) {
+        await _initializeProxyPreview(
+          path,
+          focusSeconds: _manualPlayheadSeconds,
+        );
+      }
     }
     notifyListeners();
   }
@@ -6461,6 +6655,19 @@ class EditorController extends ChangeNotifier {
     _programSegmentOrder = span.segment.order;
     selectedSegmentOrder = span.segment.order;
     final sourceSeconds = sourceTimeForProgramPosition(clamped);
+    final path = selectedFile?.path;
+    final signature = _programPreviewSignature(span.segment);
+    if (!kIsWeb &&
+        path != null &&
+        path.isNotEmpty &&
+        (_previewProgramSegmentOrder != span.segment.order ||
+            _previewProgramSegmentSignature != signature)) {
+      await _initializeProxyPreview(
+        path,
+        focusSeconds: sourceSeconds,
+        programSegment: span.segment,
+      );
+    }
     await seekTo(sourceSeconds, autoplay: false);
     final controller = videoController;
     if (controller == null || !controller.value.isInitialized) {
@@ -6472,7 +6679,9 @@ class EditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await controller.setPlaybackSpeed(span.segment.playbackSpeed);
+    await controller.setPlaybackSpeed(
+      _previewProgramSegmentOrder == null ? span.segment.playbackSpeed : 1.0,
+    );
     if (autoplay) {
       await controller.play();
       playbackShuttleDirection = 1;
@@ -6608,6 +6817,7 @@ class EditorController extends ChangeNotifier {
     final controller = videoController;
     final path = selectedFile?.path;
     if (!_previewUsesProxy ||
+        _previewProgramSegmentOrder != null ||
         _proxyContinuationPending ||
         controller == null ||
         !controller.value.isInitialized ||
@@ -6932,10 +7142,43 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  String _programPreviewSignature(HighlightSegment segment) =>
+      '$exportAspectRatio|${jsonEncode(segment.toJson())}';
+
+  void _scheduleProgramPreviewRefresh(HighlightSegment segment) {
+    _programPreviewRefreshTimer?.cancel();
+    _programPreviewRefreshTimer = Timer(
+      const Duration(milliseconds: 450),
+      () => unawaited(_refreshProgramPreview(segment.order)),
+    );
+  }
+
+  Future<void> _refreshProgramPreview(int order) async {
+    if (!isProgramMonitor || selectedSegmentOrder != order) {
+      return;
+    }
+    final segment = selectedSegment;
+    final path = selectedFile?.path;
+    if (segment == null || kIsWeb || path == null || path.isEmpty) {
+      return;
+    }
+    final playhead = _programPlayheadSeconds;
+    final sourceSeconds = sourceTimeForProgramPosition(playhead);
+    await _initializeProxyPreview(
+      path,
+      focusSeconds: sourceSeconds,
+      programSegment: segment,
+    );
+    if (isProgramMonitor && selectedSegmentOrder == order) {
+      await _seekProgramTo(playhead, autoplay: false);
+    }
+  }
+
   Future<void> _initializeProxyPreview(
     String path, {
     double focusSeconds = 0,
     bool autoplay = false,
+    HighlightSegment? programSegment,
   }) async {
     if (kIsWeb || path.isEmpty) {
       return;
@@ -6943,15 +7186,22 @@ class EditorController extends ChangeNotifier {
     if (autoplay) {
       _previewAutoplayRequested = true;
     }
-    final requestedDuration = focusSeconds > 0
-        ? _seekProxyPreviewSeconds
-        : _initialProxyPreviewSeconds;
-    final preRoll = focusSeconds > 0
+    final requestedDuration =
+        programSegment?.outputDuration ??
+        (focusSeconds > 0
+            ? _seekProxyPreviewSeconds
+            : _initialProxyPreviewSeconds);
+    final preRoll = programSegment == null && focusSeconds > 0
         ? math.min(2.0, requestedDuration / 4)
         : 0.0;
-    final sourceStart = math.max(0.0, focusSeconds - preRoll);
+    final sourceStart =
+        programSegment?.start ?? math.max(0.0, focusSeconds - preRoll);
+    final programSignature = programSegment == null
+        ? ''
+        : _programPreviewSignature(programSegment);
     final requestKey =
-        '$path|${sourceStart.toStringAsFixed(3)}|${requestedDuration.toStringAsFixed(3)}';
+        '$path|${sourceStart.toStringAsFixed(3)}|'
+        '${requestedDuration.toStringAsFixed(3)}|$programSignature';
     final activeRequest = _activeProxyRequest;
     if (_activeProxyRequestKey == requestKey && activeRequest != null) {
       await activeRequest;
@@ -6965,6 +7215,8 @@ class EditorController extends ChangeNotifier {
       focusSeconds: focusSeconds,
       sourceStart: sourceStart,
       requestedDuration: requestedDuration,
+      programSegment: programSegment,
+      programSignature: programSignature,
     );
     _activeProxyRequestKey = requestKey;
     _activeProxyRequest = request;
@@ -6984,6 +7236,8 @@ class EditorController extends ChangeNotifier {
     required double focusSeconds,
     required double sourceStart,
     required double requestedDuration,
+    required HighlightSegment? programSegment,
+    required String programSignature,
   }) async {
     isPreparingPreview = true;
     notifyListeners();
@@ -6995,6 +7249,8 @@ class EditorController extends ChangeNotifier {
         path,
         startSeconds: sourceStart,
         durationSeconds: requestedDuration,
+        segment: programSegment,
+        aspectRatio: exportAspectRatio,
       );
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;
@@ -7090,6 +7346,10 @@ class EditorController extends ChangeNotifier {
       pendingController = null;
       _previewUsesProxy = true;
       _previewSourceStartSeconds = preview.sourceStart;
+      _previewProgramSegmentOrder = programSegment?.order;
+      _previewProgramSegmentSignature = programSegment == null
+          ? null
+          : programSignature;
       final previewDuration = controller.value.duration.inMilliseconds / 1000;
       _previewSourceDurationSeconds =
           previewDuration > 0 && preview.duration > 0
@@ -7143,6 +7403,8 @@ class EditorController extends ChangeNotifier {
     _previewUsesProxy = false;
     _previewSourceStartSeconds = 0;
     _previewSourceDurationSeconds = null;
+    _previewProgramSegmentOrder = null;
+    _previewProgramSegmentSignature = null;
     if (current != null) {
       current.removeListener(_handleVideoTick);
       await _disposePreviewControllerSafely(current);
@@ -7383,6 +7645,33 @@ class EditorController extends ChangeNotifier {
     final focusX = segment.focusX.clamp(0.0, 1.0).toDouble();
     final focusY = segment.focusY.clamp(0.0, 1.0).toDouble();
     final focusConfidence = segment.focusConfidence.clamp(0.0, 1.0).toDouble();
+    final motionDuration = (end - start) / playbackSpeed;
+    final normalizedMotionKeyframes = <MotionKeyframe>[];
+    for (final keyframe in segment.motionKeyframes) {
+      normalizedMotionKeyframes.add(
+        MotionKeyframe(
+          time: _snapToFrame(
+            keyframe.time.clamp(0.0, motionDuration).toDouble(),
+          ),
+          opacity: keyframe.opacity.clamp(0.0, 1.0).toDouble(),
+          scale: keyframe.scale.clamp(1.0, 3.0).toDouble(),
+          positionX: keyframe.positionX.clamp(-1.0, 1.0).toDouble(),
+          positionY: keyframe.positionY.clamp(-1.0, 1.0).toDouble(),
+          rotation: keyframe.rotation.clamp(-180.0, 180.0).toDouble(),
+        ),
+      );
+    }
+    normalizedMotionKeyframes.sort((a, b) => a.time.compareTo(b.time));
+    final motionKeyframes = <MotionKeyframe>[];
+    for (final normalized in normalizedMotionKeyframes) {
+      if (motionKeyframes.isNotEmpty &&
+          (motionKeyframes.last.time - normalized.time).abs() <
+              timecodeFrameDurationSeconds / 2) {
+        motionKeyframes[motionKeyframes.length - 1] = normalized;
+      } else {
+        motionKeyframes.add(normalized);
+      }
+    }
     final transitionType = normalizeClipTransitionType(segment.transitionType);
     final transitionDuration = transitionType == 'cut'
         ? 0.0
@@ -7414,6 +7703,7 @@ class EditorController extends ChangeNotifier {
       focusY: focusY,
       focusConfidence: focusConfidence,
       focusKeyframes: focusKeyframes,
+      motionKeyframes: motionKeyframes,
       topicId: math.max(0, segment.topicId),
       audioChannel1Enabled: audioChannel1Enabled,
       audioChannel2Enabled: audioChannel2Enabled,
@@ -7499,6 +7789,11 @@ class EditorController extends ChangeNotifier {
   }) {
     final source = segment.source == 'ai' ? 'ai+manual' : segment.source;
     final reasonSuffix = firstHalf ? 'split A' : 'split B';
+    final motionKeyframes = _motionKeyframesForSplit(
+      segment,
+      splitAt,
+      firstHalf: firstHalf,
+    );
     if (segment.audioLinked) {
       final start = firstHalf ? segment.start : splitAt;
       final end = firstHalf ? splitAt : segment.end;
@@ -7510,6 +7805,7 @@ class EditorController extends ChangeNotifier {
           audioEnd: end,
           transitionType: firstHalf ? segment.transitionType : 'cut',
           transitionDuration: firstHalf ? segment.transitionDuration : 0,
+          motionKeyframes: motionKeyframes,
           reason: '${segment.reason} / $reasonSuffix',
           source: source,
         ),
@@ -7533,10 +7829,57 @@ class EditorController extends ChangeNotifier {
         audioLinked: false,
         transitionType: firstHalf ? segment.transitionType : 'cut',
         transitionDuration: firstHalf ? segment.transitionDuration : 0,
+        motionKeyframes: motionKeyframes,
         reason: '${segment.reason} / $reasonSuffix',
         source: source,
       ),
     );
+  }
+
+  List<MotionKeyframe> _motionKeyframesForSplit(
+    HighlightSegment segment,
+    double splitAt, {
+    required bool firstHalf,
+  }) {
+    if (segment.motionKeyframes.isEmpty) {
+      return const [];
+    }
+    final splitTime = _snapToFrame(
+      ((splitAt - segment.start) / segment.playbackSpeed)
+          .clamp(0.0, segment.outputDuration)
+          .toDouble(),
+    );
+    final boundary = sampleMotionKeyframes(
+      keyframes: segment.motionKeyframes,
+      time: splitTime,
+      fallback: MotionKeyframe(
+        time: splitTime,
+        opacity: segment.videoOpacity,
+        scale: segment.videoScale,
+        positionX: segment.videoPositionX,
+        positionY: segment.videoPositionY,
+        rotation: segment.videoRotation,
+      ),
+    );
+    final tolerance = timecodeFrameDurationSeconds / 2;
+    if (firstHalf) {
+      final output = segment.motionKeyframes
+          .where((keyframe) => keyframe.time < splitTime - tolerance)
+          .toList();
+      output.add(boundary.copyWith(time: splitTime));
+      return output;
+    }
+    final output = <MotionKeyframe>[boundary.copyWith(time: 0)];
+    output.addAll(
+      segment.motionKeyframes
+          .where((keyframe) => keyframe.time > splitTime + tolerance)
+          .map(
+            (keyframe) => keyframe.copyWith(
+              time: _snapToFrame(keyframe.time - splitTime),
+            ),
+          ),
+    );
+    return output;
   }
 
   bool _segmentOverlapsRange(
@@ -9302,11 +9645,14 @@ class EditorController extends ChangeNotifier {
     _recoverySaveTimer?.cancel();
     _reverseShuttleTimer?.cancel();
     _timelineThumbnailTimer?.cancel();
+    _programPreviewRefreshTimer?.cancel();
     for (final image in timelineThumbnails.values) {
       image.dispose();
     }
     timelineThumbnails = const {};
-    videoController?.dispose();
+    final activeVideoController = videoController;
+    videoController = null;
+    unawaited(_disposePreviewControllerSafely(activeVideoController));
     unawaited(_engineService.dispose());
     super.dispose();
   }

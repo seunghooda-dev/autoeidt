@@ -36,6 +36,7 @@ from app.schemas import (
 )
 from app.services.ffmpeg_service import (
     FFmpegError,
+    create_program_preview_proxy,
     create_preview_proxy,
     create_timeline_thumbnail,
     probe_media_info,
@@ -214,11 +215,21 @@ def probe_local_media(payload: MediaProbeRequest) -> MediaProbeResponse:
 def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
     source_path = _resolve_local_file(payload.path)
     try:
-        preview_path, cached, source_start, duration = create_preview_proxy(
-            source_path,
-            start_seconds=payload.start_seconds,
-            duration_seconds=payload.duration_seconds,
-        )
+        if payload.segment is not None:
+            segment = payload.segment.model_dump()
+            preview_path, cached, source_start, duration = (
+                create_program_preview_proxy(
+                    source_path,
+                    segment,
+                    aspect_ratio=payload.aspect_ratio,
+                )
+            )
+        else:
+            preview_path, cached, source_start, duration = create_preview_proxy(
+                source_path,
+                start_seconds=payload.start_seconds,
+                duration_seconds=payload.duration_seconds,
+            )
     except FFmpegError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return LocalPreviewResponse(

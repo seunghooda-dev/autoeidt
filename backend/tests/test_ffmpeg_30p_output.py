@@ -168,6 +168,139 @@ def test_render_applies_motion_rotation_and_true_opacity(
     assert "shortest=1:format=auto" in filter_complex
 
 
+def test_render_interpolates_motion_keyframes_on_output_time(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_audio_channel_counts", lambda path, count: [2])
+    monkeypatch.setattr(ffmpeg_service, "_source_video_dimensions", lambda path: (1920, 1080))
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [
+            {
+                "order": 1,
+                "start": 0,
+                "end": 4,
+                "reason": "animated motion",
+                "motion_keyframes": [
+                    {
+                        "time": 0,
+                        "opacity": 1,
+                        "scale": 1,
+                        "position_x": 0,
+                        "position_y": 0,
+                        "rotation": 0,
+                    },
+                    {
+                        "time": 4,
+                        "opacity": 0.5,
+                        "scale": 1.5,
+                        "position_x": 0.25,
+                        "position_y": -0.2,
+                        "rotation": 12,
+                    },
+                ],
+            }
+        ],
+        tmp_path / "animated-motion.mp4",
+    )
+
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "pad=w=iw*2:h=ih*2:x=iw/2:y=ih/2:color=black@0" in filter_complex
+    assert "zoompan=z='2*(" in filter_complex
+    assert "clip((ot-0.000000)/4.000000,0,1)" in filter_complex
+    assert "d=1:s=1920x1080:fps=30" in filter_complex
+    assert "rotate='(" in filter_complex
+    assert "clip((t-0.000000)/4.000000,0,1)" in filter_complex
+    assert "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)'" in filter_complex
+    assert "clip((T-0.000000)/4.000000,0,1)" in filter_complex
+    assert "[motioncanvas0][motion0]overlay=x='0':y='0'" in filter_complex
+
+
+def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "source.mxf"
+    source.write_bytes(b"broadcast-source")
+    calls: list[dict] = []
+
+    def fake_render(
+        video_path: Path,
+        segments: list[dict],
+        output_path: Path,
+        video_args: list[str],
+        **kwargs,
+    ) -> Path:
+        calls.append(
+            {
+                "video_path": video_path,
+                "segments": segments,
+                "video_args": video_args,
+                "output_size": kwargs.get("output_size"),
+                "processing_size": kwargs.get("processing_size"),
+            }
+        )
+        output_path.write_bytes(b"preview")
+        return output_path
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(
+        ffmpeg_service,
+        "_render_reencode_with_video_args",
+        fake_render,
+    )
+    segment = {
+        "order": 7,
+        "start": 10,
+        "end": 14,
+        "playback_speed": 2,
+        "reason": "animated preview",
+        "motion_keyframes": [
+            {"time": 0, "scale": 1},
+            {"time": 2, "scale": 2},
+        ],
+    }
+
+    output, cached, source_start, duration = (
+        ffmpeg_service.create_program_preview_proxy(source, segment)
+    )
+    cached_output, cached_again, _, _ = (
+        ffmpeg_service.create_program_preview_proxy(source, segment)
+    )
+
+    assert output == cached_output
+    assert cached is False
+    assert cached_again is True
+    assert source_start == 10
+    assert duration == 2
+    assert calls[0]["segments"][0]["order"] == 1
+    assert calls[0]["segments"][0]["motion_keyframes"][1]["scale"] == 2
+    assert calls[0]["video_args"] == [
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+    ]
+    assert calls[0]["output_size"] == (960, 540)
+    assert calls[0]["processing_size"] == (960, 540)
+
+
 def test_caption_timing_uses_transition_adjusted_sequence_positions(
     tmp_path: Path,
 ) -> None:
