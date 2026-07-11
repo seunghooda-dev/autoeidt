@@ -162,6 +162,8 @@ class EditorController extends ChangeNotifier {
   bool _programCutPending = false;
   int _timelineThumbnailRevision = 0;
   static const double _initialProxyPreviewSeconds = 8;
+  static const double _programPreviewWindowSeconds = 8;
+  static const double _programPreviewPreRollSeconds = 2;
   static const Duration _directPreviewInitializationTimeout = Duration(
     milliseconds: 1500,
   );
@@ -6661,7 +6663,8 @@ class EditorController extends ChangeNotifier {
         path != null &&
         path.isNotEmpty &&
         (_previewProgramSegmentOrder != span.segment.order ||
-            _previewProgramSegmentSignature != signature)) {
+            _previewProgramSegmentSignature != signature ||
+            !_proxyContainsSourceTime(sourceSeconds))) {
       await _initializeProxyPreview(
         path,
         focusSeconds: sourceSeconds,
@@ -6697,7 +6700,11 @@ class EditorController extends ChangeNotifier {
     if (_previewUsesProxy && !_proxyContainsSourceTime(clamped)) {
       final path = selectedFile?.path;
       if (!kIsWeb && path != null && path.isNotEmpty) {
-        await _initializeProxyPreview(path, focusSeconds: clamped);
+        await _initializeProxyPreview(
+          path,
+          focusSeconds: clamped,
+          programSegment: isProgramMonitor ? previewActiveSegment : null,
+        );
         controller = videoController;
       }
     }
@@ -6817,7 +6824,6 @@ class EditorController extends ChangeNotifier {
     final controller = videoController;
     final path = selectedFile?.path;
     if (!_previewUsesProxy ||
-        _previewProgramSegmentOrder != null ||
         _proxyContinuationPending ||
         controller == null ||
         !controller.value.isInitialized ||
@@ -6828,10 +6834,14 @@ class EditorController extends ChangeNotifier {
     }
     final localDuration = controller.value.duration.inMilliseconds / 1000;
     final localPosition = controller.value.position.inMilliseconds / 1000;
-    final proxyEnd = _previewSourceStartSeconds + localDuration;
+    final programSegment = _previewProgramSegment;
+    final proxyEnd =
+        _previewSourceStartSeconds +
+        localDuration * (programSegment?.playbackSpeed ?? 1.0);
+    final sourceEnd = programSegment?.end ?? duration;
     if (localDuration <= 0 ||
         localPosition < localDuration - timecodeFrameDurationSeconds * 2 ||
-        duration <= proxyEnd + timecodeFrameDurationSeconds) {
+        sourceEnd <= proxyEnd + timecodeFrameDurationSeconds) {
       return false;
     }
 
@@ -6842,20 +6852,25 @@ class EditorController extends ChangeNotifier {
         path,
         focusSeconds: math.min(
           proxyEnd,
-          duration - timecodeFrameDurationSeconds,
+          sourceEnd - timecodeFrameDurationSeconds,
         ),
         autoplay: true,
+        programSegment: programSegment,
       );
     } finally {
       _proxyContinuationPending = false;
     }
     final nextController = videoController;
-    final programSegment = previewActiveSegment;
+    final activeProgramSegment = previewActiveSegment;
     if (isProgramMonitor &&
-        programSegment != null &&
+        activeProgramSegment != null &&
         nextController != null &&
         nextController.value.isInitialized) {
-      await nextController.setPlaybackSpeed(programSegment.playbackSpeed);
+      await nextController.setPlaybackSpeed(
+        _previewProgramSegmentOrder == null
+            ? activeProgramSegment.playbackSpeed
+            : 1.0,
+      );
     }
     final continued =
         nextController != null &&
@@ -6891,7 +6906,7 @@ class EditorController extends ChangeNotifier {
     playbackShuttleRate = nextRate;
     final controller = videoController;
     if (controller != null && controller.value.isInitialized) {
-      final sourceRate = isProgramMonitor
+      final sourceRate = isProgramMonitor && _previewProgramSegmentOrder == null
           ? (previewActiveSegment?.playbackSpeed ?? 1.0) * nextRate
           : nextRate;
       await controller.setPlaybackSpeed(sourceRate);
@@ -7186,16 +7201,36 @@ class EditorController extends ChangeNotifier {
     if (autoplay) {
       _previewAutoplayRequested = true;
     }
-    final requestedDuration =
-        programSegment?.outputDuration ??
-        (focusSeconds > 0
-            ? _seekProxyPreviewSeconds
-            : _initialProxyPreviewSeconds);
-    final preRoll = programSegment == null && focusSeconds > 0
-        ? math.min(2.0, requestedDuration / 4)
-        : 0.0;
-    final sourceStart =
-        programSegment?.start ?? math.max(0.0, focusSeconds - preRoll);
+    late final double requestedDuration;
+    late final double sourceStart;
+    if (programSegment != null) {
+      requestedDuration = math.min(
+        _programPreviewWindowSeconds,
+        programSegment.outputDuration,
+      );
+      final localFocus =
+          ((focusSeconds - programSegment.start) / programSegment.playbackSpeed)
+              .clamp(0.0, programSegment.outputDuration)
+              .toDouble();
+      final maxWindowStart = math.max(
+        0.0,
+        programSegment.outputDuration - requestedDuration,
+      );
+      final outputWindowStart = (localFocus - _programPreviewPreRollSeconds)
+          .clamp(0.0, maxWindowStart)
+          .toDouble();
+      sourceStart =
+          programSegment.start +
+          outputWindowStart * programSegment.playbackSpeed;
+    } else {
+      requestedDuration = focusSeconds > 0
+          ? _seekProxyPreviewSeconds
+          : _initialProxyPreviewSeconds;
+      final preRoll = focusSeconds > 0
+          ? math.min(2.0, requestedDuration / 4)
+          : 0.0;
+      sourceStart = math.max(0.0, focusSeconds - preRoll);
+    }
     final programSignature = programSegment == null
         ? ''
         : _programPreviewSignature(programSegment);
@@ -7455,7 +7490,7 @@ class EditorController extends ChangeNotifier {
         final sourceCutTolerance =
             timecodeFrameDurationSeconds *
             math.max(1.0, span.segment.playbackSpeed);
-        if (isPlaying &&
+        if ((isPlaying || controller.value.isCompleted) &&
             sourceSeconds >= span.segment.end - sourceCutTolerance &&
             !_programCutPending) {
           _programPlayheadSeconds = span.sequenceEnd;

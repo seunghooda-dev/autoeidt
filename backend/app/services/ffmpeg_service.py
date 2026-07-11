@@ -894,6 +894,146 @@ def _motion_track_expression(
     return expression
 
 
+def _sample_motion_keyframe(
+    keyframes: list[dict[str, float]],
+    time_seconds: float,
+    segment: dict,
+) -> dict[str, float]:
+    fallback = {
+        "time": time_seconds,
+        "opacity": _segment_video_opacity(segment),
+        "scale": _segment_video_scale(segment),
+        "position_x": _segment_video_position(segment, "x"),
+        "position_y": _segment_video_position(segment, "y"),
+        "rotation": _segment_video_rotation(segment),
+    }
+    if not keyframes:
+        return fallback
+    if time_seconds <= keyframes[0]["time"]:
+        return {**keyframes[0], "time": time_seconds}
+    if time_seconds >= keyframes[-1]["time"]:
+        return {**keyframes[-1], "time": time_seconds}
+    for left, right in zip(keyframes, keyframes[1:]):
+        if time_seconds > right["time"]:
+            continue
+        duration = max(1 / RENDER_FRAME_RATE, right["time"] - left["time"])
+        progress = max(0.0, min((time_seconds - left["time"]) / duration, 1.0))
+        return {
+            "time": time_seconds,
+            **{
+                field: left[field] + (right[field] - left[field]) * progress
+                for field in (
+                    "opacity",
+                    "scale",
+                    "position_x",
+                    "position_y",
+                    "rotation",
+                )
+            },
+        }
+    return fallback
+
+
+def _window_motion_keyframes(
+    segment: dict,
+    output_offset: float,
+    output_duration: float,
+    full_output_duration: float,
+) -> list[dict[str, float]]:
+    keyframes = _segment_motion_keyframes(segment, full_output_duration)
+    if not keyframes:
+        return []
+    window_end = output_offset + output_duration
+    sample_times = {output_offset, window_end}
+    sample_times.update(
+        item["time"]
+        for item in keyframes
+        if output_offset < item["time"] < window_end
+    )
+    return [
+        {
+            **_sample_motion_keyframe(keyframes, time_seconds, segment),
+            "time": max(0.0, time_seconds - output_offset),
+        }
+        for time_seconds in sorted(sample_times)
+    ]
+
+
+def _sample_focus_keyframe(
+    keyframes: list[dict[str, float]],
+    time_seconds: float,
+    fallback_x: float,
+    fallback_y: float,
+) -> dict[str, float]:
+    points: list[dict[str, float]] = []
+    for item in keyframes:
+        if not isinstance(item, dict):
+            continue
+        try:
+            points.append(
+                {
+                    "time": max(0.0, float(item.get("time", 0.0))),
+                    "x": max(0.0, min(float(item.get("x", fallback_x)), 1.0)),
+                    "y": max(0.0, min(float(item.get("y", fallback_y)), 1.0)),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    points.sort(key=lambda item: item["time"])
+    if not points:
+        return {"time": time_seconds, "x": fallback_x, "y": fallback_y}
+    if time_seconds <= points[0]["time"]:
+        return {**points[0], "time": time_seconds}
+    if time_seconds >= points[-1]["time"]:
+        return {**points[-1], "time": time_seconds}
+    for left, right in zip(points, points[1:]):
+        if time_seconds > right["time"]:
+            continue
+        duration = max(1 / RENDER_FRAME_RATE, right["time"] - left["time"])
+        progress = max(0.0, min((time_seconds - left["time"]) / duration, 1.0))
+        return {
+            "time": time_seconds,
+            "x": left["x"] + (right["x"] - left["x"]) * progress,
+            "y": left["y"] + (right["y"] - left["y"]) * progress,
+        }
+    return {"time": time_seconds, "x": fallback_x, "y": fallback_y}
+
+
+def _window_focus_keyframes(
+    segment: dict,
+    source_offset: float,
+    source_duration: float,
+) -> list[dict[str, float]]:
+    keyframes = segment.get("focus_keyframes", [])
+    if not keyframes:
+        return []
+    window_end = source_offset + source_duration
+    sample_times = {source_offset, window_end}
+    for item in keyframes:
+        if not isinstance(item, dict):
+            continue
+        try:
+            item_time = float(item.get("time", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if source_offset < item_time < window_end:
+            sample_times.add(item_time)
+    fallback_x = _segment_focus_x(segment)
+    fallback_y = _segment_focus_y(segment)
+    return [
+        {
+            **_sample_focus_keyframe(
+                keyframes,
+                time_seconds,
+                fallback_x,
+                fallback_y,
+            ),
+            "time": max(0.0, time_seconds - source_offset),
+        }
+        for time_seconds in sorted(sample_times)
+    ]
+
+
 def _segment_has_motion_effect(segment: dict) -> bool:
     return any(
         (
@@ -1779,6 +1919,8 @@ def create_program_preview_proxy(
     video_path: Path,
     segment: dict,
     aspect_ratio: str = "16:9",
+    source_start_seconds: float | None = None,
+    duration_seconds: float | None = None,
 ) -> tuple[Path, bool, float, float]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
@@ -1786,12 +1928,90 @@ def create_program_preview_proxy(
     normalized_aspect_ratio = (
         aspect_ratio if aspect_ratio in {"16:9", "9:16", "1:1"} else "16:9"
     )
-    normalized_segment = dict(segment)
-    normalized_segment["order"] = 1
-    source_start = max(0.0, float(normalized_segment.get("start") or 0.0))
-    source_end = max(source_start, float(normalized_segment.get("end") or source_start))
-    speed = _segment_playback_speed(normalized_segment)
-    output_duration = max(0.0, (source_end - source_start) / speed)
+    full_segment = dict(segment)
+    full_source_start = max(0.0, float(full_segment.get("start") or 0.0))
+    full_source_end = max(
+        full_source_start,
+        float(full_segment.get("end") or full_source_start),
+    )
+    speed = _segment_playback_speed(full_segment)
+    full_output_duration = max(
+        0.0,
+        (full_source_end - full_source_start) / speed,
+    )
+    requested_source_start = (
+        full_source_start
+        if source_start_seconds is None
+        else float(source_start_seconds)
+    )
+    source_start = max(
+        full_source_start,
+        min(requested_source_start, full_source_end),
+    )
+    if full_source_end > full_source_start and source_start >= full_source_end:
+        source_start = max(
+            full_source_start,
+            full_source_end - speed / RENDER_FRAME_RATE,
+        )
+    requested_output_duration = (
+        full_output_duration
+        if duration_seconds is None or duration_seconds <= 0
+        else float(duration_seconds)
+    )
+    remaining_output_duration = max(0.0, (full_source_end - source_start) / speed)
+    output_duration = max(
+        1 / RENDER_FRAME_RATE,
+        min(requested_output_duration, remaining_output_duration),
+    )
+    source_end = min(full_source_end, source_start + output_duration * speed)
+    source_duration = max(0.0, source_end - source_start)
+    output_duration = source_duration / speed
+    source_offset = source_start - full_source_start
+    output_offset = source_offset / speed
+    normalized_segment = dict(full_segment)
+    normalized_segment.update(
+        {
+            "order": 1,
+            "start": source_start,
+            "end": source_end,
+            "motion_keyframes": _window_motion_keyframes(
+                full_segment,
+                output_offset,
+                output_duration,
+                full_output_duration,
+            ),
+            "focus_keyframes": _window_focus_keyframes(
+                full_segment,
+                source_offset,
+                source_duration,
+            ),
+            "transition_type": "cut",
+            "transition_duration": 0.0,
+            "video_fade_in": (
+                full_segment.get("video_fade_in", 0.0)
+                if source_offset <= 1 / RENDER_FRAME_RATE
+                else 0.0
+            ),
+            "video_fade_out": (
+                full_segment.get("video_fade_out", 0.0)
+                if source_end >= full_source_end - 1 / RENDER_FRAME_RATE
+                else 0.0
+            ),
+            "audio_fade_in": (
+                full_segment.get("audio_fade_in", 0.0)
+                if source_offset <= 1 / RENDER_FRAME_RATE
+                else 0.0
+            ),
+            "audio_fade_out": (
+                full_segment.get("audio_fade_out", 0.0)
+                if source_end >= full_source_end - 1 / RENDER_FRAME_RATE
+                else 0.0
+            ),
+        }
+    )
+    audio_source_start = _segment_audio_start(full_segment) + source_offset
+    normalized_segment["audio_start"] = audio_source_start
+    normalized_segment["audio_end"] = audio_source_start + source_duration
     cache_payload = json.dumps(
         normalized_segment,
         ensure_ascii=True,
@@ -1799,7 +2019,8 @@ def create_program_preview_proxy(
         separators=(",", ":"),
     )
     cache_identity = (
-        f"program-preview-v2-540p|{normalized_aspect_ratio}|{cache_payload}|"
+        f"program-preview-v3-windowed-540p|{normalized_aspect_ratio}|"
+        f"{cache_payload}|"
         f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
     )
     cache_key = f"program_{sha1(cache_identity.encode('utf-8')).hexdigest()}"

@@ -222,6 +222,8 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
                     source_path,
                     segment,
                     aspect_ratio=payload.aspect_ratio,
+                    source_start_seconds=payload.start_seconds,
+                    duration_seconds=payload.duration_seconds,
                 )
             )
         else:

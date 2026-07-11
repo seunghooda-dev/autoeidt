@@ -301,6 +301,81 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     assert calls[0]["processing_size"] == (960, 540)
 
 
+def test_program_preview_window_remaps_effects_audio_and_fades(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "window-source.mxf"
+    source.write_bytes(b"broadcast-window-source")
+    rendered_segments: list[dict] = []
+
+    def fake_render(
+        video_path: Path,
+        segments: list[dict],
+        output_path: Path,
+        video_args: list[str],
+        **kwargs,
+    ) -> Path:
+        rendered_segments.extend(segments)
+        output_path.write_bytes(b"window-preview")
+        return output_path
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(
+        ffmpeg_service,
+        "_render_reencode_with_video_args",
+        fake_render,
+    )
+    segment = {
+        "order": 4,
+        "start": 10,
+        "end": 30,
+        "audio_start": 100,
+        "audio_end": 120,
+        "playback_speed": 2,
+        "reason": "long animated clip",
+        "video_fade_in": 1,
+        "video_fade_out": 1,
+        "audio_fade_in": 1,
+        "audio_fade_out": 1,
+        "motion_keyframes": [
+            {"time": 0, "scale": 1},
+            {"time": 10, "scale": 3},
+        ],
+        "focus_keyframes": [
+            {"time": 0, "x": 0.2, "y": 0.3},
+            {"time": 20, "x": 0.8, "y": 0.7},
+        ],
+    }
+
+    _, _, source_start, duration = ffmpeg_service.create_program_preview_proxy(
+        source,
+        segment,
+        source_start_seconds=18,
+        duration_seconds=3,
+    )
+
+    window = rendered_segments[0]
+    assert source_start == 18
+    assert duration == 3
+    assert window["start"] == 18
+    assert window["end"] == 24
+    assert window["audio_start"] == 108
+    assert window["audio_end"] == 114
+    assert window["video_fade_in"] == 0
+    assert window["video_fade_out"] == 0
+    assert window["audio_fade_in"] == 0
+    assert window["audio_fade_out"] == 0
+    assert window["motion_keyframes"][0]["time"] == 0
+    assert window["motion_keyframes"][0]["scale"] == 1.8
+    assert window["motion_keyframes"][-1]["time"] == 3
+    assert window["motion_keyframes"][-1]["scale"] == 2.4
+    assert window["focus_keyframes"][0]["time"] == 0
+    assert abs(window["focus_keyframes"][0]["x"] - 0.44) < 0.000001
+    assert window["focus_keyframes"][-1]["time"] == 6
+    assert abs(window["focus_keyframes"][-1]["x"] - 0.62) < 0.000001
+
+
 def test_caption_timing_uses_transition_adjusted_sequence_positions(
     tmp_path: Path,
 ) -> None:
