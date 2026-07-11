@@ -156,6 +156,8 @@ class EditorController extends ChangeNotifier {
   int? _previewProgramSegmentOrder;
   String? _previewProgramSegmentSignature;
   Timer? _programPreviewRefreshTimer;
+  String? _programPreviewPrefetchKey;
+  Future<LocalPreviewInfo?>? _programPreviewPrefetchFuture;
   double _manualPlayheadSeconds = 0;
   double _programPlayheadSeconds = 0;
   int? _programSegmentOrder;
@@ -6689,6 +6691,7 @@ class EditorController extends ChangeNotifier {
       await controller.play();
       playbackShuttleDirection = 1;
       playbackShuttleRate = 1.0;
+      _scheduleProgramPreviewPrefetch(span.segment);
     }
     notifyListeners();
   }
@@ -6882,6 +6885,8 @@ class EditorController extends ChangeNotifier {
       playbackShuttleDirection = 0;
       playbackShuttleRate = 1.0;
       notifyListeners();
+    } else if (activeProgramSegment != null) {
+      _scheduleProgramPreviewPrefetch(activeProgramSegment);
     }
     return true;
   }
@@ -6911,6 +6916,10 @@ class EditorController extends ChangeNotifier {
           : nextRate;
       await controller.setPlaybackSpeed(sourceRate);
       await controller.play();
+      final programSegment = _previewProgramSegment;
+      if (programSegment != null) {
+        _scheduleProgramPreviewPrefetch(programSegment);
+      }
     }
     notifyListeners();
   }
@@ -7160,6 +7169,87 @@ class EditorController extends ChangeNotifier {
   String _programPreviewSignature(HighlightSegment segment) =>
       '$exportAspectRatio|${jsonEncode(segment.toJson())}';
 
+  ({double sourceStart, double duration}) _programPreviewWindowFor(
+    HighlightSegment segment,
+    double focusSeconds,
+  ) {
+    final requestedDuration = math.min(
+      _programPreviewWindowSeconds,
+      segment.outputDuration,
+    );
+    final localFocus = ((focusSeconds - segment.start) / segment.playbackSpeed)
+        .clamp(0.0, segment.outputDuration)
+        .toDouble();
+    final maxWindowStart = math.max(
+      0.0,
+      segment.outputDuration - requestedDuration,
+    );
+    final outputWindowStart = (localFocus - _programPreviewPreRollSeconds)
+        .clamp(0.0, maxWindowStart)
+        .toDouble();
+    return (
+      sourceStart: segment.start + outputWindowStart * segment.playbackSpeed,
+      duration: requestedDuration,
+    );
+  }
+
+  String _previewRequestKey(
+    String path,
+    double sourceStart,
+    double requestedDuration,
+    String programSignature,
+  ) =>
+      '$path|${sourceStart.toStringAsFixed(3)}|'
+      '${requestedDuration.toStringAsFixed(3)}|$programSignature';
+
+  void _scheduleProgramPreviewPrefetch(HighlightSegment segment) {
+    final path = selectedFile?.path;
+    final previewDuration = _previewSourceDurationSeconds;
+    if (kIsWeb ||
+        path == null ||
+        path.isEmpty ||
+        previewDuration == null ||
+        previewDuration <= 0 ||
+        _previewProgramSegmentOrder != segment.order) {
+      return;
+    }
+    final currentWindowEnd =
+        _previewSourceStartSeconds + previewDuration * segment.playbackSpeed;
+    if (currentWindowEnd >= segment.end - timecodeFrameDurationSeconds) {
+      return;
+    }
+    final nextWindow = _programPreviewWindowFor(segment, currentWindowEnd);
+    if (nextWindow.sourceStart <=
+        _previewSourceStartSeconds + timecodeFrameDurationSeconds) {
+      return;
+    }
+    final signature = _programPreviewSignature(segment);
+    final key = _previewRequestKey(
+      path,
+      nextWindow.sourceStart,
+      nextWindow.duration,
+      signature,
+    );
+    if (_programPreviewPrefetchKey == key &&
+        _programPreviewPrefetchFuture != null) {
+      return;
+    }
+    _programPreviewPrefetchKey = key;
+    _programPreviewPrefetchFuture = () async {
+      try {
+        return await _apiClient.createLocalPreview(
+          path,
+          startSeconds: nextWindow.sourceStart,
+          durationSeconds: nextWindow.duration,
+          segment: segment,
+          aspectRatio: exportAspectRatio,
+        );
+      } catch (_) {
+        return null;
+      }
+    }();
+  }
+
   void _scheduleProgramPreviewRefresh(HighlightSegment segment) {
     _programPreviewRefreshTimer?.cancel();
     _programPreviewRefreshTimer = Timer(
@@ -7204,24 +7294,9 @@ class EditorController extends ChangeNotifier {
     late final double requestedDuration;
     late final double sourceStart;
     if (programSegment != null) {
-      requestedDuration = math.min(
-        _programPreviewWindowSeconds,
-        programSegment.outputDuration,
-      );
-      final localFocus =
-          ((focusSeconds - programSegment.start) / programSegment.playbackSpeed)
-              .clamp(0.0, programSegment.outputDuration)
-              .toDouble();
-      final maxWindowStart = math.max(
-        0.0,
-        programSegment.outputDuration - requestedDuration,
-      );
-      final outputWindowStart = (localFocus - _programPreviewPreRollSeconds)
-          .clamp(0.0, maxWindowStart)
-          .toDouble();
-      sourceStart =
-          programSegment.start +
-          outputWindowStart * programSegment.playbackSpeed;
+      final window = _programPreviewWindowFor(programSegment, focusSeconds);
+      requestedDuration = window.duration;
+      sourceStart = window.sourceStart;
     } else {
       requestedDuration = focusSeconds > 0
           ? _seekProxyPreviewSeconds
@@ -7234,9 +7309,12 @@ class EditorController extends ChangeNotifier {
     final programSignature = programSegment == null
         ? ''
         : _programPreviewSignature(programSegment);
-    final requestKey =
-        '$path|${sourceStart.toStringAsFixed(3)}|'
-        '${requestedDuration.toStringAsFixed(3)}|$programSignature';
+    final requestKey = _previewRequestKey(
+      path,
+      sourceStart,
+      requestedDuration,
+      programSignature,
+    );
     final activeRequest = _activeProxyRequest;
     if (_activeProxyRequestKey == requestKey && activeRequest != null) {
       await activeRequest;
@@ -7244,6 +7322,9 @@ class EditorController extends ChangeNotifier {
     }
 
     final revision = ++_previewRevision;
+    final prefetchedPreview = _programPreviewPrefetchKey == requestKey
+        ? _programPreviewPrefetchFuture
+        : null;
     final request = _performProxyPreviewInitialization(
       path,
       revision: revision,
@@ -7252,6 +7333,7 @@ class EditorController extends ChangeNotifier {
       requestedDuration: requestedDuration,
       programSegment: programSegment,
       programSignature: programSignature,
+      prefetchedPreview: prefetchedPreview,
     );
     _activeProxyRequestKey = requestKey;
     _activeProxyRequest = request;
@@ -7261,6 +7343,10 @@ class EditorController extends ChangeNotifier {
       if (identical(_activeProxyRequest, request)) {
         _activeProxyRequest = null;
         _activeProxyRequestKey = null;
+      }
+      if (_programPreviewPrefetchKey == requestKey) {
+        _programPreviewPrefetchKey = null;
+        _programPreviewPrefetchFuture = null;
       }
     }
   }
@@ -7273,6 +7359,7 @@ class EditorController extends ChangeNotifier {
     required double requestedDuration,
     required HighlightSegment? programSegment,
     required String programSignature,
+    Future<LocalPreviewInfo?>? prefetchedPreview,
   }) async {
     isPreparingPreview = true;
     notifyListeners();
@@ -7280,13 +7367,26 @@ class EditorController extends ChangeNotifier {
     var reusedController = false;
     try {
       await _ensureLocalEngineForApi();
-      final preview = await _apiClient.createLocalPreview(
-        path,
-        startSeconds: sourceStart,
-        durationSeconds: requestedDuration,
-        segment: programSegment,
-        aspectRatio: exportAspectRatio,
-      );
+      LocalPreviewInfo preview;
+      if (prefetchedPreview != null) {
+        preview =
+            await prefetchedPreview ??
+            await _apiClient.createLocalPreview(
+              path,
+              startSeconds: sourceStart,
+              durationSeconds: requestedDuration,
+              segment: programSegment,
+              aspectRatio: exportAspectRatio,
+            );
+      } else {
+        preview = await _apiClient.createLocalPreview(
+          path,
+          startSeconds: sourceStart,
+          durationSeconds: requestedDuration,
+          segment: programSegment,
+          aspectRatio: exportAspectRatio,
+        );
+      }
       if (revision != _previewRevision || selectedFile?.path != path) {
         return;
       }
@@ -9681,6 +9781,8 @@ class EditorController extends ChangeNotifier {
     _reverseShuttleTimer?.cancel();
     _timelineThumbnailTimer?.cancel();
     _programPreviewRefreshTimer?.cancel();
+    _programPreviewPrefetchKey = null;
+    _programPreviewPrefetchFuture = null;
     for (final image in timelineThumbnails.values) {
       image.dispose();
     }

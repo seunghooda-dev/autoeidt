@@ -400,17 +400,89 @@ void main() {
       );
 
       await _waitUntil(
-        () => api.requestedStarts.length >= 3,
+        () =>
+            !identical(controller.videoController, firstController) &&
+            (controller.videoController?.value.isPlaying ?? false),
         describe: () =>
             'starts=${api.requestedStarts} '
             'durations=${api.requestedDurations}',
       );
 
-      expect(api.requestedStarts.last, closeTo(16, 0.001));
+      expect(
+        api.requestedStarts.where((start) => (start - 16).abs() < 0.001),
+        hasLength(1),
+      );
+      expect(api.requestedStarts.last, closeTo(22, 0.001));
       expect(api.requestedDurations.last, 8);
       expect(api.requestedSegments.last?.videoRotation, 5);
       expect(controller.currentPositionSeconds, closeTo(18, 0.05));
       expect(controller.videoController!.value.isPlaying, isTrue);
+    } finally {
+      controller.dispose();
+      await platform.close();
+      VideoPlayerPlatform.instance = originalPlatform;
+    }
+  });
+
+  test('failed program prefetch retries during window transition', () async {
+    final originalPlatform = VideoPlayerPlatform.instance;
+    final platform = _FakeVideoPlayerPlatform();
+    VideoPlayerPlatform.instance = platform;
+    final api = _FailingPrefetchApiClient();
+    final controller = EditorController(
+      apiClient: api,
+      engineService: _ReadyEngineService(),
+      autoStartEngine: false,
+    );
+
+    try {
+      await controller.openMediaFile(
+        PlatformFile(
+          name: 'broadcast.mxf',
+          size: 1024,
+          path: r'C:\media\broadcast.mxf',
+        ),
+      );
+      await _waitUntil(
+        () =>
+            (controller.videoController?.value.isInitialized ?? false) &&
+            !controller.isPreparingPreview,
+      );
+      controller
+        ..segments = const [
+          HighlightSegment(
+            order: 1,
+            start: 10,
+            end: 30,
+            reason: 'prefetch retry clip',
+            videoScale: 1.1,
+          ),
+        ]
+        ..selectedSegmentOrder = 1;
+      await controller.setPreviewMonitorMode('program');
+      await controller.togglePlayback();
+      final firstController = controller.videoController!;
+
+      await _waitUntil(() => api.failedPrefetches == 1);
+      platform.positions[firstController.playerId] =
+          firstController.value.duration;
+      firstController.value = firstController.value.copyWith(
+        position: firstController.value.duration,
+        isPlaying: false,
+        isCompleted: true,
+      );
+
+      await _waitUntil(
+        () =>
+            !identical(controller.videoController, firstController) &&
+            (controller.videoController?.value.isPlaying ?? false),
+      );
+
+      expect(
+        api.requestedStarts.where((start) => (start - 16).abs() < 0.001),
+        hasLength(2),
+      );
+      expect(controller.currentPositionSeconds, closeTo(18, 0.05));
     } finally {
       controller.dispose();
       await platform.close();
@@ -547,7 +619,10 @@ void main() {
 
       expect(controller.videoController, same(activeController));
       expect(platform.createdUris, hasLength(1));
-      expect(platform.replacedResources.single, contains('proxy-2-d10.000.mp4'));
+      expect(
+        platform.replacedResources.single,
+        contains('proxy-2-d10.000.mp4'),
+      );
       expect(activeController.value.duration, const Duration(seconds: 10));
       expect(activeController.value.isPlaying, isTrue);
     } finally {
@@ -757,6 +832,37 @@ class _ProxyApiClient extends ApiClient {
       localPath: localPreviewPath,
       sourceStart: resolvedStart,
       duration: duration,
+    );
+  }
+}
+
+class _FailingPrefetchApiClient extends _ProxyApiClient {
+  int failedPrefetches = 0;
+
+  @override
+  Future<LocalPreviewInfo> createLocalPreview(
+    String path, {
+    double startSeconds = 0,
+    double? durationSeconds,
+    HighlightSegment? segment,
+    String aspectRatio = '16:9',
+  }) async {
+    if (segment != null &&
+        (startSeconds - 16).abs() < 0.001 &&
+        failedPrefetches == 0) {
+      failedPrefetches += 1;
+      requestedStarts.add(startSeconds);
+      requestedDurations.add(durationSeconds ?? segment.outputDuration);
+      requestedSegments.add(segment);
+      requestedAspectRatios.add(aspectRatio);
+      throw StateError('simulated prefetch failure');
+    }
+    return super.createLocalPreview(
+      path,
+      startSeconds: startSeconds,
+      durationSeconds: durationSeconds,
+      segment: segment,
+      aspectRatio: aspectRatio,
     );
   }
 }
