@@ -25,6 +25,7 @@ class EditorController extends ChangeNotifier {
     bool? enableTimelineThumbnails,
     ProjectRecoveryService? recoveryService,
     bool enableProjectRecovery = false,
+    bool autoRestoreRecovery = false,
     Duration projectRecoveryDebounce = const Duration(milliseconds: 800),
     Duration proxyPreviewInitializationTimeout = const Duration(seconds: 8),
     Duration proxyPreviewRecoveryTimeout = const Duration(seconds: 20),
@@ -33,6 +34,7 @@ class EditorController extends ChangeNotifier {
        _engineService = engineService ?? LocalEngineService(),
        _recoveryService = recoveryService ?? ProjectRecoveryService(),
        _projectRecoveryEnabled = enableProjectRecovery && !kIsWeb,
+       _autoRestoreRecovery = autoRestoreRecovery && !kIsWeb,
        _timelineThumbnailsEnabled =
            (enableTimelineThumbnails ?? autoStartEngine) && !kIsWeb,
        _projectRecoveryDebounce = projectRecoveryDebounce,
@@ -47,7 +49,7 @@ class EditorController extends ChangeNotifier {
       unawaited(ensureLocalEngine());
     }
     if (_projectRecoveryEnabled) {
-      unawaited(refreshProjectRecoveryStatus());
+      unawaited(_initializeRecoverySession());
     }
   }
 
@@ -55,6 +57,7 @@ class EditorController extends ChangeNotifier {
   final LocalEngineService _engineService;
   final ProjectRecoveryService _recoveryService;
   final bool _projectRecoveryEnabled;
+  final bool _autoRestoreRecovery;
   final bool _timelineThumbnailsEnabled;
   final Duration _projectRecoveryDebounce;
   final Duration _proxyPreviewInitializationTimeout;
@@ -89,6 +92,10 @@ class EditorController extends ChangeNotifier {
   bool hasRecoverySnapshot = false;
   DateTime? recoverySnapshotSavedAt;
   List<ProjectRecoverySnapshot> recoveryVersions = [];
+  bool isInitializingRecoverySession = false;
+  bool hasInitializedRecoverySession = false;
+  bool didAutoRestoreSession = false;
+  bool recoveryRequiresManualRestore = false;
   List<RecentJobSummary> recentJobs = [];
   bool isLoadingRecentJobs = false;
   bool isOpeningRecentJob = false;
@@ -2103,6 +2110,51 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  Future<void> _initializeRecoverySession() async {
+    if (!_projectRecoveryEnabled || isInitializingRecoverySession) {
+      return;
+    }
+    isInitializingRecoverySession = true;
+    try {
+      final previousSessionWasClean = await _recoveryService.beginSession();
+      final snapshot = await _recoveryService.readSnapshot();
+      hasRecoverySnapshot = snapshot != null;
+      recoverySnapshotSavedAt = snapshot?.savedAt;
+      recoveryVersions = await _recoveryService.listVersions();
+      recoveryRequiresManualRestore =
+          previousSessionWasClean == false && snapshot != null;
+      if (_autoRestoreRecovery &&
+          previousSessionWasClean != false &&
+          snapshot != null &&
+          !hasRecoverableProject) {
+        await _restoreRecoverySnapshot(snapshot, true);
+        didAutoRestoreSession = true;
+        recoveryRequiresManualRestore = false;
+      }
+    } catch (_) {
+      hasRecoverySnapshot = false;
+      recoverySnapshotSavedAt = null;
+      recoveryVersions = [];
+    } finally {
+      isInitializingRecoverySession = false;
+      hasInitializedRecoverySession = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> prepareForExit() async {
+    if (!_projectRecoveryEnabled) {
+      return;
+    }
+    _recoverySaveTimer?.cancel();
+    try {
+      await _writeProjectRecoverySnapshot();
+      await _recoveryService.markSessionClean();
+    } catch (_) {
+      // A recovery write failure must not trap the user in the application.
+    }
+  }
+
   Future<void> refreshProjectRecoveryStatus() async {
     if (!_projectRecoveryEnabled) {
       return;
@@ -2197,6 +2249,8 @@ class EditorController extends ChangeNotifier {
       }
 
       await _restoreRecoverySnapshot(snapshot, initializePreview);
+      recoveryRequiresManualRestore = false;
+      didAutoRestoreSession = false;
     } catch (error) {
       errorMessage = '자동 저장본 복구 실패: $error';
     }
@@ -2300,6 +2354,8 @@ class EditorController extends ChangeNotifier {
       recoverySnapshotSavedAt = null;
       recoveryVersions = [];
       _lastRecoveryPayload = null;
+      didAutoRestoreSession = false;
+      recoveryRequiresManualRestore = false;
     } catch (error) {
       errorMessage = '자동 저장본 삭제 실패: $error';
     }
@@ -9774,6 +9830,13 @@ class EditorController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_projectRecoveryEnabled) {
+      try {
+        _recoveryService.markSessionCleanSync();
+      } catch (_) {
+        // Session recovery must never prevent the editor from closing.
+      }
+    }
     _isDisposed = true;
     _pollTimer?.cancel();
     _stylePollTimer?.cancel();

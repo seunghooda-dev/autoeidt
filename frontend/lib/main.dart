@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +31,10 @@ void main() {
   }
   runApp(
     ChangeNotifierProvider(
-      create: (_) => EditorController(enableProjectRecovery: true),
+      create: (_) => EditorController(
+        enableProjectRecovery: true,
+        autoRestoreRecovery: true,
+      ),
       child: const HighlightEditorApp(),
     ),
   );
@@ -76,7 +80,8 @@ class EditorDashboard extends StatefulWidget {
   State<EditorDashboard> createState() => _EditorDashboardState();
 }
 
-class _EditorDashboardState extends State<EditorDashboard> {
+class _EditorDashboardState extends State<EditorDashboard>
+    with WidgetsBindingObserver {
   final FocusNode _shortcutFocusNode = FocusNode(
     debugLabel: 'AutoEdit shortcuts',
   );
@@ -86,17 +91,27 @@ class _EditorDashboardState extends State<EditorDashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ownsWorkspaceController = widget.workspaceController == null;
     _workspaceController = widget.workspaceController ?? WorkspaceController();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _shortcutFocusNode.dispose();
     if (_ownsWorkspaceController) {
       _workspaceController.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  Future<ui.AppExitResponse> didRequestAppExit() async {
+    if (mounted) {
+      await context.read<EditorController>().prepareForExit();
+    }
+    return ui.AppExitResponse.exit;
   }
 
   @override

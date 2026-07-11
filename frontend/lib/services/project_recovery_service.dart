@@ -34,6 +34,9 @@ class ProjectRecoveryService {
   io.Directory get _versionsDirectory => io.Directory(
     '${_directory.path}${io.Platform.pathSeparator}recovery_versions',
   );
+  io.File get _sessionFile => io.File(
+    '${_directory.path}${io.Platform.pathSeparator}session_state.json',
+  );
 
   static io.Directory _defaultDirectory() {
     final environment = io.Platform.environment;
@@ -90,6 +93,41 @@ class ProjectRecoveryService {
     }
 
     return _readFile(file);
+  }
+
+  Future<bool?> beginSession() async {
+    bool? previousSessionWasClean;
+    if (await _sessionFile.exists()) {
+      try {
+        final raw = jsonDecode(await _sessionFile.readAsString());
+        if (raw is Map) {
+          previousSessionWasClean = raw['clean_exit'] as bool?;
+        }
+      } catch (_) {
+        previousSessionWasClean = false;
+      }
+    }
+    await _writeSessionState(cleanExit: false);
+    return previousSessionWasClean;
+  }
+
+  Future<void> markSessionClean() => _writeSessionState(cleanExit: true);
+
+  void markSessionCleanSync() {
+    _directory.createSync(recursive: true);
+    final temporary = io.File('${_sessionFile.path}.${io.pid}.tmp');
+    temporary.writeAsStringSync(
+      jsonEncode({
+        'version': 1,
+        'clean_exit': true,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }),
+      flush: true,
+    );
+    if (_sessionFile.existsSync()) {
+      _sessionFile.deleteSync();
+    }
+    temporary.renameSync(_sessionFile.path);
   }
 
   Future<List<ProjectRecoverySnapshot>> listVersions() async {
@@ -182,6 +220,15 @@ class ProjectRecoveryService {
       await file.delete();
     }
     await tempFile.rename(file.path);
+  }
+
+  Future<void> _writeSessionState({required bool cleanExit}) async {
+    await _directory.create(recursive: true);
+    await _writeAtomic(_sessionFile, {
+      'version': 1,
+      'clean_exit': cleanExit,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
   }
 
   Future<void> _pruneVersions({int keepPerType = 20}) async {

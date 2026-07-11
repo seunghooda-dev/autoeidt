@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -498,6 +499,25 @@ void main() {
     },
   );
 
+  test('recovery service records clean and interrupted sessions', () async {
+    final directory = await io.Directory.systemTemp.createTemp(
+      'autoedit_recovery_session_test',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+    final service = ProjectRecoveryService(directory: directory);
+
+    expect(await service.beginSession(), isNull);
+    await service.markSessionClean();
+    expect(await service.beginSession(), isTrue);
+    expect(await service.beginSession(), isFalse);
+    service.markSessionCleanSync();
+    expect(await service.beginSession(), isTrue);
+  });
+
   test(
     'project recovery retains twenty autosaves without pruning snapshots',
     () async {
@@ -642,6 +662,71 @@ void main() {
     controller.dispose();
     restored.dispose();
   });
+
+  test(
+    'clean session auto restores while interrupted session waits for recovery',
+    () async {
+      final directory = await io.Directory.systemTemp.createTemp(
+        'autoedit_session_restore_test',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+      final service = ProjectRecoveryService(directory: directory);
+      await service.saveProject(
+        const ProjectState(
+          name: 'Last Clean Session',
+          duration: 90,
+          segments: [
+            HighlightSegment(
+              order: 1,
+              start: 12,
+              end: 24,
+              reason: 'restored clip',
+            ),
+          ],
+          captions: [],
+          waveform: [],
+        ),
+      );
+      await service.beginSession();
+      await service.markSessionClean();
+
+      final restored = EditorController(
+        autoStartEngine: false,
+        recoveryService: service,
+        enableProjectRecovery: true,
+        autoRestoreRecovery: true,
+      );
+      await _waitForRecoveryInitialization(restored);
+
+      expect(restored.didAutoRestoreSession, isTrue);
+      expect(restored.recoveryRequiresManualRestore, isFalse);
+      expect(restored.projectName, 'Last Clean Session');
+      expect(restored.segments.single.start, 12);
+      await restored.prepareForExit();
+      restored.dispose();
+
+      await service.beginSession();
+      final interrupted = EditorController(
+        autoStartEngine: false,
+        recoveryService: service,
+        enableProjectRecovery: true,
+        autoRestoreRecovery: true,
+      );
+      await _waitForRecoveryInitialization(interrupted);
+
+      expect(interrupted.didAutoRestoreSession, isFalse);
+      expect(interrupted.recoveryRequiresManualRestore, isTrue);
+      expect(interrupted.segments, isEmpty);
+      await interrupted.restoreRecoveryProject(initializePreview: false);
+      expect(interrupted.projectName, 'Last Clean Session');
+      expect(interrupted.recoveryRequiresManualRestore, isFalse);
+      interrupted.dispose();
+    },
+  );
 
   test('editor project state captures current render settings', () {
     final controller = EditorController(autoStartEngine: false)
@@ -3250,6 +3335,17 @@ double _candidateTemporalOverlapRatio(
     }
   }
   return overlap / denominator;
+}
+
+Future<void> _waitForRecoveryInitialization(EditorController controller) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!controller.hasInitializedRecoverySession &&
+      DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  if (!controller.hasInitializedRecoverySession) {
+    throw TimeoutException('recovery session initialization timed out');
+  }
 }
 
 Future<ProjectRecoverySnapshot?> _waitForRecoverySnapshot(
