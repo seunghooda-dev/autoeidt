@@ -254,7 +254,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void setWorkspaceView(String view) {
-    if (!const {'edit', 'captions', 'export'}.contains(view) ||
+    if (!const {'edit', 'captions', 'graphics', 'export'}.contains(view) ||
         activeWorkspaceView == view) {
       return;
     }
@@ -430,7 +430,12 @@ class WorkspaceController extends ChangeNotifier {
       layoutLocked = json['layout_locked'] as bool? ?? layoutLocked;
       activePreset = json['active_preset'] as String? ?? activePreset;
       final restoredView = json['active_workspace_view'] as String?;
-      if (const {'edit', 'captions', 'export'}.contains(restoredView)) {
+      if (const {
+        'edit',
+        'captions',
+        'graphics',
+        'export',
+      }.contains(restoredView)) {
         activeWorkspaceView = restoredView!;
       }
       activeInspectorTab =

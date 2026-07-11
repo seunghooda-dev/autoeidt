@@ -609,6 +609,148 @@ class AudioClip {
   };
 }
 
+const supportedGraphicPresets = <String>{
+  'lower_third',
+  'headline',
+  'corner_bug',
+};
+
+String normalizeGraphicColor(String value, String fallback) {
+  final normalized = value.trim().toUpperCase();
+  return RegExp(r'^#[0-9A-F]{6}$').hasMatch(normalized) ? normalized : fallback;
+}
+
+class GraphicClip {
+  const GraphicClip({
+    required this.id,
+    required this.timelineStart,
+    required this.timelineEnd,
+    this.preset = 'lower_third',
+    this.headline = 'Headline',
+    this.subheadline = '',
+    this.positionX = 0.06,
+    this.positionY = 0.82,
+    this.scale = 1.0,
+    this.opacity = 1.0,
+    this.backgroundColor = '#111827',
+    this.accentColor = '#17C3B2',
+    this.textColor = '#FFFFFF',
+    this.enabled = true,
+  });
+
+  final String id;
+  final double timelineStart;
+  final double timelineEnd;
+  final String preset;
+  final String headline;
+  final String subheadline;
+  final double positionX;
+  final double positionY;
+  final double scale;
+  final double opacity;
+  final String backgroundColor;
+  final String accentColor;
+  final String textColor;
+  final bool enabled;
+
+  double get timelineDuration => timelineEnd - timelineStart;
+
+  GraphicClip copyWith({
+    String? id,
+    double? timelineStart,
+    double? timelineEnd,
+    String? preset,
+    String? headline,
+    String? subheadline,
+    double? positionX,
+    double? positionY,
+    double? scale,
+    double? opacity,
+    String? backgroundColor,
+    String? accentColor,
+    String? textColor,
+    bool? enabled,
+  }) {
+    return GraphicClip(
+      id: id ?? this.id,
+      timelineStart: timelineStart ?? this.timelineStart,
+      timelineEnd: timelineEnd ?? this.timelineEnd,
+      preset: preset ?? this.preset,
+      headline: headline ?? this.headline,
+      subheadline: subheadline ?? this.subheadline,
+      positionX: positionX ?? this.positionX,
+      positionY: positionY ?? this.positionY,
+      scale: scale ?? this.scale,
+      opacity: opacity ?? this.opacity,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+      accentColor: accentColor ?? this.accentColor,
+      textColor: textColor ?? this.textColor,
+      enabled: enabled ?? this.enabled,
+    );
+  }
+
+  factory GraphicClip.fromJson(Map<String, dynamic> json) {
+    final rawPreset = json['preset'] as String? ?? 'lower_third';
+    final timelineStart = _jsonTimelineSeconds(json['timeline_start']);
+    final timelineEnd = math.max(
+      timelineStart + timecodeFrameDurationSeconds,
+      _jsonTimelineSeconds(json['timeline_end']),
+    );
+    return GraphicClip(
+      id: json['id']?.toString() ?? '',
+      timelineStart: timelineStart,
+      timelineEnd: snapSecondsToFrame(timelineEnd),
+      preset: supportedGraphicPresets.contains(rawPreset)
+          ? rawPreset
+          : 'lower_third',
+      headline: (json['headline']?.toString() ?? 'Headline').trim(),
+      subheadline: (json['subheadline']?.toString() ?? '').trim(),
+      positionX: ((json['position_x'] as num?)?.toDouble() ?? 0.06)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      positionY: ((json['position_y'] as num?)?.toDouble() ?? 0.82)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      scale: ((json['scale'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.5, 2.0)
+          .toDouble(),
+      opacity: ((json['opacity'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      backgroundColor: normalizeGraphicColor(
+        json['background_color']?.toString() ?? '',
+        '#111827',
+      ),
+      accentColor: normalizeGraphicColor(
+        json['accent_color']?.toString() ?? '',
+        '#17C3B2',
+      ),
+      textColor: normalizeGraphicColor(
+        json['text_color']?.toString() ?? '',
+        '#FFFFFF',
+      ),
+      enabled: json['enabled'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'timeline_start': snapSecondsToFrame(timelineStart),
+    'timeline_end': snapSecondsToFrame(timelineEnd),
+    'preset': supportedGraphicPresets.contains(preset) ? preset : 'lower_third',
+    'headline': headline,
+    'subheadline': subheadline,
+    'position_x': positionX.clamp(0.0, 1.0),
+    'position_y': positionY.clamp(0.0, 1.0),
+    'scale': scale.clamp(0.5, 2.0),
+    'opacity': opacity.clamp(0.0, 1.0),
+    'background_color': normalizeGraphicColor(backgroundColor, '#111827'),
+    'accent_color': normalizeGraphicColor(accentColor, '#17C3B2'),
+    'text_color': normalizeGraphicColor(textColor, '#FFFFFF'),
+    'enabled': enabled,
+  };
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,

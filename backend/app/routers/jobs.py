@@ -228,6 +228,7 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
                         overlay.model_dump() for overlay in payload.video_overlays
                     ],
                     audio_clips=[clip.model_dump() for clip in payload.audio_clips],
+                    graphics=[graphic.model_dump() for graphic in payload.graphics],
                 )
             )
         else:
@@ -423,6 +424,9 @@ def get_project(job_id: str) -> ProjectResponse:
         segments=job.get("segments") or [],
         video_overlays=job.get("video_overlays") or [],
         audio_clips=job.get("audio_clips") or [],
+        graphics=job.get("graphics") or [],
+        graphics_track_locked=bool(job.get("graphics_track_locked", False)),
+        graphics_track_visible=bool(job.get("graphics_track_visible", True)),
         active_video_track_count=int(job.get("active_video_track_count") or 2),
         active_audio_track_count=int(job.get("active_audio_track_count") or 3),
         locked_video_tracks=job.get("locked_video_tracks") or [],
@@ -470,6 +474,9 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
             overlay.model_dump() for overlay in payload.video_overlays
         ],
         audio_clips=[clip.model_dump() for clip in payload.audio_clips],
+        graphics=[graphic.model_dump() for graphic in payload.graphics],
+        graphics_track_locked=payload.graphics_track_locked,
+        graphics_track_visible=payload.graphics_track_visible,
         active_video_track_count=payload.active_video_track_count,
         active_audio_track_count=payload.active_audio_track_count,
         locked_video_tracks=payload.locked_video_tracks,
@@ -505,6 +512,9 @@ def save_project(job_id: str, payload: ProjectState) -> ProjectResponse:
         segments=updated.get("segments") or [],
         video_overlays=updated.get("video_overlays") or [],
         audio_clips=updated.get("audio_clips") or [],
+        graphics=updated.get("graphics") or [],
+        graphics_track_locked=bool(updated.get("graphics_track_locked", False)),
+        graphics_track_visible=bool(updated.get("graphics_track_visible", True)),
         active_video_track_count=int(updated.get("active_video_track_count") or 2),
         active_audio_track_count=int(updated.get("active_audio_track_count") or 3),
         locked_video_tracks=updated.get("locked_video_tracks") or [],
@@ -550,6 +560,7 @@ def render_job(
     render_options = {
         "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
         "audio_clips": [clip.model_dump() for clip in payload.audio_clips],
+        "graphics": [graphic.model_dump() for graphic in payload.graphics],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,
@@ -605,6 +616,7 @@ def batch_render_job(
     render_options = {
         "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
         "audio_clips": [clip.model_dump() for clip in payload.audio_clips],
+        "graphics": [graphic.model_dump() for graphic in payload.graphics],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,

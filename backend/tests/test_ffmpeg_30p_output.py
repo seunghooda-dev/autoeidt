@@ -124,6 +124,59 @@ def test_render_composites_v2_overlay_before_captions(
     assert ";[a3mix0]anull[outa]" in filter_complex
 
 
+def test_render_places_broadcast_graphics_before_captions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    output_path = tmp_path / "graphics-output.mp4"
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [{"order": 1, "start": 0, "end": 8, "reason": "base"}],
+        output_path,
+        graphics=[
+            {
+                "id": "g1-election",
+                "timeline_start": 1,
+                "timeline_end": 6,
+                "preset": "lower_third",
+                "headline": "Election update",
+                "subheadline": "Live from Seoul",
+                "position_x": 0.1,
+                "position_y": 0.8,
+                "opacity": 0.75,
+                "accent_color": "#EF4444",
+            }
+        ],
+        captions=[
+            {"order": 1, "start": 2, "end": 3, "text": "caption", "enabled": True}
+        ],
+    )
+
+    graphic_file = output_path.with_suffix(".graphics.ass")
+    contents = graphic_file.read_text(encoding="utf-8")
+    filter_complex = _command_value(commands[-1], "-filter_complex")
+    assert "Dialogue: 1,0:00:01.00,0:00:06.00,Graphic" in contents
+    assert r"\pos(192,864)" in contents
+    assert r"\alpha&H40&" in contents
+    assert r"\1c&H004444EF&" in contents
+    assert "Election update" in contents
+    assert "Live from Seoul" in contents
+    assert filter_complex.index(".graphics.ass") < filter_complex.index(".srt")
+
+
 def test_render_mixes_standalone_audio_clip_on_auxiliary_track(
     tmp_path: Path,
     monkeypatch,
@@ -541,6 +594,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
                 "processing_size": kwargs.get("processing_size"),
                 "video_overlays": kwargs.get("video_overlays"),
                 "audio_clips": kwargs.get("audio_clips"),
+                "graphics": kwargs.get("graphics"),
             }
         )
         output_path.write_bytes(b"preview")
@@ -587,11 +641,21 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             "track": 8,
         }
     ]
+    graphics = [
+        {
+            "id": "g1-preview",
+            "timeline_start": 0.5,
+            "timeline_end": 1.5,
+            "preset": "headline",
+            "headline": "Preview headline",
+        }
+    ]
     output, cached, source_start, duration = ffmpeg_service.create_program_preview_proxy(
         source,
         segment,
         video_overlays=overlays,
         audio_clips=audio_clips,
+        graphics=graphics,
     )
     cached_output, cached_again, _, _ = (
         ffmpeg_service.create_program_preview_proxy(
@@ -599,6 +663,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             segment,
             video_overlays=overlays,
             audio_clips=audio_clips,
+            graphics=graphics,
         )
     )
 
@@ -627,6 +692,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     assert calls[0]["audio_clips"][0]["source_path"] == str(
         audio_source.resolve()
     )
+    assert calls[0]["graphics"][0]["headline"] == "Preview headline"
 
     overlay_source.write_bytes(b"updated-overlay-source")
     changed_output, changed_cached, _, _ = (
@@ -635,6 +701,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             segment,
             video_overlays=overlays,
             audio_clips=audio_clips,
+            graphics=graphics,
         )
     )
     assert changed_output != output
@@ -648,11 +715,26 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             segment,
             video_overlays=overlays,
             audio_clips=audio_clips,
+            graphics=graphics,
         )
     )
     assert audio_changed_output != changed_output
     assert audio_changed_cached is False
     assert len(calls) == 3
+
+    graphics[0]["headline"] = "Updated preview headline"
+    graphic_changed_output, graphic_changed_cached, _, _ = (
+        ffmpeg_service.create_program_preview_proxy(
+            source,
+            segment,
+            video_overlays=overlays,
+            audio_clips=audio_clips,
+            graphics=graphics,
+        )
+    )
+    assert graphic_changed_output != audio_changed_output
+    assert graphic_changed_cached is False
+    assert len(calls) == 4
 
 
 def test_program_preview_window_remaps_effects_audio_and_fades(

@@ -253,6 +253,23 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
                 ],
             }
         ],
+        graphics=[
+            {
+                "id": "g1-headline",
+                "timeline_start": 3.019,
+                "timeline_end": 7.049,
+                "preset": "unsupported",
+                "headline": "  Top story  ",
+                "subheadline": "  Evidence and context  ",
+                "position_x": -1,
+                "position_y": 2,
+                "scale": 4,
+                "opacity": -1,
+                "background_color": "invalid",
+                "accent_color": "#ef4444",
+                "text_color": "#00ff00",
+            }
+        ],
         shorts_candidates=[
             {
                 "id": 1,
@@ -313,6 +330,18 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
         {"time": 0.0, "volume": 0.0},
         {"time": 4.033333, "volume": 1.4},
     ]
+    assert project.graphics[0].timeline_start == 3.033333
+    assert project.graphics[0].timeline_end == 7.033333
+    assert project.graphics[0].preset == "lower_third"
+    assert project.graphics[0].headline == "Top story"
+    assert project.graphics[0].subheadline == "Evidence and context"
+    assert project.graphics[0].position_x == 0
+    assert project.graphics[0].position_y == 1
+    assert project.graphics[0].scale == 2
+    assert project.graphics[0].opacity == 0
+    assert project.graphics[0].background_color == "#111827"
+    assert project.graphics[0].accent_color == "#EF4444"
+    assert project.graphics[0].text_color == "#00FF00"
     assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
     assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 

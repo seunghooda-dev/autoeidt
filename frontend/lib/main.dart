@@ -15,6 +15,7 @@ import 'widgets/caption_editor.dart';
 import 'widgets/clip_inspector.dart';
 import 'widgets/command_palette.dart';
 import 'widgets/edit_controls.dart';
+import 'widgets/graphics_panel.dart';
 import 'widgets/highlight_cards.dart';
 import 'widgets/render_outputs_panel.dart';
 import 'widgets/status_panel.dart';
@@ -686,6 +687,13 @@ List<EditorCommand> _buildEditorCommands(
       keywords: const ['text', 'subtitle'],
     ),
     EditorCommand(
+      label: 'Open Graphics workspace',
+      category: 'Workspace',
+      icon: Icons.title,
+      action: () => workspace.setWorkspaceView('graphics'),
+      keywords: const ['lower third', 'headline', 'logo'],
+    ),
+    EditorCommand(
       label: 'Open Export workspace',
       category: 'Workspace',
       icon: Icons.ios_share,
@@ -1090,6 +1098,12 @@ class _TopBar extends StatelessWidget {
               view: 'captions',
               selected: workspace.activeWorkspaceView == 'captions',
               onPressed: () => workspace.setWorkspaceView('captions'),
+            ),
+            _WorkspaceTab(
+              label: 'Graphics',
+              view: 'graphics',
+              selected: workspace.activeWorkspaceView == 'graphics',
+              onPressed: () => workspace.setWorkspaceView('graphics'),
             ),
             _WorkspaceTab(
               label: 'Export',
@@ -2441,6 +2455,8 @@ class _InspectorPanel extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: workspaceView == 'export'
             ? const _ExportWorkspacePanel()
+            : workspaceView == 'graphics'
+            ? const GraphicsPanel()
             : DefaultTabController(
                 key: ValueKey(
                   'inspector-$workspaceView-${workspace.activeInspectorTab}',
@@ -2726,10 +2742,12 @@ class _TimelineEditorBody extends StatelessWidget {
       sourceDuration: controller.timelineSourceDuration,
       sequenceMode: controller.isProgramMonitor,
       segments: controller.segments,
+      graphics: controller.graphics,
       videoOverlays: controller.videoOverlays,
       audioClips: controller.audioClips,
       playheadSeconds: controller.monitorPositionSeconds,
       selectedSegmentOrder: controller.selectedSegmentOrder,
+      selectedGraphicClipId: controller.selectedGraphicClipId,
       selectedVideoOverlayId: controller.selectedVideoOverlayId,
       selectedAudioClipId: controller.selectedAudioClipId,
       markIn: controller.markIn,
@@ -2750,6 +2768,8 @@ class _TimelineEditorBody extends StatelessWidget {
       targetedVideoOverlayTrack: controller.targetedVideoOverlayTrack,
       targetedOverlayAudioTrack: controller.targetedOverlayAudioTrack,
       videoTrackLocked: controller.videoTrackLocked,
+      graphicsTrackLocked: controller.graphicsTrackLocked,
+      graphicsTrackVisible: controller.graphicsTrackVisible,
       lockedVideoOverlayTracks: controller.lockedVideoTracks,
       hiddenVideoOverlayTracks: controller.hiddenVideoTracks,
       audioTrackLocked: controller.audioTrackLocked,
@@ -2760,6 +2780,7 @@ class _TimelineEditorBody extends StatelessWidget {
       soloAudioTracks: controller.soloAudioTracks,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
+      onGraphicChanged: context.read<EditorController>().updateGraphicClip,
       onVideoOverlayChanged: context
           .read<EditorController>()
           .updateVideoOverlay,
@@ -2771,6 +2792,7 @@ class _TimelineEditorBody extends StatelessWidget {
         );
       },
       onSegmentSelected: context.read<EditorController>().selectSegment,
+      onGraphicSelected: context.read<EditorController>().selectGraphicClip,
       onVideoOverlaySelected: context
           .read<EditorController>()
           .selectVideoOverlay,
@@ -2971,6 +2993,15 @@ class _TimelineEditorBody extends StatelessWidget {
       onDeleteAudioClip: context
           .read<EditorController>()
           .deleteSelectedAudioClip,
+      onDeleteGraphicClip: context
+          .read<EditorController>()
+          .deleteSelectedGraphicClip,
+      onToggleGraphicsLock: context
+          .read<EditorController>()
+          .toggleGraphicsTrackLock,
+      onToggleGraphicsVisibility: context
+          .read<EditorController>()
+          .toggleGraphicsTrackVisibility,
       onZoomDelta: context.read<EditorController>().zoomTimeline,
     );
   }

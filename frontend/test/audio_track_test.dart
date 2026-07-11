@@ -423,6 +423,19 @@ void main() {
           ],
         ),
       ],
+      graphics: [
+        GraphicClip(
+          id: 'g1-live',
+          timelineStart: 1.01,
+          timelineEnd: 6.04,
+          preset: 'lower_third',
+          headline: 'Election update',
+          subheadline: 'Live from Seoul',
+          accentColor: '#EF4444',
+        ),
+      ],
+      graphicsTrackLocked: true,
+      graphicsTrackVisible: false,
       activeVideoTrackCount: 4,
       activeAudioTrackCount: 8,
       lockedVideoTracks: [4, 2],
@@ -533,6 +546,13 @@ void main() {
     expect(restored.audioClips.single.fadeOut, 1.5);
     expect(restored.audioClips.single.gainKeyframes, hasLength(2));
     expect(restored.audioClips.single.gainKeyframes.last.volume, 0.9);
+    expect(restored.graphics.single.id, 'g1-live');
+    expect(restored.graphics.single.timelineStart, 1.0);
+    expect(restored.graphics.single.timelineEnd, closeTo(6.033333, 0.000001));
+    expect(restored.graphics.single.headline, 'Election update');
+    expect(restored.graphics.single.accentColor, '#EF4444');
+    expect(restored.graphicsTrackLocked, isTrue);
+    expect(restored.graphicsTrackVisible, isFalse);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
@@ -624,6 +644,48 @@ void main() {
     controller.toggleVideoOverlayTrackLock();
     controller.deleteSelectedVideoOverlay();
     expect(controller.videoOverlays, isEmpty);
+    controller.dispose();
+  });
+
+  test('G1 graphics snap to 30p and support edit lock visibility and undo', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 20, reason: 'base video'),
+      ];
+
+    controller.addGraphicClip('lower_third');
+    expect(controller.graphics, hasLength(1));
+    expect(controller.selectedGraphicClip?.headline, 'Name or headline');
+    expect(controller.graphics.single.timelineStart, 0);
+    expect(controller.graphics.single.timelineEnd, 5);
+
+    controller.updateGraphicClip(
+      controller.graphics.single.copyWith(
+        timelineStart: 1.019,
+        timelineEnd: 7.049,
+        headline: 'Top story',
+        accentColor: '#ef4444',
+      ),
+    );
+    expect(
+      controller.graphics.single.timelineStart,
+      closeTo(1.033333, 0.000001),
+    );
+    expect(controller.graphics.single.timelineEnd, closeTo(7.033333, 0.000001));
+    expect(controller.graphics.single.headline, 'Top story');
+    expect(controller.graphics.single.accentColor, '#EF4444');
+
+    controller.duplicateSelectedGraphicClip();
+    expect(controller.graphics, hasLength(2));
+    controller.undo();
+    expect(controller.graphics, hasLength(1));
+
+    controller.toggleGraphicsTrackLock();
+    controller.setSelectedGraphicHeadline('Blocked edit');
+    expect(controller.graphics.single.headline, 'Top story');
+    expect(controller.projectState.graphicsTrackLocked, isTrue);
+    controller.toggleGraphicsTrackVisibility();
+    expect(controller.projectState.graphicsTrackVisible, isFalse);
     controller.dispose();
   });
 
@@ -886,6 +948,40 @@ void main() {
       controller.dispose();
     },
   );
+
+  test('render requests include visible enabled G1 graphics only', () async {
+    final apiClient = _RecordingApiClient();
+    final controller =
+        EditorController(apiClient: apiClient, autoStartEngine: false)
+          ..jobId = 'job-graphics'
+          ..duration = 20
+          ..segments = const [
+            HighlightSegment(order: 1, start: 0, end: 20, reason: 'base'),
+          ]
+          ..graphics = const [
+            GraphicClip(
+              id: 'g1-on',
+              timelineStart: 1,
+              timelineEnd: 6,
+              headline: 'Visible graphic',
+            ),
+            GraphicClip(
+              id: 'g1-off',
+              timelineStart: 8,
+              timelineEnd: 12,
+              headline: 'Disabled graphic',
+              enabled: false,
+            ),
+          ];
+
+    await controller.requestRender();
+    expect(apiClient.renderGraphics.map((item) => item.id), ['g1-on']);
+
+    controller.toggleGraphicsTrackVisibility();
+    await controller.requestRender();
+    expect(apiClient.renderGraphics, isEmpty);
+    controller.dispose();
+  });
 
   test('adding an overlay reactivates and targets V2 and A3', () {
     final controller = EditorController(autoStartEngine: false)
@@ -4069,8 +4165,10 @@ class _RecordingApiClient extends ApiClient {
   List<HighlightSegment> renderSegments = const [];
   List<VideoOverlayClip> renderVideoOverlays = const [];
   List<AudioClip> renderAudioClips = const [];
+  List<GraphicClip> renderGraphics = const [];
   List<VideoOverlayClip> batchVideoOverlays = const [];
   List<AudioClip> batchAudioClips = const [];
+  List<GraphicClip> batchGraphics = const [];
   List<Map<String, dynamic>> batchRenderItems = const [];
   String? savedProjectJobId;
   ProjectState? savedProject;
@@ -4089,6 +4187,7 @@ class _RecordingApiClient extends ApiClient {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
     List<AudioClip> audioClips = const [],
+    List<GraphicClip> graphics = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
@@ -4098,6 +4197,7 @@ class _RecordingApiClient extends ApiClient {
     renderSegments = List<HighlightSegment>.of(segments);
     renderVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
     renderAudioClips = List<AudioClip>.of(audioClips);
+    renderGraphics = List<GraphicClip>.of(graphics);
   }
 
   @override
@@ -4107,6 +4207,7 @@ class _RecordingApiClient extends ApiClient {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
     List<AudioClip> audioClips = const [],
+    List<GraphicClip> graphics = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '9:16',
     bool includeCaptions = true,
@@ -4115,6 +4216,7 @@ class _RecordingApiClient extends ApiClient {
     batchRenderItems = List<Map<String, dynamic>>.of(items);
     batchVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
     batchAudioClips = List<AudioClip>.of(audioClips);
+    batchGraphics = List<GraphicClip>.of(graphics);
   }
 
   @override

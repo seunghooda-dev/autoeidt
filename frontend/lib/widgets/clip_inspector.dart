@@ -13,6 +13,13 @@ class ClipInspector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<EditorController>();
+    final selectedGraphic = controller.selectedGraphicClip;
+    if (selectedGraphic != null) {
+      return _GraphicClipInspector(
+        controller: controller,
+        graphic: selectedGraphic,
+      );
+    }
     final selectedOverlay = controller.selectedVideoOverlay;
     if (selectedOverlay != null) {
       return _VideoOverlayInspector(
@@ -542,6 +549,336 @@ class ClipInspector extends StatelessWidget {
       ],
     );
   }
+}
+
+class _GraphicClipInspector extends StatelessWidget {
+  const _GraphicClipInspector({
+    required this.controller,
+    required this.graphic,
+  });
+
+  final EditorController controller;
+  final GraphicClip graphic;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final editor = context.read<EditorController>();
+    final enabled = !controller.graphicsTrackLocked;
+    return ListView(
+      key: ValueKey('graphic-inspector-${graphic.id}'),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.title, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'G1 Graphic',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              tooltip: graphic.enabled ? '그래픽 비활성화' : '그래픽 활성화',
+              onPressed: enabled ? editor.toggleSelectedGraphicEnabled : null,
+              icon: Icon(
+                graphic.enabled
+                    ? Icons.check_circle_outline
+                    : Icons.block_outlined,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _TimecodeRow(
+          label: 'G1',
+          start: formatSeconds(graphic.timelineStart),
+          end: formatSeconds(graphic.timelineEnd),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          key: ValueKey('graphic-preset-${graphic.id}-${graphic.preset}'),
+          initialValue: graphic.preset,
+          decoration: const InputDecoration(
+            labelText: 'Template',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: const [
+            DropdownMenuItem(value: 'lower_third', child: Text('Lower third')),
+            DropdownMenuItem(value: 'headline', child: Text('Headline')),
+            DropdownMenuItem(
+              value: 'corner_bug',
+              child: Text('Corner bug / LIVE'),
+            ),
+          ],
+          onChanged: enabled
+              ? (value) {
+                  if (value != null) {
+                    editor.applySelectedGraphicPreset(value);
+                  }
+                }
+              : null,
+        ),
+        const SizedBox(height: 10),
+        _CommitTextField(
+          key: ValueKey('graphic-headline-${graphic.id}'),
+          label: 'Headline',
+          value: graphic.headline,
+          enabled: enabled,
+          onCommit: editor.setSelectedGraphicHeadline,
+        ),
+        const SizedBox(height: 8),
+        _CommitTextField(
+          key: ValueKey('graphic-subheadline-${graphic.id}'),
+          label: 'Supporting text',
+          value: graphic.subheadline,
+          enabled: enabled,
+          onCommit: editor.setSelectedGraphicSubheadline,
+        ),
+        const SizedBox(height: 14),
+        _PropertySlider(
+          icon: Icons.open_with,
+          label: 'Horizontal position',
+          value: graphic.positionX,
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(graphic.positionX * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedGraphicPositionX : null,
+        ),
+        _PropertySlider(
+          icon: Icons.height,
+          label: 'Vertical position',
+          value: graphic.positionY,
+          min: 0,
+          max: 1,
+          divisions: 100,
+          valueLabel: '${(graphic.positionY * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedGraphicPositionY : null,
+        ),
+        _PropertySlider(
+          icon: Icons.zoom_out_map,
+          label: 'Scale',
+          value: graphic.scale,
+          min: 0.5,
+          max: 2,
+          divisions: 30,
+          valueLabel: '${(graphic.scale * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedGraphicScale : null,
+        ),
+        _PropertySlider(
+          icon: Icons.opacity,
+          label: 'Opacity',
+          value: graphic.opacity,
+          min: 0,
+          max: 1,
+          divisions: 20,
+          valueLabel: '${(graphic.opacity * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedGraphicOpacity : null,
+        ),
+        const SizedBox(height: 4),
+        _GraphicColorRow(
+          label: 'Background',
+          selected: graphic.backgroundColor,
+          colors: const ['#111827', '#000000', '#17324D', '#7F1D1D', '#F8FAFC'],
+          enabled: enabled,
+          onChanged: (value) =>
+              editor.setSelectedGraphicColor('background', value),
+        ),
+        const SizedBox(height: 8),
+        _GraphicColorRow(
+          label: 'Accent',
+          selected: graphic.accentColor,
+          colors: const ['#17C3B2', '#38BDF8', '#F59E0B', '#EF4444', '#A78BFA'],
+          enabled: enabled,
+          onChanged: (value) => editor.setSelectedGraphicColor('accent', value),
+        ),
+        const SizedBox(height: 8),
+        _GraphicColorRow(
+          label: 'Text',
+          selected: graphic.textColor,
+          colors: const ['#FFFFFF', '#F8FAFC', '#FDE68A', '#111827', '#000000'],
+          enabled: enabled,
+          onChanged: (value) => editor.setSelectedGraphicColor('text', value),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: enabled ? editor.duplicateSelectedGraphicClip : null,
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Duplicate'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              tooltip: '그래픽 삭제',
+              onPressed: enabled ? editor.deleteSelectedGraphicClip : null,
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        ),
+        if (!controller.graphicsTrackVisible) ...[
+          const SizedBox(height: 10),
+          Text(
+            'G1 트랙이 숨겨져 있어 프리뷰와 출력에 표시되지 않습니다.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colorScheme.tertiary),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CommitTextField extends StatefulWidget {
+  const _CommitTextField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.enabled,
+    required this.onCommit,
+  });
+
+  final String label;
+  final String value;
+  final bool enabled;
+  final ValueChanged<String> onCommit;
+
+  @override
+  State<_CommitTextField> createState() => _CommitTextFieldState();
+}
+
+class _CommitTextFieldState extends State<_CommitTextField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CommitTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && _controller.text != widget.value) {
+      _controller.text = widget.value;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    if (widget.enabled && _controller.text != widget.value) {
+      widget.onCommit(_controller.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      enabled: widget.enabled,
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onSubmitted: (_) => _commit(),
+      onTapOutside: (_) {
+        _commit();
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
+    );
+  }
+}
+
+class _GraphicColorRow extends StatelessWidget {
+  const _GraphicColorRow({
+    required this.label,
+    required this.selected,
+    required this.colors,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String selected;
+  final List<String> colors;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        SizedBox(
+          width: 82,
+          child: Text(label, style: Theme.of(context).textTheme.labelMedium),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final value in colors)
+                Tooltip(
+                  message: value,
+                  child: InkWell(
+                    key: ValueKey('$label-$value'),
+                    onTap: enabled ? () => onChanged(value) : null,
+                    borderRadius: BorderRadius.circular(3),
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: _graphicColor(value),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: selected.toUpperCase() == value
+                              ? colorScheme.primary
+                              : colorScheme.outline,
+                          width: selected.toUpperCase() == value ? 3 : 1,
+                        ),
+                      ),
+                      child: selected.toUpperCase() == value
+                          ? Icon(
+                              Icons.check,
+                              size: 15,
+                              color:
+                                  _graphicColor(value).computeLuminance() > 0.45
+                                  ? Colors.black
+                                  : Colors.white,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Color _graphicColor(String value) {
+  final normalized = value.replaceFirst('#', '');
+  return Color(int.parse('FF$normalized', radix: 16));
 }
 
 class _VideoOverlayInspector extends StatelessWidget {

@@ -95,7 +95,7 @@ void main() {
     source.toggleAssetFavorite(source.assets.single);
     source.saveCurrentPreset('Broadcast');
     source.setInspectorTab(1);
-    source.setWorkspaceView('export');
+    source.setWorkspaceView('graphics');
     source.toggleLayoutLock();
     await source.save();
 
@@ -107,7 +107,7 @@ void main() {
     expect(restored.assets.single.tags, contains('News'));
     expect(restored.assets.single.favorite, isTrue);
     expect(restored.customPresets.single.name, 'Broadcast');
-    expect(restored.activeWorkspaceView, 'export');
+    expect(restored.activeWorkspaceView, 'graphics');
     expect(restored.activeInspectorTab, 1);
     expect(restored.layoutLocked, isTrue);
     source.dispose();

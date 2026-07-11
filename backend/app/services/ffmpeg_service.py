@@ -1488,6 +1488,146 @@ def _srt_time(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
 
+def _ass_time(seconds: float) -> str:
+    centiseconds = max(0, int(round(seconds * 100)))
+    hours = centiseconds // 360_000
+    centiseconds %= 360_000
+    minutes = centiseconds // 6_000
+    centiseconds %= 6_000
+    secs = centiseconds // 100
+    fraction = centiseconds % 100
+    return f"{hours}:{minutes:02}:{secs:02}.{fraction:02}"
+
+
+def _ass_color(value: Any, fallback: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if not re.fullmatch(r"#[0-9A-F]{6}", normalized):
+        normalized = fallback
+    red = normalized[1:3]
+    green = normalized[3:5]
+    blue = normalized[5:7]
+    return f"&H00{blue}{green}{red}&"
+
+
+def _ass_text(value: Any) -> str:
+    text = str(value or "").strip().replace("\r", " ").replace("\n", r"\N")
+    return text.replace("{", "(").replace("}", ")")
+
+
+def _write_graphics_ass(
+    graphics: list[dict],
+    output_path: Path,
+    canvas_width: int,
+    canvas_height: int,
+    timeline_duration: float,
+) -> Path | None:
+    enabled = [
+        graphic
+        for graphic in graphics[:64]
+        if graphic.get("enabled", True)
+        and float(graphic.get("timeline_end", 0.0))
+        > float(graphic.get("timeline_start", 0.0))
+    ]
+    if not enabled:
+        return None
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    unit_scale = max(0.25, min(canvas_width, canvas_height) / 1080)
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        f"PlayResX: {canvas_width}",
+        f"PlayResY: {canvas_height}",
+        "WrapStyle: 2",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: Graphic,Malgun Gothic,48,&H00FFFFFF,&H00FFFFFF,&H00111827,"
+        "&H00111827,-1,0,0,0,100,100,0,0,3,10,0,1,0,0,0,1",
+        "Style: GraphicSub,Malgun Gothic,30,&H00FFFFFF,&H00FFFFFF,&H00111827,"
+        "&H00111827,0,0,0,0,100,100,0,0,3,8,0,1,0,0,0,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
+        "Effect, Text",
+    ]
+
+    for graphic in enabled:
+        start = max(0.0, min(float(graphic.get("timeline_start", 0.0)), timeline_duration))
+        end = max(start, min(float(graphic.get("timeline_end", start)), timeline_duration))
+        if end - start < 1 / RENDER_FRAME_RATE:
+            continue
+        preset = str(graphic.get("preset") or "lower_third")
+        if preset not in {"lower_third", "headline", "corner_bug"}:
+            preset = "lower_third"
+        x = round(max(0.0, min(float(graphic.get("position_x", 0.06)), 1.0)) * canvas_width)
+        y = round(max(0.0, min(float(graphic.get("position_y", 0.82)), 1.0)) * canvas_height)
+        scale = max(0.5, min(float(graphic.get("scale", 1.0)), 2.0))
+        opacity = max(0.0, min(float(graphic.get("opacity", 1.0)), 1.0))
+        alpha = round((1.0 - opacity) * 255)
+        text_color = _ass_color(graphic.get("text_color"), "#FFFFFF")
+        background_color = _ass_color(
+            graphic.get("background_color"),
+            "#111827",
+        )
+        accent_color = _ass_color(graphic.get("accent_color"), "#17C3B2")
+        headline = _ass_text(graphic.get("headline") or "Headline")
+        subheadline = _ass_text(graphic.get("subheadline"))
+        if preset == "headline":
+            alignment = 8
+            headline_size = round(58 * unit_scale * scale)
+            sub_size = round(31 * unit_scale * scale)
+            sub_y = y + round(70 * unit_scale * scale)
+        elif preset == "corner_bug":
+            alignment = 9
+            headline_size = round(34 * unit_scale * scale)
+            sub_size = round(22 * unit_scale * scale)
+            sub_y = y + round(44 * unit_scale * scale)
+        else:
+            alignment = 1
+            headline_size = round(50 * unit_scale * scale)
+            sub_size = round(28 * unit_scale * scale)
+            sub_y = y + round(58 * unit_scale * scale)
+        common = (
+            f"\\an{alignment}\\pos({x},{y})\\fs{max(12, headline_size)}"
+            f"\\1c{text_color}\\3c{background_color}\\alpha&H{alpha:02X}&"
+            r"\fad(180,180)"
+        )
+        headline_text = (
+            "{" + common + f"}}"
+            + "{"
+            + f"\\1c{accent_color}"
+            + "}■ "
+            + "{"
+            + f"\\1c{text_color}"
+            + "}"
+            + headline
+        )
+        lines.append(
+            f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},Graphic,,0,0,0,,"
+            f"{headline_text}"
+        )
+        if subheadline:
+            sub_common = (
+                f"\\an{alignment}\\pos({x},{sub_y})\\fs{max(10, sub_size)}"
+                f"\\1c{text_color}\\3c{background_color}"
+                f"\\alpha&H{alpha:02X}&" + r"\fad(180,180)"
+            )
+            lines.append(
+                f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},GraphicSub,,0,0,0,,"
+                f"{{{sub_common}}}{subheadline}"
+            )
+
+    if not any(line.startswith("Dialogue:") for line in lines):
+        return None
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output_path
+
+
 def _write_caption_srt(
     captions: list[dict],
     segments: list[dict],
@@ -1726,6 +1866,7 @@ def _render_reencode_with_video_args(
     processing_size: tuple[int, int] | None = None,
     video_overlays: list[dict] | None = None,
     audio_clips: list[dict] | None = None,
+    graphics: list[dict] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -2288,6 +2429,13 @@ def _render_reencode_with_video_args(
         audio_mix_index += 1
     filter_complex += f";{audio_chain}anull[outa]"
 
+    graphic_file = _write_graphics_ass(
+        graphics or [],
+        output_path.with_suffix(".graphics.ass"),
+        canvas_width,
+        canvas_height,
+        timeline_duration,
+    )
     caption_file = None
     if captions:
         caption_file = _write_caption_srt(
@@ -2295,17 +2443,19 @@ def _render_reencode_with_video_args(
             segments,
             output_path.with_suffix(".srt"),
         )
+    video_finish_steps = [f"{video_chain}fps={RENDER_FRAME_RATE_LABEL}"]
+    if graphic_file is not None:
+        video_finish_steps.append(
+            f"subtitles='{_subtitle_filter_path(graphic_file)}'"
+        )
     if caption_file is not None:
         force_style = _caption_style_force_style(caption_style)
-        filter_complex += (
-            f";{video_chain}fps={RENDER_FRAME_RATE_LABEL},"
+        video_finish_steps.append(
             f"subtitles='{_subtitle_filter_path(caption_file)}':"
-            f"force_style='{force_style}',format=yuv420p[outv]"
+            f"force_style='{force_style}'"
         )
-    else:
-        filter_complex += (
-            f";{video_chain}fps={RENDER_FRAME_RATE_LABEL},format=yuv420p[outv]"
-        )
+    video_finish_steps.append("format=yuv420p[outv]")
+    filter_complex += ";" + ",".join(video_finish_steps)
 
     _run(
         [
@@ -2361,6 +2511,7 @@ def render_highlights_reencoded(
     caption_style: dict | None = None,
     video_overlays: list[dict] | None = None,
     audio_clips: list[dict] | None = None,
+    graphics: list[dict] | None = None,
 ) -> Path:
     settings = get_settings()
     if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
@@ -2375,6 +2526,7 @@ def render_highlights_reencoded(
                 caption_style=caption_style,
                 video_overlays=video_overlays,
                 audio_clips=audio_clips,
+                graphics=graphics,
             )
         except FFmpegError:
             pass
@@ -2389,6 +2541,7 @@ def render_highlights_reencoded(
         caption_style=caption_style,
         video_overlays=video_overlays,
         audio_clips=audio_clips,
+        graphics=graphics,
     )
 
 
@@ -2400,6 +2553,7 @@ def create_program_preview_proxy(
     duration_seconds: float | None = None,
     video_overlays: list[dict] | None = None,
     audio_clips: list[dict] | None = None,
+    graphics: list[dict] | None = None,
 ) -> tuple[Path, bool, float, float]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
@@ -2518,6 +2672,11 @@ def create_program_preview_proxy(
             keyframe_field="gain_keyframes",
         )
     ]
+    normalized_graphics = [
+        dict(graphic)
+        for graphic in (graphics or [])[:64]
+        if graphic.get("enabled", True)
+    ]
     audio_clip_cache_sources: list[str] = []
     for clip in normalized_audio_clips:
         source_path = Path(str(clip.get("source_path") or "")).expanduser()
@@ -2532,13 +2691,14 @@ def create_program_preview_proxy(
             "segment": normalized_segment,
             "video_overlays": normalized_overlays,
             "audio_clips": normalized_audio_clips,
+            "graphics": normalized_graphics,
         },
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
     )
     cache_identity = (
-        f"program-preview-v5-audio-automation-540p|{normalized_aspect_ratio}|"
+        f"program-preview-v6-broadcast-graphics-540p|{normalized_aspect_ratio}|"
         f"{cache_payload}|"
         f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
         f"|{'|'.join(overlay_cache_sources)}"
@@ -2575,6 +2735,7 @@ def create_program_preview_proxy(
                 processing_size=(960, 540),
                 video_overlays=normalized_overlays,
                 audio_clips=normalized_audio_clips,
+                graphics=normalized_graphics,
             )
             temp_path.replace(output_path)
         finally:
@@ -2592,6 +2753,7 @@ def render_highlights(
     caption_style: dict | None = None,
     video_overlays: list[dict] | None = None,
     audio_clips: list[dict] | None = None,
+    graphics: list[dict] | None = None,
 ) -> Path:
     normalized = sorted(
         segments,
@@ -2609,4 +2771,5 @@ def render_highlights(
         caption_style=caption_style,
         video_overlays=video_overlays,
         audio_clips=audio_clips,
+        graphics=graphics,
     )

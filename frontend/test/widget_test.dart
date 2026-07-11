@@ -10,6 +10,7 @@ import 'package:highlight_editor_app/models/highlight_segment.dart';
 import 'package:highlight_editor_app/models/job_models.dart';
 import 'package:highlight_editor_app/utils/timecode.dart';
 import 'package:highlight_editor_app/widgets/clip_inspector.dart';
+import 'package:highlight_editor_app/widgets/graphics_panel.dart';
 import 'package:highlight_editor_app/widgets/render_outputs_panel.dart';
 import 'package:highlight_editor_app/widgets/timeline_editor.dart';
 import 'package:highlight_editor_app/widgets/video_preview.dart';
@@ -19,6 +20,53 @@ import 'package:highlight_editor_app/state/editor_controller.dart';
 import 'package:highlight_editor_app/state/workspace_controller.dart';
 
 void main() {
+  testWidgets('graphics panel creates G1 clip and inspector edits its style', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(480, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 20
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 20, reason: 'base'),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 440, child: GraphicsPanel())),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('add-lower-third')));
+    await tester.pump();
+    expect(controller.graphics, hasLength(1));
+    expect(find.text('Name or headline'), findsOneWidget);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 440, child: ClipInspector())),
+        ),
+      ),
+    );
+    final headlineField = find.byType(TextField).first;
+    await tester.enterText(headlineField, 'Updated newsroom title');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(controller.selectedGraphicClip?.headline, 'Updated newsroom title');
+
+    await tester.tap(find.byKey(const ValueKey('Accent-#EF4444')));
+    await tester.pump();
+    expect(controller.selectedGraphicClip?.accentColor, '#EF4444');
+  });
+
   testWidgets('clip inspector edits an incoming A/V transition', (
     tester,
   ) async {
@@ -630,6 +678,11 @@ void main() {
     expect(workspace.activeWorkspaceView, 'captions');
     expect(find.text('Caption workspace text'), findsOneWidget);
 
+    await tester.tap(find.byKey(const Key('workspace-tab-graphics')));
+    await tester.pumpAndSettle();
+    expect(workspace.activeWorkspaceView, 'graphics');
+    expect(find.text('Broadcast Graphics'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('workspace-tab-export')));
     await tester.pumpAndSettle();
     expect(workspace.activeWorkspaceView, 'export');
@@ -826,6 +879,8 @@ void main() {
   ) async {
     var targetedVideoTrack = 0;
     var targetedAudioTrack = 0;
+    String? selectedGraphicId;
+    GraphicClip? changedGraphic;
     String? selectedAudioClipId;
     AudioClip? changedAudioClip;
     await tester.pumpWidget(
@@ -844,6 +899,14 @@ void main() {
               targetedOverlayAudioTrack: 8,
               segments: const [
                 HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+              ],
+              graphics: const [
+                GraphicClip(
+                  id: 'g1-test',
+                  timelineStart: 2,
+                  timelineEnd: 7,
+                  headline: 'News headline',
+                ),
               ],
               videoOverlays: const [
                 VideoOverlayClip(
@@ -872,6 +935,7 @@ void main() {
               ],
               playheadSeconds: 0,
               selectedSegmentOrder: null,
+              selectedGraphicClipId: 'g1-test',
               selectedVideoOverlayId: 'v4-a8-test',
               selectedAudioClipId: 'a8-music',
               markIn: null,
@@ -892,6 +956,8 @@ void main() {
               audioTrack2Locked: false,
               razorTool: false,
               onSegmentChanged: (_) {},
+              onGraphicSelected: (id) => selectedGraphicId = id,
+              onGraphicChanged: (graphic) => changedGraphic = graphic,
               onScrub: (_) {},
               onSegmentSelected: (_) {},
               onAudioClipSelected: (id) => selectedAudioClipId = id,
@@ -911,6 +977,16 @@ void main() {
     expect(find.byKey(const Key('track-header-v4')), findsOneWidget);
     expect(find.byKey(const Key('track-header-v3')), findsOneWidget);
     expect(find.byKey(const Key('track-header-a8')), findsOneWidget);
+    expect(find.byKey(const Key('track-header-g1')), findsOneWidget);
+    final graphic = find.byKey(const ValueKey('graphic-clip-g1-test'));
+    expect(graphic, findsOneWidget);
+    await tester.tap(graphic);
+    await tester.pump();
+    expect(selectedGraphicId, 'g1-test');
+    await tester.drag(graphic, const Offset(30, 0));
+    await tester.pump();
+    expect(changedGraphic, isNotNull);
+    expect(changedGraphic!.timelineStart, greaterThan(2));
     expect(
       find.byKey(const ValueKey('video-overlay-v4-a8-test')),
       findsOneWidget,

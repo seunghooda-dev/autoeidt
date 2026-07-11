@@ -892,6 +892,9 @@ class ProjectState {
     required this.segments,
     this.videoOverlays = const [],
     this.audioClips = const [],
+    this.graphics = const [],
+    this.graphicsTrackLocked = false,
+    this.graphicsTrackVisible = true,
     this.activeVideoTrackCount = 2,
     this.activeAudioTrackCount = 3,
     this.lockedVideoTracks = const [],
@@ -927,6 +930,9 @@ class ProjectState {
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
   final List<AudioClip> audioClips;
+  final List<GraphicClip> graphics;
+  final bool graphicsTrackLocked;
+  final bool graphicsTrackVisible;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
   final List<int> lockedVideoTracks;
@@ -953,6 +959,7 @@ class ProjectState {
     final rawVideoOverlays =
         json['video_overlays'] as List<dynamic>? ?? const [];
     final rawAudioClips = json['audio_clips'] as List<dynamic>? ?? const [];
+    final rawGraphics = json['graphics'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
     final rawTimelineMarkers =
@@ -969,6 +976,10 @@ class ProjectState {
     final audioClips = rawAudioClips
         .whereType<Map>()
         .map((item) => AudioClip.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+    final graphics = rawGraphics
+        .whereType<Map>()
+        .map((item) => GraphicClip.fromJson(Map<String, dynamic>.from(item)))
         .toList();
     final highestVideoTrack = videoOverlays.fold<int>(
       1,
@@ -1005,6 +1016,9 @@ class ProjectState {
           .toList(),
       videoOverlays: videoOverlays,
       audioClips: audioClips,
+      graphics: graphics,
+      graphicsTrackLocked: json['graphics_track_locked'] as bool? ?? false,
+      graphicsTrackVisible: json['graphics_track_visible'] as bool? ?? true,
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
       lockedVideoTracks: _trackListFromJson(
@@ -1079,6 +1093,9 @@ class ProjectState {
       'segments': segments.map((item) => item.toJson()).toList(),
       'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
       'audio_clips': audioClips.map((item) => item.toJson()).toList(),
+      'graphics': graphics.map((item) => item.toJson()).toList(),
+      'graphics_track_locked': graphicsTrackLocked,
+      'graphics_track_visible': graphicsTrackVisible,
       'active_video_track_count': activeVideoTrackCount.clamp(1, 4),
       'active_audio_track_count': activeAudioTrackCount.clamp(2, 8),
       'locked_video_tracks': [...lockedVideoTracks]..sort(),

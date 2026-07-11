@@ -433,6 +433,20 @@ void main() {
               sourceEnd: 4,
             ),
           ]
+          ..graphics = const [
+            GraphicClip(
+              id: 'g1-overlap',
+              timelineStart: 4,
+              timelineEnd: 12,
+              headline: 'Window headline',
+            ),
+            GraphicClip(
+              id: 'g1-outside',
+              timelineStart: 20,
+              timelineEnd: 24,
+              headline: 'Later headline',
+            ),
+          ]
           ..soloAudioTracks = <int>{8}
           ..selectedSegmentOrder = 1;
 
@@ -464,6 +478,11 @@ void main() {
         expect(audioClips.single.gainKeyframes.first.time, 0);
         expect(audioClips.single.gainKeyframes.last.time, 4);
         expect(audioClips.single.gainKeyframes.last.volume, 0.8);
+        final graphics = api.requestedGraphics.last;
+        expect(graphics, hasLength(1));
+        expect(graphics.single.id, 'g1-overlap');
+        expect(graphics.single.timelineStart, 4);
+        expect(graphics.single.timelineEnd, 8);
       } finally {
         controller.dispose();
         await platform.close();
@@ -918,6 +937,7 @@ class _ProxyApiClient extends ApiClient {
   final List<HighlightSegment?> requestedSegments = [];
   final List<List<VideoOverlayClip>> requestedVideoOverlays = [];
   final List<List<AudioClip>> requestedAudioClips = [];
+  final List<List<GraphicClip>> requestedGraphics = [];
   final List<String> requestedAspectRatios = [];
 
   @override
@@ -941,6 +961,7 @@ class _ProxyApiClient extends ApiClient {
     HighlightSegment? segment,
     List<VideoOverlayClip> videoOverlays = const [],
     List<AudioClip> audioClips = const [],
+    List<GraphicClip> graphics = const [],
     String aspectRatio = '16:9',
   }) async {
     final duration = durationSeconds ?? segment?.outputDuration ?? 8;
@@ -950,6 +971,7 @@ class _ProxyApiClient extends ApiClient {
     requestedSegments.add(segment);
     requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
     requestedAudioClips.add(List<AudioClip>.of(audioClips));
+    requestedGraphics.add(List<GraphicClip>.of(graphics));
     requestedAspectRatios.add(aspectRatio);
     return LocalPreviewInfo(
       url:
@@ -973,6 +995,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
     HighlightSegment? segment,
     List<VideoOverlayClip> videoOverlays = const [],
     List<AudioClip> audioClips = const [],
+    List<GraphicClip> graphics = const [],
     String aspectRatio = '16:9',
   }) async {
     if (segment != null &&
@@ -984,6 +1007,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       requestedSegments.add(segment);
       requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
       requestedAudioClips.add(List<AudioClip>.of(audioClips));
+      requestedGraphics.add(List<GraphicClip>.of(graphics));
       requestedAspectRatios.add(aspectRatio);
       throw StateError('simulated prefetch failure');
     }
@@ -994,6 +1018,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       segment: segment,
       videoOverlays: videoOverlays,
       audioClips: audioClips,
+      graphics: graphics,
       aspectRatio: aspectRatio,
     );
   }

@@ -1,4 +1,5 @@
 from enum import StrEnum
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -531,6 +532,76 @@ class AudioClip(BaseModel):
         return _normalize_audio_gain_keyframes(value)
 
 
+class GraphicClip(BaseModel):
+    id: str
+    timeline_start: float
+    timeline_end: float
+    preset: str = "lower_third"
+    headline: str = Field(default="Headline", max_length=120)
+    subheadline: str = Field(default="", max_length=180)
+    position_x: float = 0.06
+    position_y: float = 0.82
+    scale: float = 1.0
+    opacity: float = 1.0
+    background_color: str = "#111827"
+    accent_color: str = "#17C3B2"
+    text_color: str = "#FFFFFF"
+    enabled: bool = True
+
+    @field_validator("timeline_start", "timeline_end", mode="before")
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
+
+    @model_validator(mode="after")
+    def range_is_valid(self) -> "GraphicClip":
+        if self.timeline_end <= self.timeline_start:
+            raise ValueError("timeline_end must be greater than timeline_start")
+        self.headline = self.headline.strip() or "Headline"
+        self.subheadline = self.subheadline.strip()
+        return self
+
+    @field_validator("preset", mode="before")
+    @classmethod
+    def preset_is_supported(cls, value: Any) -> str:
+        normalized = str(value or "lower_third").strip().lower()
+        return (
+            normalized
+            if normalized in {"lower_third", "headline", "corner_bug"}
+            else "lower_third"
+        )
+
+    @field_validator("position_x", "position_y")
+    @classmethod
+    def position_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @field_validator("scale")
+    @classmethod
+    def scale_is_safe(cls, value: float) -> float:
+        return max(0.5, min(float(value), 2.0))
+
+    @field_validator("opacity")
+    @classmethod
+    def opacity_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @field_validator("background_color", "accent_color", "text_color")
+    @classmethod
+    def color_is_safe(cls, value: str, info: Any) -> str:
+        fallbacks = {
+            "background_color": "#111827",
+            "accent_color": "#17C3B2",
+            "text_color": "#FFFFFF",
+        }
+        normalized = str(value or "").strip().upper()
+        return (
+            normalized
+            if re.fullmatch(r"#[0-9A-F]{6}", normalized)
+            else fallbacks[info.field_name]
+        )
+
+
 class LocalPreviewRequest(BaseModel):
     path: str
     start_seconds: float = 0.0
@@ -538,6 +609,7 @@ class LocalPreviewRequest(BaseModel):
     segment: HighlightSegment | None = None
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
     audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
+    graphics: list[GraphicClip] = Field(default_factory=list, max_length=64)
     aspect_ratio: str = "16:9"
 
 
@@ -718,6 +790,7 @@ class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
     audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
+    graphics: list[GraphicClip] = Field(default_factory=list, max_length=64)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "16:9"
@@ -792,6 +865,7 @@ class BatchRenderRequest(BaseModel):
     items: list[BatchRenderItem]
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
     audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
+    graphics: list[GraphicClip] = Field(default_factory=list, max_length=64)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "9:16"
@@ -841,6 +915,9 @@ class ProjectState(BaseModel):
     segments: list[HighlightSegment] = Field(default_factory=list)
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list)
     audio_clips: list[AudioClip] = Field(default_factory=list)
+    graphics: list[GraphicClip] = Field(default_factory=list)
+    graphics_track_locked: bool = False
+    graphics_track_visible: bool = True
     active_video_track_count: int = Field(default=2, ge=1, le=4)
     active_audio_track_count: int = Field(default=3, ge=2, le=8)
     locked_video_tracks: list[int] = Field(default_factory=list)

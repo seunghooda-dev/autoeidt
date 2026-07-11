@@ -34,6 +34,7 @@ def test_health_endpoint() -> None:
     assert "audio_track_solo_v1" in payload["features"]
     assert "lossless_multitrack_project_v1" in payload["features"]
     assert "audio_gain_keyframes_v1" in payload["features"]
+    assert "broadcast_graphics_g1_v1" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:
@@ -360,6 +361,21 @@ def test_project_endpoints_preserve_render_settings(
                     "track": 7,
                 }
             ],
+            "graphics": [
+                {
+                    "id": "g1-live",
+                    "timeline_start": 1.019,
+                    "timeline_end": 6.049,
+                    "preset": "lower_third",
+                    "headline": "Election update",
+                    "subheadline": "Live from Seoul",
+                    "position_x": 0.07,
+                    "position_y": 0.81,
+                    "accent_color": "#EF4444",
+                }
+            ],
+            "graphics_track_locked": True,
+            "graphics_track_visible": False,
             "active_video_track_count": 4,
             "active_audio_track_count": 8,
             "locked_video_tracks": [4],
@@ -426,6 +442,11 @@ def test_project_endpoints_preserve_render_settings(
     assert payload["selected_shorts_id"] == 2
     assert payload["video_overlays"][0]["id"] == "v4-news"
     assert payload["audio_clips"][0]["id"] == "a7-bed"
+    assert payload["graphics"][0]["id"] == "g1-live"
+    assert payload["graphics"][0]["timeline_start"] == 1.033333
+    assert payload["graphics"][0]["accent_color"] == "#EF4444"
+    assert payload["graphics_track_locked"] is True
+    assert payload["graphics_track_visible"] is False
     assert payload["video_overlays"][0]["audio_gain_keyframes"][1]["volume"] == 1.1
     assert payload["audio_clips"][0]["gain_keyframes"][1]["time"] == 20.0
     assert payload["active_video_track_count"] == 4
@@ -455,6 +476,9 @@ def test_project_endpoints_preserve_render_settings(
     assert get_payload["video_overlays"][0]["video_track"] == 4
     assert get_payload["video_overlays"][0]["audio_track"] == 8
     assert get_payload["audio_clips"][0]["track"] == 7
+    assert get_payload["graphics"][0]["headline"] == "Election update"
+    assert get_payload["graphics_track_locked"] is True
+    assert get_payload["graphics_track_visible"] is False
     assert get_payload["video_overlays"][0]["audio_gain_keyframes"][0]["volume"] == 0.2
     assert get_payload["audio_clips"][0]["gain_keyframes"][0]["volume"] == 0.5
     assert get_payload["active_video_track_count"] == 4

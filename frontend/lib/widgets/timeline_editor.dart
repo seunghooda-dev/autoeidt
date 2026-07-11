@@ -164,10 +164,12 @@ class TimelineEditor extends StatefulWidget {
     super.key,
     required this.duration,
     required this.segments,
+    this.graphics = const [],
     this.videoOverlays = const [],
     this.audioClips = const [],
     required this.playheadSeconds,
     required this.selectedSegmentOrder,
+    this.selectedGraphicClipId,
     this.selectedVideoOverlayId,
     this.selectedAudioClipId,
     required this.markIn,
@@ -188,6 +190,8 @@ class TimelineEditor extends StatefulWidget {
     this.targetedVideoOverlayTrack = 2,
     this.targetedOverlayAudioTrack = 3,
     required this.videoTrackLocked,
+    this.graphicsTrackLocked = false,
+    this.graphicsTrackVisible = true,
     this.videoOverlayTrackLocked = false,
     this.videoOverlayTrackVisible = true,
     this.lockedVideoOverlayTracks = const <int>{},
@@ -201,10 +205,12 @@ class TimelineEditor extends StatefulWidget {
     this.soloAudioTracks = const <int>{},
     required this.razorTool,
     required this.onSegmentChanged,
+    this.onGraphicChanged,
     this.onVideoOverlayChanged,
     this.onAudioClipChanged,
     required this.onScrub,
     required this.onSegmentSelected,
+    this.onGraphicSelected,
     this.onVideoOverlaySelected,
     this.onAudioClipSelected,
     this.sequenceMode = false,
@@ -297,15 +303,20 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleAudioSoloAt,
     this.onDeleteVideoOverlay,
     this.onDeleteAudioClip,
+    this.onDeleteGraphicClip,
+    this.onToggleGraphicsLock,
+    this.onToggleGraphicsVisibility,
     this.onZoomDelta,
   });
 
   final double duration;
   final List<HighlightSegment> segments;
+  final List<GraphicClip> graphics;
   final List<VideoOverlayClip> videoOverlays;
   final List<AudioClip> audioClips;
   final double playheadSeconds;
   final int? selectedSegmentOrder;
+  final String? selectedGraphicClipId;
   final String? selectedVideoOverlayId;
   final String? selectedAudioClipId;
   final double? markIn;
@@ -326,6 +337,8 @@ class TimelineEditor extends StatefulWidget {
   final int targetedVideoOverlayTrack;
   final int targetedOverlayAudioTrack;
   final bool videoTrackLocked;
+  final bool graphicsTrackLocked;
+  final bool graphicsTrackVisible;
   final bool videoOverlayTrackLocked;
   final bool videoOverlayTrackVisible;
   final Set<int> lockedVideoOverlayTracks;
@@ -339,10 +352,12 @@ class TimelineEditor extends StatefulWidget {
   final Set<int> soloAudioTracks;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
+  final ValueChanged<GraphicClip>? onGraphicChanged;
   final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
   final ValueChanged<AudioClip>? onAudioClipChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
+  final ValueChanged<String>? onGraphicSelected;
   final ValueChanged<String>? onVideoOverlaySelected;
   final ValueChanged<String>? onAudioClipSelected;
   final bool sequenceMode;
@@ -435,6 +450,9 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onToggleAudioSoloAt;
   final VoidCallback? onDeleteVideoOverlay;
   final VoidCallback? onDeleteAudioClip;
+  final VoidCallback? onDeleteGraphicClip;
+  final VoidCallback? onToggleGraphicsLock;
+  final VoidCallback? onToggleGraphicsVisibility;
   final ValueChanged<double>? onZoomDelta;
 
   @override
@@ -456,9 +474,10 @@ class _TimelineLayout {
   final int activeVideoTracks;
   final int activeAudioTracks;
   double get rulerHeight => 30;
-  double get overlayTop => rulerHeight + 2;
   double get laneHeight => 27 * scale;
   double get laneGap => 2;
+  double get graphicTop => rulerHeight + 2;
+  double get overlayTop => graphicTop + laneHeight + laneGap;
   double videoTrackTop(int track) =>
       overlayTop + (activeVideoTracks - track) * (laneHeight + laneGap);
   double get videoTop => videoTrackTop(1);
@@ -633,6 +652,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                         child: _TimelineTrackHeaders(
                           layout: layout,
                           segments: widget.segments,
+                          graphics: widget.graphics,
                           videoOverlays: widget.videoOverlays,
                           audioClips: widget.audioClips,
                           activeVideoTrackCount: layout.activeVideoTracks,
@@ -647,6 +667,8 @@ class _TimelineEditorState extends State<TimelineEditor> {
                           audio2Targeted: widget.audioTrack2Targeted,
                           audio3Targeted: widget.audioTrack3Targeted,
                           videoLocked: widget.videoTrackLocked,
+                          graphicsLocked: widget.graphicsTrackLocked,
+                          graphicsVisible: widget.graphicsTrackVisible,
                           overlayLocked: widget.videoOverlayTrackLocked,
                           overlayVisible: widget.videoOverlayTrackVisible,
                           lockedVideoOverlayTracks:
@@ -666,6 +688,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
                               widget.mutedAuxiliaryAudioTracks,
                           soloAudioTracks: widget.soloAudioTracks,
                           onToggleVideoTarget: widget.onToggleVideoTarget,
+                          onToggleGraphicsLock: widget.onToggleGraphicsLock,
+                          onToggleGraphicsVisibility:
+                              widget.onToggleGraphicsVisibility,
                           onToggleOverlayTarget:
                               widget.onToggleVideoOverlayTarget,
                           onToggleOverlayTargetAt:
@@ -766,6 +791,30 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                       ),
                                       child: Stack(
                                         children: [
+                                          if (widget.sequenceMode)
+                                            for (final graphic
+                                                in widget.graphics)
+                                              _GraphicBlock(
+                                                graphic: graphic,
+                                                duration: widget.duration,
+                                                canvasWidth: width,
+                                                top: layout.graphicTop + 2,
+                                                height: layout.laneHeight - 4,
+                                                selected:
+                                                    widget
+                                                        .selectedGraphicClipId ==
+                                                    graphic.id,
+                                                locked:
+                                                    widget.graphicsTrackLocked,
+                                                trackVisible:
+                                                    widget.graphicsTrackVisible,
+                                                onSelected:
+                                                    widget.onGraphicSelected,
+                                                onChanged:
+                                                    widget.onGraphicChanged,
+                                                onDelete:
+                                                    widget.onDeleteGraphicClip,
+                                              ),
                                           if (widget.sequenceMode)
                                             for (final overlay
                                                 in widget.videoOverlays)
@@ -2406,6 +2455,233 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
 enum _OverlayDragMode { move, trimStart, trimEnd }
 
+class _GraphicBlock extends StatefulWidget {
+  const _GraphicBlock({
+    required this.graphic,
+    required this.duration,
+    required this.canvasWidth,
+    required this.top,
+    required this.height,
+    required this.selected,
+    required this.locked,
+    required this.trackVisible,
+    required this.onSelected,
+    required this.onChanged,
+    required this.onDelete,
+  });
+
+  final GraphicClip graphic;
+  final double duration;
+  final double canvasWidth;
+  final double top;
+  final double height;
+  final bool selected;
+  final bool locked;
+  final bool trackVisible;
+  final ValueChanged<String>? onSelected;
+  final ValueChanged<GraphicClip>? onChanged;
+  final VoidCallback? onDelete;
+
+  @override
+  State<_GraphicBlock> createState() => _GraphicBlockState();
+}
+
+class _GraphicBlockState extends State<_GraphicBlock> {
+  GraphicClip? _origin;
+  double _originGlobalX = 0;
+  _OverlayDragMode? _mode;
+
+  double get _pixelsPerSecond =>
+      widget.duration <= 0 ? 1 : widget.canvasWidth / widget.duration;
+
+  void _startDrag(DragStartDetails details, _OverlayDragMode mode) {
+    if (widget.locked || widget.onChanged == null) {
+      return;
+    }
+    widget.onSelected?.call(widget.graphic.id);
+    _origin = widget.graphic;
+    _originGlobalX = details.globalPosition.dx;
+    _mode = mode;
+  }
+
+  void _updateDrag(DragUpdateDetails details) {
+    final origin = _origin;
+    final mode = _mode;
+    final onChanged = widget.onChanged;
+    if (origin == null || mode == null || onChanged == null) {
+      return;
+    }
+    final delta = snapSecondsToFrame(
+      (details.globalPosition.dx - _originGlobalX) / _pixelsPerSecond,
+    );
+    final minimum = timecodeFrameDurationSeconds;
+    switch (mode) {
+      case _OverlayDragMode.move:
+        final clipDuration = origin.timelineDuration;
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta)
+              .clamp(0.0, math.max(0.0, widget.duration - clipDuration))
+              .toDouble(),
+        );
+        onChanged(
+          origin.copyWith(
+            timelineStart: start,
+            timelineEnd: snapSecondsToFrame(start + clipDuration),
+          ),
+        );
+      case _OverlayDragMode.trimStart:
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta)
+              .clamp(0.0, origin.timelineEnd - minimum)
+              .toDouble(),
+        );
+        onChanged(origin.copyWith(timelineStart: start));
+      case _OverlayDragMode.trimEnd:
+        final end = snapSecondsToFrame(
+          (origin.timelineEnd + delta)
+              .clamp(origin.timelineStart + minimum, widget.duration)
+              .toDouble(),
+        );
+        onChanged(origin.copyWith(timelineEnd: end));
+    }
+  }
+
+  void _endDrag(DragEndDetails details) {
+    _origin = null;
+    _mode = null;
+  }
+
+  Future<void> _showMenu(TapDownDetails details) async {
+    widget.onSelected?.call(widget.graphic.id);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'delete',
+          enabled: !widget.locked,
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.delete_outline),
+            title: Text('Delete graphic'),
+            subtitle: Text('Delete'),
+          ),
+        ),
+      ],
+    );
+    if (action == 'delete') {
+      widget.onDelete?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final graphic = widget.graphic;
+    final left = widget.duration <= 0
+        ? 0.0
+        : graphic.timelineStart / widget.duration * widget.canvasWidth;
+    final width = math.max(
+      18.0,
+      graphic.timelineDuration /
+          math.max(widget.duration, 0.001) *
+          widget.canvasWidth,
+    );
+    const accent = _TimelinePainter._graphicClipColor;
+    final active = widget.trackVisible && graphic.enabled;
+    return Positioned(
+      key: ValueKey('graphic-clip-${graphic.id}'),
+      left: left,
+      top: widget.top,
+      width: width,
+      height: widget.height,
+      child: Opacity(
+        opacity: active ? 1 : 0.38,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onSelected?.call(graphic.id),
+          onSecondaryTapDown: _showMenu,
+          onHorizontalDragStart: widget.locked
+              ? null
+              : (details) => _startDrag(details, _OverlayDragMode.move),
+          onHorizontalDragUpdate: widget.locked ? null : _updateDrag,
+          onHorizontalDragEnd: widget.locked ? null : _endDrag,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: widget.selected ? 0.96 : 0.78),
+              border: Border.all(
+                color: widget.selected ? Colors.white : accent,
+                width: widget.selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  left: 7,
+                  right: 7,
+                  child: Row(
+                    children: [
+                      Icon(
+                        graphic.preset == 'corner_bug'
+                            ? Icons.live_tv_outlined
+                            : Icons.title,
+                        size: 13,
+                        color: _TimelinePainter._clipTextColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'G1 ${graphic.headline}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: _TimelinePainter._clipTextColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!widget.locked) ...[
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerLeft,
+                    cursor: SystemMouseCursors.resizeLeft,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimStart),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerRight,
+                    cursor: SystemMouseCursors.resizeRight,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimEnd),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                ],
+                if (widget.locked)
+                  const Positioned(
+                    right: 5,
+                    top: 5,
+                    child: Icon(Icons.lock, size: 12, color: Colors.white),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VideoOverlayBlock extends StatefulWidget {
   const _VideoOverlayBlock({
     required this.overlay,
@@ -3115,6 +3391,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
   const _TimelineTrackHeaders({
     required this.layout,
     required this.segments,
+    required this.graphics,
     required this.videoOverlays,
     required this.audioClips,
     required this.activeVideoTrackCount,
@@ -3127,6 +3404,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.audio2Targeted,
     required this.audio3Targeted,
     required this.videoLocked,
+    required this.graphicsLocked,
+    required this.graphicsVisible,
     required this.overlayLocked,
     required this.overlayVisible,
     required this.lockedVideoOverlayTracks,
@@ -3138,6 +3417,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.mutedAuxiliaryAudioTracks,
     required this.soloAudioTracks,
     required this.onToggleVideoTarget,
+    required this.onToggleGraphicsLock,
+    required this.onToggleGraphicsVisibility,
     required this.onToggleOverlayTarget,
     required this.onToggleOverlayTargetAt,
     required this.onToggleAudio1Target,
@@ -3162,6 +3443,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
 
   final _TimelineLayout layout;
   final List<HighlightSegment> segments;
+  final List<GraphicClip> graphics;
   final List<VideoOverlayClip> videoOverlays;
   final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
@@ -3174,6 +3456,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final bool audio2Targeted;
   final bool audio3Targeted;
   final bool videoLocked;
+  final bool graphicsLocked;
+  final bool graphicsVisible;
   final bool overlayLocked;
   final bool overlayVisible;
   final Set<int> lockedVideoOverlayTracks;
@@ -3185,6 +3469,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final Set<int> mutedAuxiliaryAudioTracks;
   final Set<int> soloAudioTracks;
   final VoidCallback? onToggleVideoTarget;
+  final VoidCallback? onToggleGraphicsLock;
+  final VoidCallback? onToggleGraphicsVisibility;
   final VoidCallback? onToggleOverlayTarget;
   final ValueChanged<int>? onToggleOverlayTargetAt;
   final VoidCallback? onToggleAudio1Target;
@@ -3353,6 +3639,26 @@ class _TimelineTrackHeaders extends StatelessWidget {
                 ),
               ),
             ),
+            _TrackHeaderLane(
+              key: const Key('track-header-g1'),
+              top: layout.graphicTop,
+              height: layout.laneHeight,
+              patchLabel: 'G1',
+              trackLabel: graphics.isEmpty
+                  ? 'Graphics'
+                  : 'Graphics ${graphics.length}',
+              accent: _TimelinePainter._graphicClipColor,
+              targeted: true,
+              locked: graphicsLocked,
+              mediaEnabled: graphicsVisible,
+              mediaIcon: graphicsVisible
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              mediaTooltip: graphicsVisible ? 'G1 숨기기' : 'G1 표시',
+              onToggleTarget: null,
+              onToggleLock: onToggleGraphicsLock,
+              onToggleMedia: onToggleGraphicsVisibility,
+            ),
             for (var track = activeVideoTrackCount; track >= 2; track -= 1)
               _TrackHeaderLane(
                 key: Key('track-header-v$track'),
@@ -3467,7 +3773,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
               right: 8,
               top: layout.footerTop + 5,
               child: Text(
-                'V1-V$activeVideoTrackCount / A1-A$activeAudioTrackCount  ·  30p NDF',
+                'G1 / V1-V$activeVideoTrackCount / A1-A$activeAudioTrackCount  ·  30p NDF',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -3729,6 +4035,7 @@ class _TimelinePainter extends CustomPainter {
 
   static const double _handleVisualWidth =
       _TimelineEditorState._handleVisualWidth;
+  static const Color _graphicClipColor = Color(0xFFB494E6);
   static const Color _overlayClipColor = Color(0xFF62B7C8);
   static const Color _videoClipColor = Color(0xFF79C98D);
   static const Color _videoClipActiveColor = Color(0xFF9BE3A9);
@@ -3763,6 +4070,7 @@ class _TimelinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final radius = Radius.circular(2);
+    _drawTrack(canvas, size, layout.graphicTop, radius, _graphicClipColor);
     for (var track = layout.activeVideoTracks; track >= 2; track -= 1) {
       _drawTrack(
         canvas,
@@ -3847,9 +4155,9 @@ class _TimelinePainter extends CustomPainter {
     final rangeRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(
         left,
-        layout.overlayTop - 7,
+        layout.graphicTop - 1,
         math.max(2, right - left),
-        layout.trackBottom - layout.overlayTop + 14,
+        layout.trackBottom - layout.graphicTop + 2,
       ),
       Radius.circular(6),
     );
@@ -3858,7 +4166,7 @@ class _TimelinePainter extends CustomPainter {
       Paint()..color = colorScheme.tertiary.withValues(alpha: 0.07),
     );
     canvas.drawRect(
-      Rect.fromLTWH(left, layout.overlayTop - 5, math.max(2, right - left), 3),
+      Rect.fromLTWH(left, layout.graphicTop, math.max(2, right - left), 3),
       Paint()..color = colorScheme.tertiary.withValues(alpha: 0.88),
     );
   }
