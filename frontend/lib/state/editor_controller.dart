@@ -103,6 +103,7 @@ class EditorController extends ChangeNotifier {
   String? errorMessage;
   double duration = 0;
   List<HighlightSegment> segments = [];
+  List<VideoOverlayClip> videoOverlays = [];
   List<TranscriptSegment> transcript = [];
   List<CaptionSegment> captions = [];
   List<double> waveform = [];
@@ -1156,6 +1157,7 @@ class EditorController extends ChangeNotifier {
       originalPath: selectedFile?.path,
       duration: duration,
       segments: segments,
+      videoOverlays: videoOverlays,
       transcript: transcript,
       captions: captions,
       waveform: waveform,
@@ -9541,6 +9543,7 @@ class EditorController extends ChangeNotifier {
     _programSegmentOrder = null;
     _programCutPending = false;
     segments = _reorderSegments(project.segments);
+    videoOverlays = List<VideoOverlayClip>.of(project.videoOverlays);
     transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
       for (var index = 0; index < project.captions.length; index++)

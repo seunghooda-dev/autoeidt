@@ -194,6 +194,19 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
         mark_in=12.516,
         mark_out=58.019,
         timeline_markers=[{"id": 1, "seconds": 7.018, "label": "Snap"}],
+        video_overlays=[
+            {
+                "id": "v2-1",
+                "source_path": "C:/media/broll.mov",
+                "source_name": "broll.mov",
+                "timeline_start": 10.019,
+                "timeline_end": 16.049,
+                "source_start": 2.016,
+                "source_end": 8.049,
+                "scale": 4.0,
+                "position_x": -2.0,
+            }
+        ],
         shorts_candidates=[
             {
                 "id": 1,
@@ -221,6 +234,12 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.mark_in == 12.5
     assert project.mark_out == 58.033333
     assert project.timeline_markers[0].seconds == 7.033333
+    assert project.video_overlays[0].timeline_start == 10.033333
+    assert project.video_overlays[0].timeline_end == 16.033333
+    assert project.video_overlays[0].source_start == 2.0
+    assert project.video_overlays[0].source_end == 8.033333
+    assert project.video_overlays[0].scale == 1.0
+    assert project.video_overlays[0].position_x == -1.0
     assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
     assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 

@@ -272,6 +272,21 @@ void main() {
       name: 'Shorts Project',
       duration: 120,
       segments: [],
+      videoOverlays: [
+        VideoOverlayClip(
+          id: 'v2-1',
+          sourcePath: r'C:\media\broll.mov',
+          sourceName: 'broll.mov',
+          timelineStart: 15.01,
+          timelineEnd: 24.04,
+          sourceStart: 3.01,
+          sourceEnd: 12.04,
+          opacity: 0.8,
+          scale: 0.45,
+          positionX: 0.5,
+          positionY: -0.4,
+        ),
+      ],
       transcript: [
         TranscriptSegment(start: 10.5, end: 14.2, text: '보존되어야 하는 전체 STT 원문'),
       ],
@@ -343,6 +358,14 @@ void main() {
     expect(restored.markOut, 88.0);
     expect(restored.originalFilename, 'source.mxf');
     expect(restored.originalPath, r'C:\media\source.mxf');
+    expect(restored.videoOverlays.single.id, 'v2-1');
+    expect(restored.videoOverlays.single.timelineStart, 15.0);
+    expect(
+      restored.videoOverlays.single.timelineEnd,
+      closeTo(24.033333, 0.000001),
+    );
+    expect(restored.videoOverlays.single.sourcePath, r'C:\media\broll.mov');
+    expect(restored.videoOverlays.single.scale, 0.45);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');

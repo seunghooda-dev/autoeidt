@@ -526,6 +526,58 @@ class TimelineMarker(BaseModel):
         return _snap_seconds_to_30p(value)
 
 
+class VideoOverlayClip(BaseModel):
+    id: str
+    source_path: str
+    source_name: str = "Overlay"
+    timeline_start: float
+    timeline_end: float
+    source_start: float = 0.0
+    source_end: float
+    enabled: bool = True
+    opacity: float = 1.0
+    scale: float = 0.35
+    position_x: float = 0.6
+    position_y: float = -0.55
+    rotation: float = 0.0
+    muted: bool = True
+
+    @field_validator(
+        "timeline_start", "timeline_end", "source_start", "source_end", mode="before"
+    )
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
+
+    @model_validator(mode="after")
+    def ranges_are_valid(self) -> "VideoOverlayClip":
+        if self.timeline_end <= self.timeline_start:
+            raise ValueError("timeline_end must be greater than timeline_start")
+        if self.source_end <= self.source_start:
+            raise ValueError("source_end must be greater than source_start")
+        return self
+
+    @field_validator("opacity")
+    @classmethod
+    def opacity_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @field_validator("scale")
+    @classmethod
+    def scale_is_safe(cls, value: float) -> float:
+        return max(0.1, min(float(value), 1.0))
+
+    @field_validator("position_x", "position_y")
+    @classmethod
+    def position_is_safe(cls, value: float) -> float:
+        return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("rotation")
+    @classmethod
+    def rotation_is_safe(cls, value: float) -> float:
+        return max(-180.0, min(float(value), 180.0))
+
+
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
     captions: list[CaptionSegment] = Field(default_factory=list)
@@ -647,6 +699,7 @@ class ProjectState(BaseModel):
     timeline_frame_rate: float = TIMELINE_FRAME_RATE
     timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     segments: list[HighlightSegment] = Field(default_factory=list)
+    video_overlays: list[VideoOverlayClip] = Field(default_factory=list)
     transcript: list[TranscriptSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)

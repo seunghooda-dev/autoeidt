@@ -161,6 +161,134 @@ MotionKeyframe sampleMotionKeyframes({
   return fallback.copyWith(time: time);
 }
 
+class VideoOverlayClip {
+  const VideoOverlayClip({
+    required this.id,
+    required this.sourcePath,
+    required this.sourceName,
+    required this.timelineStart,
+    required this.timelineEnd,
+    required this.sourceStart,
+    required this.sourceEnd,
+    this.enabled = true,
+    this.opacity = 1.0,
+    this.scale = 0.35,
+    this.positionX = 0.6,
+    this.positionY = -0.55,
+    this.rotation = 0.0,
+    this.muted = true,
+  });
+
+  final String id;
+  final String sourcePath;
+  final String sourceName;
+  final double timelineStart;
+  final double timelineEnd;
+  final double sourceStart;
+  final double sourceEnd;
+  final bool enabled;
+  final double opacity;
+  final double scale;
+  final double positionX;
+  final double positionY;
+  final double rotation;
+  final bool muted;
+
+  double get timelineDuration => timelineEnd - timelineStart;
+  double get sourceDuration => sourceEnd - sourceStart;
+
+  VideoOverlayClip copyWith({
+    String? id,
+    String? sourcePath,
+    String? sourceName,
+    double? timelineStart,
+    double? timelineEnd,
+    double? sourceStart,
+    double? sourceEnd,
+    bool? enabled,
+    double? opacity,
+    double? scale,
+    double? positionX,
+    double? positionY,
+    double? rotation,
+    bool? muted,
+  }) {
+    return VideoOverlayClip(
+      id: id ?? this.id,
+      sourcePath: sourcePath ?? this.sourcePath,
+      sourceName: sourceName ?? this.sourceName,
+      timelineStart: timelineStart ?? this.timelineStart,
+      timelineEnd: timelineEnd ?? this.timelineEnd,
+      sourceStart: sourceStart ?? this.sourceStart,
+      sourceEnd: sourceEnd ?? this.sourceEnd,
+      enabled: enabled ?? this.enabled,
+      opacity: opacity ?? this.opacity,
+      scale: scale ?? this.scale,
+      positionX: positionX ?? this.positionX,
+      positionY: positionY ?? this.positionY,
+      rotation: rotation ?? this.rotation,
+      muted: muted ?? this.muted,
+    );
+  }
+
+  factory VideoOverlayClip.fromJson(Map<String, dynamic> json) {
+    final timelineStart = _jsonTimelineSeconds(json['timeline_start']);
+    final sourceStart = _jsonTimelineSeconds(json['source_start']);
+    final minimumDuration = timecodeFrameDurationSeconds;
+    final timelineEnd = math.max(
+      timelineStart + minimumDuration,
+      _jsonTimelineSeconds(json['timeline_end']),
+    );
+    final sourceEnd = math.max(
+      sourceStart + minimumDuration,
+      _jsonTimelineSeconds(json['source_end']),
+    );
+    return VideoOverlayClip(
+      id: json['id']?.toString() ?? '',
+      sourcePath: json['source_path']?.toString() ?? '',
+      sourceName: json['source_name']?.toString() ?? 'Overlay',
+      timelineStart: timelineStart,
+      timelineEnd: snapSecondsToFrame(timelineEnd),
+      sourceStart: sourceStart,
+      sourceEnd: snapSecondsToFrame(sourceEnd),
+      enabled: json['enabled'] as bool? ?? true,
+      opacity: ((json['opacity'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 1.0)
+          .toDouble(),
+      scale: ((json['scale'] as num?)?.toDouble() ?? 0.35)
+          .clamp(0.1, 1.0)
+          .toDouble(),
+      positionX: ((json['position_x'] as num?)?.toDouble() ?? 0.6)
+          .clamp(-1.0, 1.0)
+          .toDouble(),
+      positionY: ((json['position_y'] as num?)?.toDouble() ?? -0.55)
+          .clamp(-1.0, 1.0)
+          .toDouble(),
+      rotation: ((json['rotation'] as num?)?.toDouble() ?? 0.0)
+          .clamp(-180.0, 180.0)
+          .toDouble(),
+      muted: json['muted'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'source_path': sourcePath,
+    'source_name': sourceName,
+    'timeline_start': snapSecondsToFrame(timelineStart),
+    'timeline_end': snapSecondsToFrame(timelineEnd),
+    'source_start': snapSecondsToFrame(sourceStart),
+    'source_end': snapSecondsToFrame(sourceEnd),
+    'enabled': enabled,
+    'opacity': opacity,
+    'scale': scale,
+    'position_x': positionX,
+    'position_y': positionY,
+    'rotation': rotation,
+    'muted': muted,
+  };
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,

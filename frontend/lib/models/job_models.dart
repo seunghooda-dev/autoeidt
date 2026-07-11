@@ -871,6 +871,7 @@ class ProjectState {
     required this.name,
     required this.duration,
     required this.segments,
+    this.videoOverlays = const [],
     this.transcript = const [],
     required this.captions,
     required this.waveform,
@@ -897,6 +898,7 @@ class ProjectState {
   final double timelineFrameRate;
   final String timelineTimecodeMode;
   final List<HighlightSegment> segments;
+  final List<VideoOverlayClip> videoOverlays;
   final List<TranscriptSegment> transcript;
   final List<CaptionSegment> captions;
   final List<double> waveform;
@@ -913,6 +915,8 @@ class ProjectState {
   factory ProjectState.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'] as List<dynamic>? ?? const [];
     final rawTranscript = json['transcript'] as List<dynamic>? ?? const [];
+    final rawVideoOverlays =
+        json['video_overlays'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
     final rawTimelineMarkers =
@@ -929,6 +933,13 @@ class ProjectState {
       segments: rawSegments
           .map(
             (item) => HighlightSegment.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+      videoOverlays: rawVideoOverlays
+          .whereType<Map>()
+          .map(
+            (item) =>
+                VideoOverlayClip.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList(),
       transcript: rawTranscript
@@ -976,6 +987,7 @@ class ProjectState {
       'timeline_frame_rate': timecodeFrameRate,
       'timeline_timecode_mode': 'non_drop',
       'segments': segments.map((item) => item.toJson()).toList(),
+      'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
       'transcript': transcript.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,
