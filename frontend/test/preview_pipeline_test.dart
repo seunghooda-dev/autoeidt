@@ -391,6 +391,8 @@ void main() {
               timelineEnd: 12,
               sourceStart: 2,
               sourceEnd: 10,
+              audioTrack: 7,
+              muted: false,
             ),
             VideoOverlayClip(
               id: 'v2-outside',
@@ -423,6 +425,7 @@ void main() {
               sourceEnd: 4,
             ),
           ]
+          ..soloAudioTracks = <int>{8}
           ..selectedSegmentOrder = 1;
 
         await controller.setPreviewMonitorMode('program');
@@ -434,6 +437,10 @@ void main() {
         expect(overlays.single.timelineEnd, 8);
         expect(overlays.single.sourceStart, 2);
         expect(overlays.single.sourceEnd, 6);
+        expect(overlays.single.muted, isTrue);
+        expect(api.requestedSegments.last?.audioMuted, isTrue);
+        expect(api.requestedSegments.last?.audioChannel1Enabled, isFalse);
+        expect(api.requestedSegments.last?.audioChannel2Enabled, isFalse);
         final audioClips = api.requestedAudioClips.last;
         expect(audioClips, hasLength(1));
         expect(audioClips.single.id, 'audio-overlap');

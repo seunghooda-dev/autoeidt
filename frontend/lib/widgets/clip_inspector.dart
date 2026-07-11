@@ -550,6 +550,9 @@ class _VideoOverlayInspector extends StatelessWidget {
     final audioTrackMuted = controller.isAuxiliaryAudioTrackMuted(
       overlay.audioTrack,
     );
+    final audioTrackExcludedBySolo =
+        controller.hasSoloAudioTracks &&
+        !controller.isAudioTrackSoloed(overlay.audioTrack);
     final enabled = !videoTrackLocked;
     return ListView(
       key: const Key('video-overlay-inspector'),
@@ -826,12 +829,14 @@ class _VideoOverlayInspector extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         FilterChip(
-          selected: !audioTrackMuted && !overlay.muted,
-          onSelected: audioTrackLocked || audioTrackMuted
+          selected:
+              !audioTrackMuted && !audioTrackExcludedBySolo && !overlay.muted,
+          onSelected:
+              audioTrackLocked || audioTrackMuted || audioTrackExcludedBySolo
               ? null
               : (_) => editor.toggleSelectedVideoOverlayAudioMute(),
           avatar: Icon(
-            audioTrackMuted || overlay.muted
+            audioTrackMuted || audioTrackExcludedBySolo || overlay.muted
                 ? Icons.volume_off_outlined
                 : Icons.volume_up_outlined,
             size: 18,
@@ -839,6 +844,8 @@ class _VideoOverlayInspector extends StatelessWidget {
           label: Text(
             audioTrackMuted
                 ? 'A${overlay.audioTrack} 트랙 음소거'
+                : audioTrackExcludedBySolo
+                ? '다른 오디오 트랙 Solo 중'
                 : overlay.muted
                 ? 'A${overlay.audioTrack} 음소거'
                 : 'A${overlay.audioTrack} 활성',
@@ -954,6 +961,9 @@ class _AudioClipInspector extends StatelessWidget {
     final editor = context.read<EditorController>();
     final trackLocked = controller.isAuxiliaryAudioTrackLocked(clip.track);
     final trackMuted = controller.isAuxiliaryAudioTrackMuted(clip.track);
+    final trackExcludedBySolo =
+        controller.hasSoloAudioTracks &&
+        !controller.isAudioTrackSoloed(clip.track);
     final enabled = !trackLocked;
     return ListView(
       key: const Key('audio-clip-inspector'),
@@ -1053,12 +1063,12 @@ class _AudioClipInspector extends StatelessWidget {
             ),
             FilterChip(
               key: const Key('audio-clip-mute'),
-              selected: !trackMuted && !clip.muted,
-              onSelected: enabled && !trackMuted
+              selected: !trackMuted && !trackExcludedBySolo && !clip.muted,
+              onSelected: enabled && !trackMuted && !trackExcludedBySolo
                   ? (_) => editor.toggleSelectedAudioClipMute()
                   : null,
               avatar: Icon(
-                trackMuted || clip.muted
+                trackMuted || trackExcludedBySolo || clip.muted
                     ? Icons.volume_off_outlined
                     : Icons.volume_up_outlined,
                 size: 17,
@@ -1066,6 +1076,8 @@ class _AudioClipInspector extends StatelessWidget {
               label: Text(
                 trackMuted
                     ? 'A${clip.track} Track Muted'
+                    : trackExcludedBySolo
+                    ? 'Other Track Soloed'
                     : clip.muted
                     ? 'Muted'
                     : 'Audible',

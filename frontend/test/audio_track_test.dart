@@ -316,6 +316,7 @@ void main() {
       hiddenVideoTracks: [3],
       lockedAudioTracks: [8, 5],
       mutedAudioTracks: [7, 4],
+      soloAudioTracks: [1, 7],
       transcript: [
         TranscriptSegment(start: 10.5, end: 14.2, text: '보존되어야 하는 전체 STT 원문'),
       ],
@@ -408,6 +409,7 @@ void main() {
     expect(restored.hiddenVideoTracks, [3]);
     expect(restored.lockedAudioTracks, [5, 8]);
     expect(restored.mutedAudioTracks, [4, 7]);
+    expect(restored.soloAudioTracks, [1, 7]);
     expect(restored.audioClips.single.id, 'audio-1');
     expect(restored.audioClips.single.track, 7);
     expect(restored.audioClips.single.volume, 0.65);
@@ -656,6 +658,117 @@ void main() {
     expect(controller.isAuxiliaryAudioTrackMuted(8), isTrue);
     controller.dispose();
   });
+
+  test(
+    'A1-A8 solo is additive and resolves preview-render audio buses',
+    () async {
+      final apiClient = _RecordingApiClient();
+      final controller =
+          EditorController(apiClient: apiClient, autoStartEngine: false)
+            ..jobId = 'job-solo'
+            ..duration = 120
+            ..activeVideoTrackCount = 4
+            ..activeAudioTrackCount = 8
+            ..segments = const [
+              HighlightSegment(
+                order: 1,
+                start: 10,
+                end: 50,
+                reason: 'verified program clip',
+                script: 'complete program audio',
+                audioNormalize: true,
+              ),
+            ]
+            ..videoOverlays = const [
+              VideoOverlayClip(
+                id: 'overlay-a7',
+                sourcePath: r'C:\media\a7.mov',
+                sourceName: 'a7.mov',
+                timelineStart: 0,
+                timelineEnd: 5,
+                sourceStart: 0,
+                sourceEnd: 5,
+                videoTrack: 3,
+                audioTrack: 7,
+                muted: false,
+              ),
+              VideoOverlayClip(
+                id: 'overlay-a8',
+                sourcePath: r'C:\media\a8.mov',
+                sourceName: 'a8.mov',
+                timelineStart: 5,
+                timelineEnd: 10,
+                sourceStart: 0,
+                sourceEnd: 5,
+                videoTrack: 4,
+                audioTrack: 8,
+                muted: false,
+              ),
+            ]
+            ..audioClips = const [
+              AudioClip(
+                id: 'clip-a7',
+                sourcePath: r'C:\media\a7.wav',
+                sourceName: 'a7.wav',
+                timelineStart: 0,
+                timelineEnd: 5,
+                sourceStart: 0,
+                sourceEnd: 5,
+                track: 7,
+              ),
+              AudioClip(
+                id: 'clip-a8',
+                sourcePath: r'C:\media\a8.wav',
+                sourceName: 'a8.wav',
+                timelineStart: 5,
+                timelineEnd: 10,
+                sourceStart: 0,
+                sourceEnd: 5,
+                track: 8,
+              ),
+            ];
+
+      controller.toggleAudioTrackSoloAt(7);
+      expect(controller.soloAudioTracks, {7});
+      expect(controller.projectState.soloAudioTracks, [7]);
+      await controller.requestRender();
+
+      expect(apiClient.renderSegments.single.audioMuted, isTrue);
+      expect(apiClient.renderSegments.single.audioChannel1Enabled, isFalse);
+      expect(apiClient.renderSegments.single.audioChannel2Enabled, isFalse);
+      expect(
+        apiClient.renderVideoOverlays
+            .singleWhere((overlay) => overlay.audioTrack == 7)
+            .muted,
+        isFalse,
+      );
+      expect(
+        apiClient.renderVideoOverlays
+            .singleWhere((overlay) => overlay.audioTrack == 8)
+            .muted,
+        isTrue,
+      );
+      expect(apiClient.renderAudioClips.map((clip) => clip.track), [7]);
+
+      controller.toggleAudioTrackSoloAt(1);
+      expect(controller.soloAudioTracks, {1, 7});
+      controller.undo();
+      expect(controller.soloAudioTracks, {7});
+      controller.redo();
+      expect(controller.soloAudioTracks, {1, 7});
+      await controller.requestRender();
+      expect(apiClient.renderSegments.single.audioMuted, isFalse);
+      expect(apiClient.renderSegments.single.audioChannel1Enabled, isTrue);
+      expect(apiClient.renderSegments.single.audioChannel2Enabled, isFalse);
+      expect(controller.audioTrackSoloLabel, 'Solo A1 + A7');
+      controller.clearAudioTrackSolo();
+      expect(controller.soloAudioTracks, isEmpty);
+      controller.undo();
+      expect(controller.soloAudioTracks, {1, 7});
+      await Future<void>.delayed(Duration.zero);
+      controller.dispose();
+    },
+  );
 
   test('adding an overlay reactivates and targets V2 and A3', () {
     final controller = EditorController(autoStartEngine: false)

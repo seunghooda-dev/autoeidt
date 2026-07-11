@@ -796,6 +796,7 @@ class ProjectState(BaseModel):
     hidden_video_tracks: list[int] = Field(default_factory=list)
     locked_audio_tracks: list[int] = Field(default_factory=list)
     muted_audio_tracks: list[int] = Field(default_factory=list)
+    solo_audio_tracks: list[int] = Field(default_factory=list)
     transcript: list[TranscriptSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
@@ -885,6 +886,13 @@ class ProjectState(BaseModel):
                 int(track)
                 for track in self.muted_audio_tracks
                 if 3 <= int(track) <= self.active_audio_track_count
+            }
+        )
+        self.solo_audio_tracks = sorted(
+            {
+                int(track)
+                for track in self.solo_audio_tracks
+                if 1 <= int(track) <= self.active_audio_track_count
             }
         )
         return self

@@ -31,6 +31,8 @@ def test_health_endpoint() -> None:
     assert "timeline_thumbnails_v1" in payload["features"]
     assert "standalone_audio_clips_v1" in payload["features"]
     assert "per_track_controls_v1" in payload["features"]
+    assert "audio_track_solo_v1" in payload["features"]
+    assert "lossless_multitrack_project_v1" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:
@@ -324,6 +326,38 @@ def test_project_endpoints_preserve_render_settings(
             "timeline_frame_rate": 29.97,
             "timeline_timecode_mode": "drop",
             "segments": [],
+            "video_overlays": [
+                {
+                    "id": "v4-news",
+                    "source_path": "C:/media/broll.mov",
+                    "source_name": "broll.mov",
+                    "timeline_start": 4,
+                    "timeline_end": 9,
+                    "source_start": 1,
+                    "source_end": 6,
+                    "video_track": 4,
+                    "audio_track": 8,
+                }
+            ],
+            "audio_clips": [
+                {
+                    "id": "a7-bed",
+                    "source_path": "C:/media/music.wav",
+                    "source_name": "music.wav",
+                    "timeline_start": 0,
+                    "timeline_end": 20,
+                    "source_start": 0,
+                    "source_end": 20,
+                    "track": 7,
+                }
+            ],
+            "active_video_track_count": 4,
+            "active_audio_track_count": 8,
+            "locked_video_tracks": [4],
+            "hidden_video_tracks": [3],
+            "locked_audio_tracks": [8],
+            "muted_audio_tracks": [6],
+            "solo_audio_tracks": [1, 7],
             "transcript": [
                 {
                     "start": 12.5,
@@ -381,6 +415,15 @@ def test_project_endpoints_preserve_render_settings(
     assert payload["timeline_markers"][0]["enabled"] is False
     assert payload["shorts_candidates"][0]["label"] == "News 02"
     assert payload["selected_shorts_id"] == 2
+    assert payload["video_overlays"][0]["id"] == "v4-news"
+    assert payload["audio_clips"][0]["id"] == "a7-bed"
+    assert payload["active_video_track_count"] == 4
+    assert payload["active_audio_track_count"] == 8
+    assert payload["locked_video_tracks"] == [4]
+    assert payload["hidden_video_tracks"] == [3]
+    assert payload["locked_audio_tracks"] == [8]
+    assert payload["muted_audio_tracks"] == [6]
+    assert payload["solo_audio_tracks"] == [1, 7]
 
     get_response = client.get("/api/jobs/job-1/project")
 
@@ -398,6 +441,16 @@ def test_project_endpoints_preserve_render_settings(
     assert get_payload["timeline_markers"][0]["enabled"] is False
     assert get_payload["shorts_candidates"][0]["quality_score"] == 82.5
     assert get_payload["selected_shorts_id"] == 2
+    assert get_payload["video_overlays"][0]["video_track"] == 4
+    assert get_payload["video_overlays"][0]["audio_track"] == 8
+    assert get_payload["audio_clips"][0]["track"] == 7
+    assert get_payload["active_video_track_count"] == 4
+    assert get_payload["active_audio_track_count"] == 8
+    assert get_payload["locked_video_tracks"] == [4]
+    assert get_payload["hidden_video_tracks"] == [3]
+    assert get_payload["locked_audio_tracks"] == [8]
+    assert get_payload["muted_audio_tracks"] == [6]
+    assert get_payload["solo_audio_tracks"] == [1, 7]
 
     legacy_response = client.post(
         "/api/jobs/job-1/project",

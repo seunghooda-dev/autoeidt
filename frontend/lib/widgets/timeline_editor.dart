@@ -198,6 +198,7 @@ class TimelineEditor extends StatefulWidget {
     this.audioTrack3Locked = false,
     this.lockedAuxiliaryAudioTracks = const <int>{},
     this.mutedAuxiliaryAudioTracks = const <int>{},
+    this.soloAudioTracks = const <int>{},
     required this.razorTool,
     required this.onSegmentChanged,
     this.onVideoOverlayChanged,
@@ -293,6 +294,7 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleOverlayAudioTargetAt,
     this.onToggleOverlayAudioAt,
     this.onToggleAuxiliaryAudioLockAt,
+    this.onToggleAudioSoloAt,
     this.onDeleteVideoOverlay,
     this.onDeleteAudioClip,
     this.onZoomDelta,
@@ -334,6 +336,7 @@ class TimelineEditor extends StatefulWidget {
   final bool audioTrack3Locked;
   final Set<int> lockedAuxiliaryAudioTracks;
   final Set<int> mutedAuxiliaryAudioTracks;
+  final Set<int> soloAudioTracks;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
@@ -429,6 +432,7 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onToggleOverlayAudioTargetAt;
   final ValueChanged<int>? onToggleOverlayAudioAt;
   final ValueChanged<int>? onToggleAuxiliaryAudioLockAt;
+  final ValueChanged<int>? onToggleAudioSoloAt;
   final VoidCallback? onDeleteVideoOverlay;
   final VoidCallback? onDeleteAudioClip;
   final ValueChanged<double>? onZoomDelta;
@@ -513,6 +517,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
 
   bool _auxiliaryAudioMuted(int track) =>
       widget.mutedAuxiliaryAudioTracks.contains(track);
+
+  bool _audioTrackIncludedBySolo(int track) =>
+      widget.soloAudioTracks.isEmpty || widget.soloAudioTracks.contains(track);
 
   List<_TimelinePlacement> get _placements =>
       _buildTimelinePlacements(widget.segments);
@@ -657,6 +664,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                               widget.lockedAuxiliaryAudioTracks,
                           mutedAuxiliaryAudioTracks:
                               widget.mutedAuxiliaryAudioTracks,
+                          soloAudioTracks: widget.soloAudioTracks,
                           onToggleVideoTarget: widget.onToggleVideoTarget,
                           onToggleOverlayTarget:
                               widget.onToggleVideoOverlayTarget,
@@ -678,6 +686,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                           onToggleAudio3Lock: widget.onToggleAudio3Lock,
                           onToggleAuxiliaryAudioLockAt:
                               widget.onToggleAuxiliaryAudioLockAt,
+                          onToggleAudioSoloAt: widget.onToggleAudioSoloAt,
                           onToggleAudio1: widget.onToggleAllAudioChannel1,
                           onToggleAudio2: widget.onToggleAllAudioChannel2,
                           onToggleAudio3: widget.onToggleVideoOverlayAudio,
@@ -823,6 +832,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                 trackMuted:
                                                     _auxiliaryAudioMuted(
                                                       overlay.audioTrack,
+                                                    ) ||
+                                                    !_audioTrackIncludedBySolo(
+                                                      overlay.audioTrack,
                                                     ),
                                                 onSelected: widget
                                                     .onVideoOverlaySelected,
@@ -855,6 +867,9 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                 ),
                                                 trackMuted:
                                                     _auxiliaryAudioMuted(
+                                                      clip.track,
+                                                    ) ||
+                                                    !_audioTrackIncludedBySolo(
                                                       clip.track,
                                                     ),
                                                 onSelected:
@@ -3028,6 +3043,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.audio3Locked,
     required this.lockedAuxiliaryAudioTracks,
     required this.mutedAuxiliaryAudioTracks,
+    required this.soloAudioTracks,
     required this.onToggleVideoTarget,
     required this.onToggleOverlayTarget,
     required this.onToggleOverlayTargetAt,
@@ -3043,6 +3059,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.onToggleAudio2Lock,
     required this.onToggleAudio3Lock,
     required this.onToggleAuxiliaryAudioLockAt,
+    required this.onToggleAudioSoloAt,
     required this.onToggleAudio1,
     required this.onToggleAudio2,
     required this.onToggleAudio3,
@@ -3073,6 +3090,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final bool audio3Locked;
   final Set<int> lockedAuxiliaryAudioTracks;
   final Set<int> mutedAuxiliaryAudioTracks;
+  final Set<int> soloAudioTracks;
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleOverlayTarget;
   final ValueChanged<int>? onToggleOverlayTargetAt;
@@ -3088,6 +3106,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final VoidCallback? onToggleAudio2Lock;
   final VoidCallback? onToggleAudio3Lock;
   final ValueChanged<int>? onToggleAuxiliaryAudioLockAt;
+  final ValueChanged<int>? onToggleAudioSoloAt;
   final VoidCallback? onToggleAudio1;
   final VoidCallback? onToggleAudio2;
   final VoidCallback? onToggleAudio3;
@@ -3095,19 +3114,22 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final ValueChanged<int>? onToggleOverlayAudioAt;
 
   bool get _audio1Enabled =>
-      segments.isEmpty ||
-      segments.any(
-        (segment) => !segment.audioMuted && segment.audioChannel1Enabled,
-      );
+      (soloAudioTracks.isEmpty || soloAudioTracks.contains(1)) &&
+      (segments.isEmpty ||
+          segments.any(
+            (segment) => !segment.audioMuted && segment.audioChannel1Enabled,
+          ));
 
   bool get _audio2Enabled =>
-      segments.isEmpty ||
-      segments.any(
-        (segment) => !segment.audioMuted && segment.audioChannel2Enabled,
-      );
+      (soloAudioTracks.isEmpty || soloAudioTracks.contains(2)) &&
+      (segments.isEmpty ||
+          segments.any(
+            (segment) => !segment.audioMuted && segment.audioChannel2Enabled,
+          ));
 
   bool _overlayAudioEnabledFor(int track) {
-    if (mutedAuxiliaryAudioTracks.contains(track)) {
+    if (mutedAuxiliaryAudioTracks.contains(track) ||
+        (soloAudioTracks.isNotEmpty && !soloAudioTracks.contains(track))) {
       return false;
     }
     final overlays = videoOverlays.where(
@@ -3291,6 +3313,10 @@ class _TimelineTrackHeaders extends StatelessWidget {
               onToggleTarget: onToggleAudio1Target,
               onToggleLock: onToggleAudio1Lock,
               onToggleMedia: audio1Locked ? null : onToggleAudio1,
+              soloed: soloAudioTracks.contains(1),
+              onToggleSolo: onToggleAudioSoloAt == null
+                  ? null
+                  : () => onToggleAudioSoloAt!(1),
             ),
             _TrackHeaderLane(
               key: const Key('track-header-a2'),
@@ -3309,6 +3335,10 @@ class _TimelineTrackHeaders extends StatelessWidget {
               onToggleTarget: onToggleAudio2Target,
               onToggleLock: onToggleAudio2Lock,
               onToggleMedia: audio2Locked ? null : onToggleAudio2,
+              soloed: soloAudioTracks.contains(2),
+              onToggleSolo: onToggleAudioSoloAt == null
+                  ? null
+                  : () => onToggleAudioSoloAt!(2),
             ),
             for (var track = 3; track <= activeAudioTrackCount; track += 1)
               _TrackHeaderLane(
@@ -3334,6 +3364,10 @@ class _TimelineTrackHeaders extends StatelessWidget {
                 onToggleMedia: _auxiliaryTrackLocked(track)
                     ? null
                     : () => _toggleOverlayAudio(track),
+                soloed: soloAudioTracks.contains(track),
+                onToggleSolo: onToggleAudioSoloAt == null
+                    ? null
+                    : () => onToggleAudioSoloAt!(track),
               ),
             Positioned(
               left: 8,
@@ -3371,6 +3405,8 @@ class _TrackHeaderLane extends StatelessWidget {
     required this.onToggleTarget,
     required this.onToggleLock,
     this.onToggleMedia,
+    this.soloed = false,
+    this.onToggleSolo,
   });
 
   final double top;
@@ -3386,6 +3422,8 @@ class _TrackHeaderLane extends StatelessWidget {
   final VoidCallback? onToggleTarget;
   final VoidCallback? onToggleLock;
   final VoidCallback? onToggleMedia;
+  final bool soloed;
+  final VoidCallback? onToggleSolo;
 
   @override
   Widget build(BuildContext context) {
@@ -3456,6 +3494,13 @@ class _TrackHeaderLane extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onToggleSolo != null)
+                _TrackHeaderSoloButton(
+                  key: Key('track-solo-${patchLabel.toLowerCase()}'),
+                  trackLabel: patchLabel,
+                  active: soloed,
+                  onPressed: onToggleSolo,
+                ),
               _TrackHeaderIconButton(
                 tooltip: mediaTooltip,
                 icon: mediaIcon,
@@ -3469,6 +3514,62 @@ class _TrackHeaderLane extends StatelessWidget {
                 onPressed: onToggleLock,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackHeaderSoloButton extends StatelessWidget {
+  const _TrackHeaderSoloButton({
+    super.key,
+    required this.trackLabel,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String trackLabel;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final activeColor = colorScheme.tertiary;
+    final actionLabel = active ? 'Solo 해제' : '이 트랙만 듣기 (Solo)';
+    return Semantics(
+      button: true,
+      toggled: active,
+      label: '$trackLabel $actionLabel',
+      excludeSemantics: true,
+      child: Tooltip(
+        message: '$trackLabel $actionLabel',
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(2),
+          child: Container(
+            width: 21,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active
+                  ? activeColor.withValues(alpha: 0.18)
+                  : Colors.transparent,
+              border: Border.all(
+                color: active
+                    ? activeColor
+                    : colorScheme.outline.withValues(alpha: 0.75),
+              ),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Text(
+              'S',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: active ? activeColor : colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ),
         ),
       ),

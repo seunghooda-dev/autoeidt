@@ -2266,6 +2266,16 @@ class _TimelinePanel extends StatelessWidget {
                         controller: controller,
                         editor: editor,
                       ),
+                      if (controller.hasSoloAudioTracks) ...[
+                        const SizedBox(width: 6),
+                        _TrackControlButton(
+                          label: controller.audioTrackSoloLabel,
+                          icon: Icons.headphones_outlined,
+                          tooltip: '모든 오디오 Solo 해제',
+                          selected: true,
+                          onPressed: editor.clearAudioTrackSolo,
+                        ),
+                      ],
                       const SizedBox(width: 6),
                       const _SmallPill(label: '30p NDF'),
                       const SizedBox(width: 6),
@@ -2747,6 +2757,7 @@ class _TimelineEditorBody extends StatelessWidget {
       audioTrack2Locked: controller.audioTrack2Locked,
       lockedAuxiliaryAudioTracks: controller.lockedAudioTracks,
       mutedAuxiliaryAudioTracks: controller.mutedAudioTracks,
+      soloAudioTracks: controller.soloAudioTracks,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onVideoOverlayChanged: context
@@ -2951,6 +2962,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleAuxiliaryAudioLockAt: context
           .read<EditorController>()
           .toggleAuxiliaryAudioTrackLockAt,
+      onToggleAudioSoloAt: context
+          .read<EditorController>()
+          .toggleAudioTrackSoloAt,
       onDeleteVideoOverlay: context
           .read<EditorController>()
           .deleteSelectedVideoOverlay,

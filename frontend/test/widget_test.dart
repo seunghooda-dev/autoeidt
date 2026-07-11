@@ -332,6 +332,14 @@ void main() {
     expect(controller.activeAudioTrackCount, 4);
     expect(find.byKey(const Key('track-header-a4')), findsOneWidget);
 
+    controller.toggleAudioTrackSoloAt(1);
+    controller.toggleAudioTrackSoloAt(4);
+    await tester.pump();
+    expect(find.text('Solo A1 + A4'), findsOneWidget);
+    await tester.tap(find.text('Solo A1 + A4'));
+    await tester.pump();
+    expect(controller.soloAudioTracks, isEmpty);
+
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
@@ -921,6 +929,7 @@ void main() {
     int? hiddenVideoTrack;
     int? lockedAudioTrack;
     int? mutedAudioTrack;
+    int? soloAudioTrack;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -939,6 +948,7 @@ void main() {
               hiddenVideoOverlayTracks: const <int>{3},
               lockedAuxiliaryAudioTracks: const <int>{8},
               mutedAuxiliaryAudioTracks: const <int>{7},
+              soloAudioTracks: const <int>{7},
               segments: const [
                 HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
               ],
@@ -975,6 +985,9 @@ void main() {
               onToggleOverlayAudioAt: (track) {
                 mutedAudioTrack = track;
               },
+              onToggleAudioSoloAt: (track) {
+                soloAudioTrack = track;
+              },
             ),
           ),
         ),
@@ -1007,6 +1020,7 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('track-solo-a7')), findsOneWidget);
 
     await tester.tap(
       find.descendant(of: v4Header, matching: find.byIcon(Icons.lock)),
@@ -1026,11 +1040,13 @@ void main() {
         matching: find.byIcon(Icons.volume_off_outlined),
       ),
     );
+    await tester.tap(find.byKey(const Key('track-solo-a7')));
     await tester.pump();
     expect(lockedVideoTrack, 4);
     expect(hiddenVideoTrack, 3);
     expect(lockedAudioTrack, 8);
     expect(mutedAudioTrack, 7);
+    expect(soloAudioTrack, 7);
   });
 
   testWidgets('timeline paints multiple cached video frames inside V1 clips', (
@@ -2049,7 +2065,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Disable snapping'), findsOneWidget);
-    expect(find.text('S'), findsOneWidget);
+    final popupItems = find.byWidgetPredicate(
+      (widget) => widget is PopupMenuItem,
+    );
+    expect(
+      find.descendant(of: popupItems, matching: find.text('S')),
+      findsOneWidget,
+    );
     expect(find.text('Track Targets'), findsOneWidget);
     expect(find.text('Untarget V1 video'), findsOneWidget);
     expect(find.text('Ctrl+1'), findsOneWidget);

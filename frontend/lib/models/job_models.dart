@@ -898,6 +898,7 @@ class ProjectState {
     this.hiddenVideoTracks = const [],
     this.lockedAudioTracks = const [],
     this.mutedAudioTracks = const [],
+    this.soloAudioTracks = const [],
     this.transcript = const [],
     required this.captions,
     required this.waveform,
@@ -932,6 +933,7 @@ class ProjectState {
   final List<int> hiddenVideoTracks;
   final List<int> lockedAudioTracks;
   final List<int> mutedAudioTracks;
+  final List<int> soloAudioTracks;
   final List<TranscriptSegment> transcript;
   final List<CaptionSegment> captions;
   final List<double> waveform;
@@ -1025,6 +1027,11 @@ class ProjectState {
         min: 3,
         max: activeAudioTrackCount,
       ),
+      soloAudioTracks: _trackListFromJson(
+        json['solo_audio_tracks'],
+        min: 1,
+        max: activeAudioTrackCount,
+      ),
       transcript: rawTranscript
           .whereType<Map>()
           .map(
@@ -1078,6 +1085,7 @@ class ProjectState {
       'hidden_video_tracks': [...hiddenVideoTracks]..sort(),
       'locked_audio_tracks': [...lockedAudioTracks]..sort(),
       'muted_audio_tracks': [...mutedAudioTracks]..sort(),
+      'solo_audio_tracks': [...soloAudioTracks]..sort(),
       'transcript': transcript.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,

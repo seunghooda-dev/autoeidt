@@ -147,6 +147,7 @@ class EditorController extends ChangeNotifier {
   bool audioTrack2Locked = false;
   Set<int> lockedAudioTracks = <int>{};
   Set<int> mutedAudioTracks = <int>{};
+  Set<int> soloAudioTracks = <int>{};
   String projectName = 'AutoEdit Project';
   String? projectFilePath;
   HighlightSegment? _clipClipboard;
@@ -260,6 +261,21 @@ class EditorController extends ChangeNotifier {
 
   bool isAuxiliaryAudioTrackMuted(int track) =>
       track >= 3 && mutedAudioTracks.contains(track);
+
+  bool isAudioTrackSoloed(int track) =>
+      track >= 1 &&
+      track <= activeAudioTrackCount &&
+      soloAudioTracks.contains(track);
+
+  bool get hasSoloAudioTracks => soloAudioTracks.isNotEmpty;
+
+  String get audioTrackSoloLabel {
+    final tracks = soloAudioTracks.toList()..sort();
+    return 'Solo ${tracks.map((track) => 'A$track').join(' + ')}';
+  }
+
+  bool isAudioTrackIncludedBySolo(int track) =>
+      soloAudioTracks.isEmpty || soloAudioTracks.contains(track);
 
   bool get videoOverlayTrackLocked =>
       isVideoOverlayTrackLocked(targetedVideoOverlayTrack);
@@ -802,12 +818,14 @@ class EditorController extends ChangeNotifier {
   bool get videoOverlayAudioEnabled =>
       videoOverlays.any(
         (overlay) =>
+            isAudioTrackIncludedBySolo(overlay.audioTrack) &&
             !isAuxiliaryAudioTrackMuted(overlay.audioTrack) &&
             !overlay.muted &&
             overlay.audioVolume > 0,
       ) ||
       audioClips.any(
         (clip) =>
+            isAudioTrackIncludedBySolo(clip.track) &&
             !isAuxiliaryAudioTrackMuted(clip.track) &&
             clip.enabled &&
             !clip.muted &&
@@ -822,7 +840,9 @@ class EditorController extends ChangeNotifier {
       }
       final videoVisible = isVideoOverlayTrackVisible(overlay.videoTrack);
       final audioMuted =
-          overlay.muted || isAuxiliaryAudioTrackMuted(overlay.audioTrack);
+          overlay.muted ||
+          isAuxiliaryAudioTrackMuted(overlay.audioTrack) ||
+          !isAudioTrackIncludedBySolo(overlay.audioTrack);
       final audioAudible = !audioMuted && overlay.audioVolume > 0;
       if (!videoVisible && !audioAudible) {
         continue;
@@ -838,8 +858,31 @@ class EditorController extends ChangeNotifier {
   }
 
   List<AudioClip> _audioClipsForOutput() => audioClips
-      .where((clip) => clip.enabled && !isAuxiliaryAudioTrackMuted(clip.track))
+      .where(
+        (clip) =>
+            clip.enabled &&
+            !isAuxiliaryAudioTrackMuted(clip.track) &&
+            isAudioTrackIncludedBySolo(clip.track),
+      )
       .toList();
+
+  HighlightSegment _segmentForOutput(HighlightSegment segment) {
+    if (soloAudioTracks.isEmpty) {
+      return segment;
+    }
+    final channel1Enabled =
+        segment.audioChannel1Enabled && soloAudioTracks.contains(1);
+    final channel2Enabled =
+        segment.audioChannel2Enabled && soloAudioTracks.contains(2);
+    return segment.copyWith(
+      audioMuted: segment.audioMuted || (!channel1Enabled && !channel2Enabled),
+      audioChannel1Enabled: channel1Enabled,
+      audioChannel2Enabled: channel2Enabled,
+    );
+  }
+
+  List<HighlightSegment> _segmentsForOutput(Iterable<HighlightSegment> input) =>
+      input.map(_segmentForOutput).toList();
 
   double get selectedMotionLocalTime {
     final selected = selectedSegment;
@@ -1359,6 +1402,7 @@ class EditorController extends ChangeNotifier {
       hiddenVideoTracks: hiddenVideoTracks.toList(),
       lockedAudioTracks: lockedAudioTracks.toList(),
       mutedAudioTracks: mutedAudioTracks.toList(),
+      soloAudioTracks: soloAudioTracks.toList(),
       transcript: transcript,
       captions: captions,
       waveform: waveform,
@@ -1693,6 +1737,7 @@ class EditorController extends ChangeNotifier {
     audioTrack2Locked = false;
     lockedAudioTracks = <int>{};
     mutedAudioTracks = <int>{};
+    soloAudioTracks = <int>{};
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
@@ -2040,7 +2085,7 @@ class EditorController extends ChangeNotifier {
       await saveProjectToBackend(silent: true);
       await _apiClient.requestRender(
         id,
-        segments,
+        _segmentsForOutput(segments),
         captions: captions,
         videoOverlays: _videoOverlaysForOutput(),
         audioClips: _audioClipsForOutput(),
@@ -2097,7 +2142,9 @@ class EditorController extends ChangeNotifier {
               'label': _exportProfileLabel(profile),
               'output_name': _exportProfileOutputName(profile),
               'aspect_ratio': profile,
-              'segments': segments.map((segment) => segment.toJson()).toList(),
+              'segments': _segmentsForOutput(
+                segments,
+              ).map((segment) => segment.toJson()).toList(),
             },
         ],
         captions: captions,
@@ -3433,6 +3480,30 @@ class EditorController extends ChangeNotifier {
     _refreshProgramPreviewAfterOverlayEdit();
   }
 
+  void toggleAudioTrackSoloAt(int track) {
+    if (track < 1 || track > activeAudioTrackCount) {
+      return;
+    }
+    _commitHistory();
+    if (!soloAudioTracks.remove(track)) {
+      soloAudioTracks.add(track);
+    }
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  void clearAudioTrackSolo() {
+    if (soloAudioTracks.isEmpty) {
+      return;
+    }
+    _commitHistory();
+    soloAudioTracks.clear();
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
   bool get canActivateVideoTrack => activeVideoTrackCount < 4;
   bool get canActivateAudioTrack => activeAudioTrackCount < 8;
   bool get canDeactivateVideoTrack =>
@@ -3493,6 +3564,7 @@ class EditorController extends ChangeNotifier {
     _commitHistory();
     lockedAudioTracks.remove(activeAudioTrackCount);
     mutedAudioTracks.remove(activeAudioTrackCount);
+    soloAudioTracks.remove(activeAudioTrackCount);
     activeAudioTrackCount -= 1;
     if (targetedOverlayAudioTrack > activeAudioTrackCount) {
       targetedOverlayAudioTrack = activeAudioTrackCount >= 3
@@ -7710,6 +7782,7 @@ class EditorController extends ChangeNotifier {
               'label': renderItems[index].label,
               'output_name': _shortsOutputName(index),
               'segments': renderItems[index].segments
+                  .map(_segmentForOutput)
                   .map((segment) => segment.toJson())
                   .toList(),
             },
@@ -8402,7 +8475,7 @@ class EditorController extends ChangeNotifier {
   }
 
   String _programPreviewSignature(HighlightSegment segment) =>
-      '$exportAspectRatio|${jsonEncode(segment.toJson())}|'
+      '$exportAspectRatio|${jsonEncode(_segmentForOutput(segment).toJson())}|'
       '${jsonEncode(_videoOverlaysForOutput().map((overlay) => overlay.toJson()).toList())}|'
       '${jsonEncode(_audioClipsForOutput().map((clip) => clip.toJson()).toList())}';
 
@@ -8588,7 +8661,7 @@ class EditorController extends ChangeNotifier {
           path,
           startSeconds: nextWindow.sourceStart,
           durationSeconds: nextWindow.duration,
-          segment: segment,
+          segment: _segmentForOutput(segment),
           videoOverlays: previewOverlays,
           audioClips: previewAudioClips,
           aspectRatio: exportAspectRatio,
@@ -8738,7 +8811,9 @@ class EditorController extends ChangeNotifier {
               path,
               startSeconds: sourceStart,
               durationSeconds: requestedDuration,
-              segment: programSegment,
+              segment: programSegment == null
+                  ? null
+                  : _segmentForOutput(programSegment),
               videoOverlays: previewOverlays,
               audioClips: previewAudioClips,
               aspectRatio: exportAspectRatio,
@@ -8748,7 +8823,9 @@ class EditorController extends ChangeNotifier {
           path,
           startSeconds: sourceStart,
           durationSeconds: requestedDuration,
-          segment: programSegment,
+          segment: programSegment == null
+              ? null
+              : _segmentForOutput(programSegment),
           videoOverlays: previewOverlays,
           audioClips: previewAudioClips,
           aspectRatio: exportAspectRatio,
@@ -10868,6 +10945,9 @@ class EditorController extends ChangeNotifier {
     mutedAudioTracks = project.mutedAudioTracks
         .where((track) => track >= 3 && track <= activeAudioTrackCount)
         .toSet();
+    soloAudioTracks = project.soloAudioTracks
+        .where((track) => track >= 1 && track <= activeAudioTrackCount)
+        .toSet();
     targetedVideoOverlayTrack = activeVideoTrackCount >= 2 ? 2 : 1;
     targetedOverlayAudioTrack = activeAudioTrackCount >= 3 ? 3 : 2;
     videoOverlayTrackTargeted = activeVideoTrackCount >= 2;
@@ -10965,6 +11045,7 @@ class EditorController extends ChangeNotifier {
       hiddenVideoTracks: Set<int>.of(hiddenVideoTracks),
       lockedAudioTracks: Set<int>.of(lockedAudioTracks),
       mutedAudioTracks: Set<int>.of(mutedAudioTracks),
+      soloAudioTracks: Set<int>.of(soloAudioTracks),
       targetedVideoOverlayTrack: targetedVideoOverlayTrack,
       targetedOverlayAudioTrack: targetedOverlayAudioTrack,
       captions: List<CaptionSegment>.of(captions),
@@ -10991,6 +11072,7 @@ class EditorController extends ChangeNotifier {
     hiddenVideoTracks = Set<int>.of(snapshot.hiddenVideoTracks);
     lockedAudioTracks = Set<int>.of(snapshot.lockedAudioTracks);
     mutedAudioTracks = Set<int>.of(snapshot.mutedAudioTracks);
+    soloAudioTracks = Set<int>.of(snapshot.soloAudioTracks);
     targetedVideoOverlayTrack = snapshot.targetedVideoOverlayTrack;
     targetedOverlayAudioTrack = snapshot.targetedOverlayAudioTrack;
     videoOverlayTrackTargeted = targetedVideoOverlayTrack >= 2;
@@ -11502,6 +11584,7 @@ class _EditorSnapshot {
     required this.hiddenVideoTracks,
     required this.lockedAudioTracks,
     required this.mutedAudioTracks,
+    required this.soloAudioTracks,
     required this.targetedVideoOverlayTrack,
     required this.targetedOverlayAudioTrack,
     required this.captions,
@@ -11527,6 +11610,7 @@ class _EditorSnapshot {
   final Set<int> hiddenVideoTracks;
   final Set<int> lockedAudioTracks;
   final Set<int> mutedAudioTracks;
+  final Set<int> soloAudioTracks;
   final int targetedVideoOverlayTrack;
   final int targetedOverlayAudioTrack;
   final List<CaptionSegment> captions;
