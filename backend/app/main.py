@@ -39,7 +39,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "app": settings.app_name,
-        "engine_version": "2026.07.11-multitrack-v1",
+        "engine_version": "2026.07.11-standalone-audio-v1",
         "timeline_frame_rate": "30",
         "preview_proxy_seconds": settings.preview_proxy_seconds,
         "features": [
@@ -65,5 +65,6 @@ def health() -> dict[str, object]:
             "v2_overlay_program_preview_v1",
             "overlay_audio_a3_v1",
             "dynamic_tracks_v4_a8_v1",
+            "standalone_audio_clips_v1",
         ],
     }

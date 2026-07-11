@@ -105,6 +105,7 @@ class ApiClient {
     double? durationSeconds,
     HighlightSegment? segment,
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     String aspectRatio = '16:9',
   }) async {
     final data = <String, Object>{'path': path, 'start_seconds': startSeconds};
@@ -116,6 +117,7 @@ class ApiClient {
       data['video_overlays'] = videoOverlays
           .map((overlay) => overlay.toJson())
           .toList();
+      data['audio_clips'] = audioClips.map((clip) => clip.toJson()).toList();
       data['aspect_ratio'] = aspectRatio;
     }
     final response = await _dio.post<Map<String, dynamic>>(
@@ -286,6 +288,7 @@ class ApiClient {
     List<HighlightSegment> segments, {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
@@ -296,6 +299,7 @@ class ApiClient {
       data: {
         'segments': segments.map((item) => item.toJson()).toList(),
         'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
+        'audio_clips': audioClips.map((item) => item.toJson()).toList(),
         'captions': captions.map((item) => item.toJson()).toList(),
         'caption_style': (captionStyle ?? CaptionRenderStyle.preset('news'))
             .toJson(),
@@ -311,6 +315,7 @@ class ApiClient {
     List<Map<String, dynamic>> items, {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '9:16',
     bool includeCaptions = true,
@@ -320,6 +325,7 @@ class ApiClient {
       data: {
         'items': items,
         'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
+        'audio_clips': audioClips.map((item) => item.toJson()).toList(),
         'captions': captions.map((item) => item.toJson()).toList(),
         'caption_style': (captionStyle ?? CaptionRenderStyle.preset('shorts'))
             .toJson(),

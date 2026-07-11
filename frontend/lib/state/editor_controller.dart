@@ -107,6 +107,7 @@ class EditorController extends ChangeNotifier {
   double duration = 0;
   List<HighlightSegment> segments = [];
   List<VideoOverlayClip> videoOverlays = [];
+  List<AudioClip> audioClips = [];
   List<TranscriptSegment> transcript = [];
   List<CaptionSegment> captions = [];
   List<double> waveform = [];
@@ -117,6 +118,7 @@ class EditorController extends ChangeNotifier {
   String? renderUrl;
   int? selectedSegmentOrder;
   String? selectedVideoOverlayId;
+  String? selectedAudioClipId;
   double? markIn;
   double? markOut;
   bool includeCaptions = true;
@@ -210,6 +212,32 @@ class EditorController extends ChangeNotifier {
     'flv',
     'mxf',
   ];
+  static const List<String> supportedAudioExtensions = [
+    'wav',
+    'mp3',
+    'aac',
+    'flac',
+    'm4a',
+    'ogg',
+    'opus',
+    'wma',
+  ];
+  static const List<String> supportedMediaExtensions = [
+    ...supportedVideoExtensions,
+    ...supportedAudioExtensions,
+  ];
+
+  static bool isAudioMediaPath(String path) {
+    final normalized = path.trim().toLowerCase();
+    final separator = normalized.lastIndexOf('.');
+    if (separator < 0 || separator == normalized.length - 1) {
+      return false;
+    }
+    return supportedAudioExtensions.contains(
+      normalized.substring(separator + 1),
+    );
+  }
+
   static final RegExp _fillerPattern = RegExp(
     r'(^|\s)(음+|어+|아+|그니까|그러니까|뭐랄까|약간|이제)(\s|$)|you know|um+|uh+',
     caseSensitive: false,
@@ -691,6 +719,19 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
+  AudioClip? get selectedAudioClip {
+    final id = selectedAudioClipId;
+    if (id == null) {
+      return null;
+    }
+    for (final clip in audioClips) {
+      if (clip.id == id) {
+        return clip;
+      }
+    }
+    return null;
+  }
+
   bool get selectedVideoOverlayIsOffline {
     final path = selectedVideoOverlay?.sourcePath;
     return !kIsWeb &&
@@ -699,8 +740,19 @@ class EditorController extends ChangeNotifier {
         !io.File(path).existsSync();
   }
 
+  bool get selectedAudioClipIsOffline {
+    final path = selectedAudioClip?.sourcePath;
+    return !kIsWeb &&
+        path != null &&
+        path.isNotEmpty &&
+        !io.File(path).existsSync();
+  }
+
   bool get videoOverlayAudioEnabled =>
-      videoOverlays.any((overlay) => !overlay.muted && overlay.audioVolume > 0);
+      videoOverlays.any(
+        (overlay) => !overlay.muted && overlay.audioVolume > 0,
+      ) ||
+      audioClips.any((clip) => clip.enabled && !clip.muted && clip.volume > 0);
 
   double get selectedMotionLocalTime {
     final selected = selectedSegment;
@@ -923,7 +975,7 @@ class EditorController extends ChangeNotifier {
     if (spans.isEmpty) {
       return const [];
     }
-    final points = <double>[0];
+    final points = <double>{0};
     for (var index = 1; index < spans.length; index++) {
       final overlap = effectiveTransitionOverlap(
         spans[index - 1].segment,
@@ -932,7 +984,25 @@ class EditorController extends ChangeNotifier {
       points.add(spans[index].sequenceStart + overlap / 2);
     }
     points.add(outputDurationSeconds);
-    return points;
+    for (final overlay in videoOverlays) {
+      if (overlay.enabled) {
+        points
+          ..add(overlay.timelineStart)
+          ..add(overlay.timelineEnd);
+      }
+    }
+    for (final clip in audioClips) {
+      if (clip.enabled) {
+        points
+          ..add(clip.timelineStart)
+          ..add(clip.timelineEnd);
+      }
+    }
+    return points
+        .where((point) => point >= 0 && point <= outputDurationSeconds)
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   _ProgramSpan? _programSpanAt(double programSeconds) {
@@ -1195,6 +1265,7 @@ class EditorController extends ChangeNotifier {
       duration: duration,
       segments: segments,
       videoOverlays: videoOverlays,
+      audioClips: audioClips,
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
       transcript: transcript,
@@ -1306,12 +1377,21 @@ class EditorController extends ChangeNotifier {
 
   Future<List<PlatformFile>> pickMediaAssets({
     bool allowMultiple = true,
+    bool includeAudio = false,
   }) async {
     errorMessage = null;
     final result = await FilePicker.platform.pickFiles(
-      dialogTitle: '원본 영상 가져오기',
-      type: kIsWeb ? FileType.video : FileType.custom,
-      allowedExtensions: kIsWeb ? null : supportedVideoExtensions,
+      dialogTitle: includeAudio ? '영상 또는 오디오 가져오기' : '원본 영상 가져오기',
+      type: kIsWeb
+          ? includeAudio
+                ? FileType.any
+                : FileType.video
+          : FileType.custom,
+      allowedExtensions: kIsWeb
+          ? null
+          : includeAudio
+          ? supportedMediaExtensions
+          : supportedVideoExtensions,
       allowMultiple: allowMultiple,
       withData: kIsWeb,
       withReadStream: false,
@@ -1491,6 +1571,7 @@ class EditorController extends ChangeNotifier {
     playbackShuttleRate = 1.0;
     segments = [];
     videoOverlays = [];
+    audioClips = [];
     transcript = [];
     captions = [];
     waveform = [];
@@ -1498,6 +1579,7 @@ class EditorController extends ChangeNotifier {
     renderUrl = null;
     selectedSegmentOrder = null;
     selectedVideoOverlayId = null;
+    selectedAudioClipId = null;
     markIn = null;
     markOut = null;
     uploadProgress = 0;
@@ -1871,6 +1953,7 @@ class EditorController extends ChangeNotifier {
         videoOverlays: videoOverlayTrackVisible
             ? videoOverlays.where((overlay) => overlay.enabled).toList()
             : const [],
+        audioClips: audioClips.where((clip) => clip.enabled).toList(),
         captionStyle: captionRenderStyle,
         aspectRatio: aspectRatio,
         includeCaptions: includeCaptions,
@@ -1931,6 +2014,7 @@ class EditorController extends ChangeNotifier {
         videoOverlays: videoOverlayTrackVisible
             ? videoOverlays.where((overlay) => overlay.enabled).toList()
             : const [],
+        audioClips: audioClips.where((clip) => clip.enabled).toList(),
         captionStyle: captionRenderStyle,
         aspectRatio: selectedExportProfiles.first,
         includeCaptions: includeCaptions,
@@ -2508,6 +2592,7 @@ class EditorController extends ChangeNotifier {
     videoOverlayTrackTargeted = true;
     audioTrack3Targeted = audioTrack == 3;
     selectedVideoOverlayId = overlay.id;
+    selectedAudioClipId = null;
     selectedSegmentOrder = null;
     renderUrl = null;
     notifyListeners();
@@ -2525,6 +2610,7 @@ class EditorController extends ChangeNotifier {
         if (overlay.id == updated.id) updated else overlay,
     ]..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
     selectedVideoOverlayId = updated.id;
+    selectedAudioClipId = null;
     renderUrl = null;
     notifyListeners();
     _refreshProgramPreviewAfterOverlayEdit();
@@ -2535,6 +2621,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     selectedVideoOverlayId = id;
+    selectedAudioClipId = null;
     selectedSegmentOrder = null;
     notifyListeners();
   }
@@ -2780,6 +2867,322 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  Future<void> addAudioClipFromMedia({
+    required String sourcePath,
+    required String sourceName,
+    double? timelineStart,
+  }) async {
+    if (sourcePath.trim().isEmpty || audioTrack3Locked) {
+      return;
+    }
+    try {
+      await _ensureLocalEngineForApi();
+      final probe = await _apiClient.probeLocalMedia(sourcePath);
+      if (probe.audioStreamCount <= 0 || probe.duration <= 0) {
+        throw StateError('재생 가능한 오디오 스트림을 찾지 못했습니다.');
+      }
+      addAudioClip(
+        sourcePath: sourcePath,
+        sourceName: sourceName,
+        timelineStart: timelineStart,
+        sourceDuration: probe.duration,
+      );
+    } catch (error) {
+      errorMessage = '오디오 클립을 배치하지 못했습니다: $error';
+      notifyListeners();
+    }
+  }
+
+  void addAudioClip({
+    required String sourcePath,
+    required String sourceName,
+    required double sourceDuration,
+    double? timelineStart,
+    double sourceStart = 0,
+  }) {
+    if (sourcePath.trim().isEmpty || sourceDuration <= 0 || audioTrack3Locked) {
+      return;
+    }
+    _commitHistory();
+    if (activeAudioTrackCount < 3) {
+      activeAudioTrackCount = 3;
+    }
+    final track = targetedOverlayAudioTrack
+        .clamp(3, activeAudioTrackCount)
+        .toInt();
+    final sequenceDuration = math.max(
+      timecodeFrameDurationSeconds,
+      outputDurationSeconds > 0 ? outputDurationSeconds : duration,
+    );
+    final normalizedSourceStart = snapSecondsToFrame(
+      sourceStart
+          .clamp(
+            0.0,
+            math.max(0.0, sourceDuration - timecodeFrameDurationSeconds),
+          )
+          .toDouble(),
+    );
+    final start = snapSecondsToFrame(
+      (timelineStart ?? monitorPositionSeconds)
+          .clamp(
+            0.0,
+            math.max(0.0, sequenceDuration - timecodeFrameDurationSeconds),
+          )
+          .toDouble(),
+    );
+    final clipDuration = math.min(
+      sequenceDuration - start,
+      sourceDuration - normalizedSourceStart,
+    );
+    if (clipDuration < timecodeFrameDurationSeconds / 2) {
+      return;
+    }
+    final clip = AudioClip(
+      id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+      sourcePath: sourcePath,
+      sourceName: sourceName,
+      timelineStart: start,
+      timelineEnd: snapSecondsToFrame(start + clipDuration),
+      sourceStart: normalizedSourceStart,
+      sourceEnd: snapSecondsToFrame(normalizedSourceStart + clipDuration),
+      track: track,
+    );
+    audioClips = [...audioClips, clip]
+      ..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    targetedOverlayAudioTrack = track;
+    audioTrack3Targeted = track == 3;
+    selectedAudioClipId = clip.id;
+    selectedVideoOverlayId = null;
+    selectedSegmentOrder = null;
+    errorMessage = null;
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  AudioClip _normalizeStandaloneAudioClip(AudioClip clip) {
+    final sequenceDuration = math.max(
+      timecodeFrameDurationSeconds,
+      outputDurationSeconds > 0 ? outputDurationSeconds : duration,
+    );
+    final timelineStart = snapSecondsToFrame(
+      clip.timelineStart
+          .clamp(
+            0.0,
+            math.max(0.0, sequenceDuration - timecodeFrameDurationSeconds),
+          )
+          .toDouble(),
+    );
+    final requestedTimelineDuration = math.max(
+      timecodeFrameDurationSeconds,
+      clip.timelineEnd - clip.timelineStart,
+    );
+    final requestedSourceDuration = math.max(
+      timecodeFrameDurationSeconds,
+      clip.sourceEnd - clip.sourceStart,
+    );
+    final normalizedDuration = math.min(
+      math.min(requestedTimelineDuration, requestedSourceDuration),
+      sequenceDuration - timelineStart,
+    );
+    final sourceStart = snapSecondsToFrame(math.max(0.0, clip.sourceStart));
+    final normalizedClipDuration = math.max(
+      timecodeFrameDurationSeconds,
+      normalizedDuration,
+    );
+    return clip.copyWith(
+      timelineStart: timelineStart,
+      timelineEnd: snapSecondsToFrame(timelineStart + normalizedClipDuration),
+      sourceStart: sourceStart,
+      sourceEnd: snapSecondsToFrame(sourceStart + normalizedClipDuration),
+      track: clip.track.clamp(3, activeAudioTrackCount).toInt(),
+      volume: clip.volume.clamp(0.0, 2.0).toDouble(),
+      pan: clip.pan.clamp(-1.0, 1.0).toDouble(),
+      fadeIn: clip.fadeIn.clamp(0.0, normalizedClipDuration / 2).toDouble(),
+      fadeOut: clip.fadeOut.clamp(0.0, normalizedClipDuration / 2).toDouble(),
+    );
+  }
+
+  void updateAudioClip(AudioClip updated) {
+    if (audioTrack3Locked || !audioClips.any((clip) => clip.id == updated.id)) {
+      return;
+    }
+    _commitHistory();
+    final normalized = _normalizeStandaloneAudioClip(updated);
+    audioClips = [
+      for (final clip in audioClips)
+        if (clip.id == normalized.id) normalized else clip,
+    ]..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    selectedAudioClipId = normalized.id;
+    selectedVideoOverlayId = null;
+    selectedSegmentOrder = null;
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  void selectAudioClip(String id) {
+    if (!audioClips.any((clip) => clip.id == id)) {
+      return;
+    }
+    selectedAudioClipId = id;
+    selectedVideoOverlayId = null;
+    selectedSegmentOrder = null;
+    notifyListeners();
+  }
+
+  void deleteSelectedAudioClip() {
+    final id = selectedAudioClipId;
+    if (id == null || audioTrack3Locked) {
+      return;
+    }
+    _commitHistory();
+    audioClips = audioClips.where((clip) => clip.id != id).toList();
+    selectedAudioClipId = null;
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  void toggleSelectedAudioClipEnabled() {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(clip.copyWith(enabled: !clip.enabled));
+    }
+  }
+
+  void toggleSelectedAudioClipMute() {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(clip.copyWith(muted: !clip.muted));
+    }
+  }
+
+  void setSelectedAudioClipTrack(int track) {
+    final clip = selectedAudioClip;
+    if (clip == null) {
+      return;
+    }
+    final normalized = track.clamp(3, activeAudioTrackCount).toInt();
+    updateAudioClip(clip.copyWith(track: normalized));
+    targetedOverlayAudioTrack = normalized;
+    audioTrack3Targeted = normalized == 3;
+  }
+
+  void setSelectedAudioClipVolume(double value) {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(clip.copyWith(volume: value.clamp(0.0, 2.0).toDouble()));
+    }
+  }
+
+  void setSelectedAudioClipPan(double value) {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(clip.copyWith(pan: value.clamp(-1.0, 1.0).toDouble()));
+    }
+  }
+
+  void setSelectedAudioClipFadeIn(double value) {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(
+        clip.copyWith(
+          fadeIn: value.clamp(0.0, clip.timelineDuration / 2).toDouble(),
+        ),
+      );
+    }
+  }
+
+  void setSelectedAudioClipFadeOut(double value) {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(
+        clip.copyWith(
+          fadeOut: value.clamp(0.0, clip.timelineDuration / 2).toDouble(),
+        ),
+      );
+    }
+  }
+
+  void resetSelectedAudioClipMix() {
+    final clip = selectedAudioClip;
+    if (clip != null) {
+      updateAudioClip(clip.copyWith(volume: 1, pan: 0, fadeIn: 0, fadeOut: 0));
+    }
+  }
+
+  void duplicateSelectedAudioClip() {
+    final clip = selectedAudioClip;
+    if (clip == null || audioTrack3Locked) {
+      return;
+    }
+    final sequenceDuration = math.max(
+      timecodeFrameDurationSeconds,
+      outputDurationSeconds > 0 ? outputDurationSeconds : duration,
+    );
+    final requestedStart = clip.timelineEnd + timecodeFrameDurationSeconds;
+    final start = requestedStart + clip.timelineDuration <= sequenceDuration
+        ? requestedStart
+        : math.max(0.0, clip.timelineStart - clip.timelineDuration);
+    final duplicate = clip.copyWith(
+      id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+      timelineStart: snapSecondsToFrame(start),
+      timelineEnd: snapSecondsToFrame(start + clip.timelineDuration),
+    );
+    _commitHistory();
+    audioClips = [...audioClips, duplicate]
+      ..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
+    selectedAudioClipId = duplicate.id;
+    selectedVideoOverlayId = null;
+    selectedSegmentOrder = null;
+    renderUrl = null;
+    notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
+  }
+
+  Future<void> relinkSelectedAudioClip() async {
+    final clip = selectedAudioClip;
+    if (clip == null || audioTrack3Locked) {
+      return;
+    }
+    final files = await pickMediaAssets(
+      allowMultiple: false,
+      includeAudio: true,
+    );
+    if (files.isEmpty) {
+      return;
+    }
+    final replacement = files.first;
+    final path = replacement.path;
+    if (path == null || path.isEmpty) {
+      return;
+    }
+    try {
+      await _ensureLocalEngineForApi();
+      final probe = await _apiClient.probeLocalMedia(path);
+      if (probe.audioStreamCount <= 0) {
+        throw StateError('오디오 스트림이 없는 미디어입니다.');
+      }
+      final available = math.max(
+        timecodeFrameDurationSeconds,
+        probe.duration - clip.sourceStart,
+      );
+      final clipDuration = math.min(clip.timelineDuration, available);
+      updateAudioClip(
+        clip.copyWith(
+          sourcePath: path,
+          sourceName: replacement.name,
+          timelineEnd: clip.timelineStart + clipDuration,
+          sourceEnd: clip.sourceStart + clipDuration,
+        ),
+      );
+    } catch (error) {
+      errorMessage = '오디오 다시 연결에 실패했습니다: $error';
+      notifyListeners();
+    }
+  }
+
   void toggleVideoOverlayTrackTarget() {
     videoOverlayTrackTargeted = !videoOverlayTrackTargeted;
     if (videoOverlayTrackTargeted && targetedVideoOverlayTrack < 2) {
@@ -2828,7 +3231,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void toggleAllVideoOverlayAudio() {
-    if (audioTrack3Locked || videoOverlays.isEmpty) {
+    if (audioTrack3Locked || (videoOverlays.isEmpty && audioClips.isEmpty)) {
       return;
     }
     final muteAll = videoOverlayAudioEnabled;
@@ -2842,6 +3245,13 @@ class EditorController extends ChangeNotifier {
               : overlay.audioVolume,
         ),
     ];
+    audioClips = [
+      for (final clip in audioClips)
+        clip.copyWith(
+          muted: muteAll,
+          volume: !muteAll && clip.volume <= 0 ? 1 : clip.volume,
+        ),
+    ];
     renderUrl = null;
     notifyListeners();
     _refreshProgramPreviewAfterOverlayEdit();
@@ -2851,15 +3261,20 @@ class EditorController extends ChangeNotifier {
     if (audioTrack3Locked || track < 3 || track > activeAudioTrackCount) {
       return;
     }
-    final trackOverlays = videoOverlays.where(
-      (overlay) => overlay.audioTrack == track,
-    );
-    if (trackOverlays.isEmpty) {
+    final trackOverlays = videoOverlays
+        .where((overlay) => overlay.audioTrack == track)
+        .toList();
+    final trackClips = audioClips.where((clip) => clip.track == track).toList();
+    if (trackOverlays.isEmpty && trackClips.isEmpty) {
       return;
     }
-    final muteTrack = trackOverlays.any(
-      (overlay) => !overlay.muted && overlay.audioVolume > 0,
-    );
+    final muteTrack =
+        trackOverlays.any(
+          (overlay) => !overlay.muted && overlay.audioVolume > 0,
+        ) ||
+        trackClips.any(
+          (clip) => clip.enabled && !clip.muted && clip.volume > 0,
+        );
     _commitHistory();
     videoOverlays = [
       for (final overlay in videoOverlays)
@@ -2872,6 +3287,16 @@ class EditorController extends ChangeNotifier {
           )
         else
           overlay,
+    ];
+    audioClips = [
+      for (final clip in audioClips)
+        if (clip.track == track)
+          clip.copyWith(
+            muted: muteTrack,
+            volume: !muteTrack && clip.volume <= 0 ? 1 : clip.volume,
+          )
+        else
+          clip,
     ];
     renderUrl = null;
     notifyListeners();
@@ -2889,7 +3314,8 @@ class EditorController extends ChangeNotifier {
       activeAudioTrackCount > 2 &&
       !videoOverlays.any(
         (overlay) => overlay.audioTrack == activeAudioTrackCount,
-      );
+      ) &&
+      !audioClips.any((clip) => clip.track == activeAudioTrackCount);
 
   void activateVideoTrack() {
     if (!canActivateVideoTrack) {
@@ -2947,16 +3373,20 @@ class EditorController extends ChangeNotifier {
     if (segments.any((segment) => segment.order == order)) {
       selectedSegmentOrder = order;
       selectedVideoOverlayId = null;
+      selectedAudioClipId = null;
       notifyListeners();
     }
   }
 
   void clearSegmentSelection() {
-    if (selectedSegmentOrder == null && selectedVideoOverlayId == null) {
+    if (selectedSegmentOrder == null &&
+        selectedVideoOverlayId == null &&
+        selectedAudioClipId == null) {
       return;
     }
     selectedSegmentOrder = null;
     selectedVideoOverlayId = null;
+    selectedAudioClipId = null;
     notifyListeners();
   }
 
@@ -3178,6 +3608,16 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> jumpToSelectedClipStart() async {
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      await seekMonitorTo(audioClip.timelineStart, autoplay: false);
+      return;
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      await seekMonitorTo(overlay.timelineStart, autoplay: false);
+      return;
+    }
     final selected = selectedSegment;
     if (selected == null) {
       return;
@@ -3191,6 +3631,16 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> jumpToSelectedClipEnd() async {
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      await seekMonitorTo(audioClip.timelineEnd, autoplay: false);
+      return;
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      await seekMonitorTo(overlay.timelineEnd, autoplay: false);
+      return;
+    }
     final selected = selectedSegment;
     if (selected == null) {
       return;
@@ -3338,11 +3788,13 @@ class EditorController extends ChangeNotifier {
     final segment = _segmentAtTimelinePoint(seconds);
     if (segment == null ||
         (selectedSegmentOrder == segment.order &&
-            selectedVideoOverlayId == null)) {
+            selectedVideoOverlayId == null &&
+            selectedAudioClipId == null)) {
       return;
     }
     selectedSegmentOrder = segment.order;
     selectedVideoOverlayId = null;
+    selectedAudioClipId = null;
     notifyListeners();
   }
 
@@ -3367,11 +3819,14 @@ class EditorController extends ChangeNotifier {
         ? fallbackIndex
         : (currentIndex + direction).clamp(0, segments.length - 1).toInt();
     final targetOrder = segments[targetIndex].order;
-    if (selectedSegmentOrder == targetOrder && selectedVideoOverlayId == null) {
+    if (selectedSegmentOrder == targetOrder &&
+        selectedVideoOverlayId == null &&
+        selectedAudioClipId == null) {
       return;
     }
     selectedSegmentOrder = targetOrder;
     selectedVideoOverlayId = null;
+    selectedAudioClipId = null;
     notifyListeners();
   }
 
@@ -3958,6 +4413,14 @@ class EditorController extends ChangeNotifier {
   }
 
   void toggleSelectedClipEnabled() {
+    if (selectedAudioClip != null) {
+      toggleSelectedAudioClipEnabled();
+      return;
+    }
+    if (selectedVideoOverlay != null) {
+      toggleSelectedVideoOverlayEnabled();
+      return;
+    }
     final selected = selectedSegment;
     if (selected == null || videoTrackLocked || anyAudioTrackEditLocked) {
       return;
@@ -4872,6 +5335,18 @@ class EditorController extends ChangeNotifier {
         : order.clamp(1, segments.length).toInt();
     renderUrl = null;
     notifyListeners();
+  }
+
+  void deleteSelectedTimelineItem() {
+    if (selectedAudioClip != null) {
+      deleteSelectedAudioClip();
+      return;
+    }
+    if (selectedVideoOverlay != null) {
+      deleteSelectedVideoOverlay();
+      return;
+    }
+    deleteSelectedSegment();
   }
 
   void closeSelectedTimelineGap() {
@@ -7794,7 +8269,8 @@ class EditorController extends ChangeNotifier {
 
   String _programPreviewSignature(HighlightSegment segment) =>
       '$exportAspectRatio|${jsonEncode(segment.toJson())}|'
-      '${jsonEncode(videoOverlayTrackVisible ? videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList() : const [])}';
+      '${jsonEncode(videoOverlayTrackVisible ? videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList() : const [])}|'
+      '${jsonEncode(audioClips.where((clip) => clip.enabled).map((clip) => clip.toJson()).toList())}';
 
   List<VideoOverlayClip> _videoOverlaysForProgramWindow(
     HighlightSegment segment,
@@ -7833,6 +8309,53 @@ class EditorController extends ChangeNotifier {
       final localStart = snapSecondsToFrame(overlapStart - sequenceWindowStart);
       mapped.add(
         overlay.copyWith(
+          timelineStart: localStart,
+          timelineEnd: snapSecondsToFrame(localStart + mappedDuration),
+          sourceStart: mappedSourceStart,
+          sourceEnd: snapSecondsToFrame(mappedSourceStart + mappedDuration),
+        ),
+      );
+    }
+    return mapped;
+  }
+
+  List<AudioClip> _audioClipsForProgramWindow(
+    HighlightSegment segment,
+    double sourceStart,
+    double duration,
+  ) {
+    final span = _programSpanForOrder(segment.order);
+    if (span == null || duration <= 0) {
+      return const [];
+    }
+    final outputWindowOffset =
+        (sourceStart - segment.start) / math.max(0.1, segment.playbackSpeed);
+    final sequenceWindowStart = span.sequenceStart + outputWindowOffset;
+    final sequenceWindowEnd = sequenceWindowStart + duration;
+    final mapped = <AudioClip>[];
+    for (final clip in audioClips) {
+      if (!clip.enabled) {
+        continue;
+      }
+      final overlapStart = math.max(clip.timelineStart, sequenceWindowStart);
+      final overlapEnd = math.min(clip.timelineEnd, sequenceWindowEnd);
+      if (overlapEnd - overlapStart < timecodeFrameDurationSeconds / 2) {
+        continue;
+      }
+      final sourceOffset = overlapStart - clip.timelineStart;
+      final mappedSourceStart = snapSecondsToFrame(
+        clip.sourceStart + sourceOffset,
+      );
+      final mappedDuration = math.min(
+        overlapEnd - overlapStart,
+        clip.sourceEnd - mappedSourceStart,
+      );
+      if (mappedDuration < timecodeFrameDurationSeconds / 2) {
+        continue;
+      }
+      final localStart = snapSecondsToFrame(overlapStart - sequenceWindowStart);
+      mapped.add(
+        clip.copyWith(
           timelineStart: localStart,
           timelineEnd: snapSecondsToFrame(localStart + mappedDuration),
           sourceStart: mappedSourceStart,
@@ -7926,6 +8449,11 @@ class EditorController extends ChangeNotifier {
       nextWindow.sourceStart,
       nextWindow.duration,
     );
+    final previewAudioClips = _audioClipsForProgramWindow(
+      segment,
+      nextWindow.sourceStart,
+      nextWindow.duration,
+    );
     _programPreviewPrefetchFuture = () async {
       try {
         return await _apiClient.createLocalPreview(
@@ -7934,6 +8462,7 @@ class EditorController extends ChangeNotifier {
           durationSeconds: nextWindow.duration,
           segment: segment,
           videoOverlays: previewOverlays,
+          audioClips: previewAudioClips,
           aspectRatio: exportAspectRatio,
         );
       } catch (_) {
@@ -8066,6 +8595,13 @@ class EditorController extends ChangeNotifier {
               sourceStart,
               requestedDuration,
             );
+      final previewAudioClips = programSegment == null
+          ? const <AudioClip>[]
+          : _audioClipsForProgramWindow(
+              programSegment,
+              sourceStart,
+              requestedDuration,
+            );
       LocalPreviewInfo preview;
       if (prefetchedPreview != null) {
         preview =
@@ -8076,6 +8612,7 @@ class EditorController extends ChangeNotifier {
               durationSeconds: requestedDuration,
               segment: programSegment,
               videoOverlays: previewOverlays,
+              audioClips: previewAudioClips,
               aspectRatio: exportAspectRatio,
             );
       } else {
@@ -8085,6 +8622,7 @@ class EditorController extends ChangeNotifier {
           durationSeconds: requestedDuration,
           segment: programSegment,
           videoOverlays: previewOverlays,
+          audioClips: previewAudioClips,
           aspectRatio: exportAspectRatio,
         );
       }
@@ -10187,6 +10725,7 @@ class EditorController extends ChangeNotifier {
     _programCutPending = false;
     segments = _reorderSegments(project.segments);
     videoOverlays = List<VideoOverlayClip>.of(project.videoOverlays);
+    audioClips = List<AudioClip>.of(project.audioClips);
     activeVideoTrackCount = project.activeVideoTrackCount.clamp(1, 4).toInt();
     activeAudioTrackCount = project.activeAudioTrackCount.clamp(2, 8).toInt();
     targetedVideoOverlayTrack = activeVideoTrackCount >= 2 ? 2 : 1;
@@ -10194,6 +10733,7 @@ class EditorController extends ChangeNotifier {
     videoOverlayTrackTargeted = activeVideoTrackCount >= 2;
     audioTrack3Targeted = activeAudioTrackCount >= 3;
     selectedVideoOverlayId = null;
+    selectedAudioClipId = null;
     transcript = List<TranscriptSegment>.of(project.transcript);
     captions = [
       for (var index = 0; index < project.captions.length; index++)
@@ -10278,6 +10818,7 @@ class EditorController extends ChangeNotifier {
       createdAt: DateTime.now(),
       segments: List<HighlightSegment>.of(segments),
       videoOverlays: List<VideoOverlayClip>.of(videoOverlays),
+      audioClips: List<AudioClip>.of(audioClips),
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
       targetedVideoOverlayTrack: targetedVideoOverlayTrack,
@@ -10286,6 +10827,7 @@ class EditorController extends ChangeNotifier {
       timelineMarkers: List<TimelineMarker>.of(timelineMarkers),
       selectedSegmentOrder: selectedSegmentOrder,
       selectedVideoOverlayId: selectedVideoOverlayId,
+      selectedAudioClipId: selectedAudioClipId,
       markIn: markIn,
       markOut: markOut,
       includeCaptions: includeCaptions,
@@ -10298,6 +10840,7 @@ class EditorController extends ChangeNotifier {
   void _restoreSnapshot(_EditorSnapshot snapshot) {
     segments = _reorderSegments(snapshot.segments);
     videoOverlays = List<VideoOverlayClip>.of(snapshot.videoOverlays);
+    audioClips = List<AudioClip>.of(snapshot.audioClips);
     activeVideoTrackCount = snapshot.activeVideoTrackCount;
     activeAudioTrackCount = snapshot.activeAudioTrackCount;
     targetedVideoOverlayTrack = snapshot.targetedVideoOverlayTrack;
@@ -10310,6 +10853,7 @@ class EditorController extends ChangeNotifier {
     ];
     selectedSegmentOrder = snapshot.selectedSegmentOrder;
     selectedVideoOverlayId = snapshot.selectedVideoOverlayId;
+    selectedAudioClipId = snapshot.selectedAudioClipId;
     if (selectedSegmentOrder != null &&
         !segments.any((segment) => segment.order == selectedSegmentOrder)) {
       selectedSegmentOrder = segments.isEmpty ? null : segments.first.order;
@@ -10317,6 +10861,10 @@ class EditorController extends ChangeNotifier {
     if (selectedVideoOverlayId != null &&
         !videoOverlays.any((overlay) => overlay.id == selectedVideoOverlayId)) {
       selectedVideoOverlayId = null;
+    }
+    if (selectedAudioClipId != null &&
+        !audioClips.any((clip) => clip.id == selectedAudioClipId)) {
+      selectedAudioClipId = null;
     }
     markIn = snapshot.markIn;
     markOut = snapshot.markOut;
@@ -10799,6 +11347,7 @@ class _EditorSnapshot {
     required this.createdAt,
     required this.segments,
     required this.videoOverlays,
+    required this.audioClips,
     required this.activeVideoTrackCount,
     required this.activeAudioTrackCount,
     required this.targetedVideoOverlayTrack,
@@ -10807,6 +11356,7 @@ class _EditorSnapshot {
     required this.timelineMarkers,
     required this.selectedSegmentOrder,
     required this.selectedVideoOverlayId,
+    required this.selectedAudioClipId,
     required this.markIn,
     required this.markOut,
     required this.includeCaptions,
@@ -10818,6 +11368,7 @@ class _EditorSnapshot {
   final DateTime createdAt;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
   final int targetedVideoOverlayTrack;
@@ -10826,6 +11377,7 @@ class _EditorSnapshot {
   final List<TimelineMarker> timelineMarkers;
   final int? selectedSegmentOrder;
   final String? selectedVideoOverlayId;
+  final String? selectedAudioClipId;
   final double? markIn;
   final double? markOut;
   final bool includeCaptions;

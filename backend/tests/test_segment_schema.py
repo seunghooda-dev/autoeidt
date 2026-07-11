@@ -213,6 +213,22 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
                 "audio_track": 20,
             }
         ],
+        audio_clips=[
+            {
+                "id": "audio-1",
+                "source_path": "C:/media/music.wav",
+                "source_name": "music.wav",
+                "timeline_start": 20.019,
+                "timeline_end": 30.049,
+                "source_start": 1.016,
+                "source_end": 11.049,
+                "track": 99,
+                "volume": 4.0,
+                "pan": 2.0,
+                "fade_in": 12.0,
+                "fade_out": -1.0,
+            }
+        ],
         shorts_candidates=[
             {
                 "id": 1,
@@ -254,6 +270,12 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.video_overlays[0].audio_track == 8
     assert project.active_video_track_count == 4
     assert project.active_audio_track_count == 8
+    assert project.audio_clips[0].timeline_start == 20.033333
+    assert project.audio_clips[0].track == 8
+    assert project.audio_clips[0].volume == 2.0
+    assert project.audio_clips[0].pan == 1.0
+    assert project.audio_clips[0].fade_in == 10.0
+    assert project.audio_clips[0].fade_out == 0.0
     assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
     assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 

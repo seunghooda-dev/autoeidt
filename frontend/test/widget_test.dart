@@ -204,6 +204,67 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('clip inspector edits standalone audio routing and mix', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = EditorController(autoStartEngine: false)
+      ..activeAudioTrackCount = 8
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+      ]
+      ..audioClips = const [
+        AudioClip(
+          id: 'audio-inspector',
+          sourcePath: r'C:\media\music.wav',
+          sourceName: 'music.wav',
+          timelineStart: 4,
+          timelineEnd: 14,
+          sourceStart: 2,
+          sourceEnd: 12,
+          track: 6,
+          volume: 0.7,
+          pan: -0.2,
+          fadeIn: 1,
+          fadeOut: 1.5,
+        ),
+      ]
+      ..selectedAudioClipId = 'audio-inspector';
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<EditorController>.value(
+        value: controller,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 380, child: ClipInspector())),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('audio-clip-inspector')), findsOneWidget);
+    expect(find.text('A6 Audio Clip'), findsOneWidget);
+    expect(find.text('music.wav'), findsOneWidget);
+    expect(find.byKey(const Key('audio-clip-track')), findsOneWidget);
+    expect(find.byKey(const Key('audio-clip-volume')), findsOneWidget);
+    expect(find.byKey(const Key('audio-clip-pan')), findsOneWidget);
+    expect(find.byKey(const Key('audio-clip-fade-in')), findsOneWidget);
+    expect(find.byKey(const Key('audio-clip-fade-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('audio-clip-track')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A8').last);
+    await tester.pump();
+    expect(controller.selectedAudioClip?.track, 8);
+
+    await tester.tap(find.byKey(const Key('audio-clip-mute')));
+    await tester.pump();
+    expect(controller.selectedAudioClip?.muted, isTrue);
+    controller.dispose();
+  });
+
   testWidgets('preview loading state can queue playback', (tester) async {
     var toggleCount = 0;
     await tester.pumpWidget(
@@ -737,6 +798,8 @@ void main() {
   ) async {
     var targetedVideoTrack = 0;
     var targetedAudioTrack = 0;
+    String? selectedAudioClipId;
+    AudioClip? changedAudioClip;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -767,9 +830,22 @@ void main() {
                   audioTrack: 8,
                 ),
               ],
+              audioClips: const [
+                AudioClip(
+                  id: 'a8-music',
+                  sourcePath: r'C:\media\music.wav',
+                  sourceName: 'music.wav',
+                  timelineStart: 12,
+                  timelineEnd: 18,
+                  sourceStart: 0,
+                  sourceEnd: 6,
+                  track: 8,
+                ),
+              ],
               playheadSeconds: 0,
               selectedSegmentOrder: null,
               selectedVideoOverlayId: 'v4-a8-test',
+              selectedAudioClipId: 'a8-music',
               markIn: null,
               markOut: null,
               timelineMarkers: const [],
@@ -790,6 +866,8 @@ void main() {
               onSegmentChanged: (_) {},
               onScrub: (_) {},
               onSegmentSelected: (_) {},
+              onAudioClipSelected: (id) => selectedAudioClipId = id,
+              onAudioClipChanged: (clip) => changedAudioClip = clip,
               onToggleVideoOverlayTargetAt: (track) {
                 targetedVideoTrack = track;
               },
@@ -813,6 +891,8 @@ void main() {
       find.byKey(const ValueKey('video-overlay-audio-v4-a8-test')),
       findsOneWidget,
     );
+    final standaloneAudio = find.byKey(const ValueKey('audio-clip-a8-music'));
+    expect(standaloneAudio, findsOneWidget);
 
     await tester.tap(find.text('V4'));
     await tester.pump();
@@ -825,6 +905,13 @@ void main() {
     await tester.tap(find.text('A8'));
     await tester.pump();
     expect(targetedAudioTrack, 8);
+    await tester.tap(standaloneAudio);
+    await tester.pump();
+    expect(selectedAudioClipId, 'a8-music');
+    await tester.drag(standaloneAudio, const Offset(30, 0));
+    await tester.pump();
+    expect(changedAudioClip, isNotNull);
+    expect(changedAudioClip!.timelineStart, greaterThan(12));
   });
 
   testWidgets('timeline paints multiple cached video frames inside V1 clips', (
@@ -1544,6 +1631,48 @@ void main() {
     expect(controller.selectedSegment!.videoEnabled, isTrue);
     expect(controller.selectedSegment!.audioMuted, isFalse);
   });
+
+  testWidgets(
+    'Delete removes a selected standalone audio clip and supports undo',
+    (tester) async {
+      final controller = EditorController(autoStartEngine: false)
+        ..duration = 30
+        ..segments = const [
+          HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+        ]
+        ..audioClips = const [
+          AudioClip(
+            id: 'audio-delete',
+            sourcePath: r'C:\media\music.wav',
+            sourceName: 'music.wav',
+            timelineStart: 5,
+            timelineEnd: 10,
+            sourceStart: 0,
+            sourceEnd: 5,
+          ),
+        ]
+        ..selectedAudioClipId = 'audio-delete';
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: controller,
+          child: const HighlightEditorApp(),
+        ),
+      );
+      await tester.pump();
+
+      await _pressShortcut(tester, LogicalKeyboardKey.keyE, shift: true);
+      expect(controller.selectedAudioClip?.enabled, isFalse);
+      await _pressShortcut(tester, LogicalKeyboardKey.keyE, shift: true);
+      expect(controller.selectedAudioClip?.enabled, isTrue);
+
+      await _pressShortcut(tester, LogicalKeyboardKey.delete);
+      expect(controller.audioClips, isEmpty);
+      expect(controller.selectedAudioClip, isNull);
+      controller.undo();
+      expect(controller.audioClips.single.id, 'audio-delete');
+    },
+  );
 
   testWidgets('deselect shortcuts clear selected clip without history', (
     tester,

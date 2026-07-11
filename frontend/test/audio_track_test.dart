@@ -294,6 +294,22 @@ void main() {
           audioTrack: 8,
         ),
       ],
+      audioClips: [
+        AudioClip(
+          id: 'audio-1',
+          sourcePath: r'C:\media\music.wav',
+          sourceName: 'music.wav',
+          timelineStart: 20.01,
+          timelineEnd: 30.04,
+          sourceStart: 1.01,
+          sourceEnd: 11.04,
+          track: 7,
+          volume: 0.65,
+          pan: 0.2,
+          fadeIn: 1,
+          fadeOut: 1.5,
+        ),
+      ],
       activeVideoTrackCount: 4,
       activeAudioTrackCount: 8,
       transcript: [
@@ -384,6 +400,12 @@ void main() {
     expect(restored.videoOverlays.single.audioTrack, 8);
     expect(restored.activeVideoTrackCount, 4);
     expect(restored.activeAudioTrackCount, 8);
+    expect(restored.audioClips.single.id, 'audio-1');
+    expect(restored.audioClips.single.track, 7);
+    expect(restored.audioClips.single.volume, 0.65);
+    expect(restored.audioClips.single.pan, 0.2);
+    expect(restored.audioClips.single.fadeIn, 1);
+    expect(restored.audioClips.single.fadeOut, 1.5);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');
@@ -544,6 +566,63 @@ void main() {
     expect(controller.targetedOverlayAudioTrack, 3);
     expect(controller.videoOverlayTrackTargeted, isTrue);
     expect(controller.audioTrack3Targeted, isTrue);
+    controller.dispose();
+  });
+
+  test('standalone audio clips edit route persist and protect A3 to A8', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+      ];
+    for (var index = 0; index < 5; index++) {
+      controller.activateAudioTrack();
+    }
+    controller.toggleOverlayAudioTrackTargetAt(8);
+    controller.addAudioClip(
+      sourcePath: r'C:\media\music.wav',
+      sourceName: 'music.wav',
+      sourceDuration: 12,
+      timelineStart: 4.01,
+    );
+
+    expect(controller.audioClips, hasLength(1));
+    expect(controller.selectedAudioClip?.track, 8);
+    expect(controller.selectedAudioClip?.timelineStart, 4.0);
+    expect(controller.selectedAudioClip?.timelineEnd, 16.0);
+    expect(controller.canDeactivateAudioTrack, isFalse);
+
+    controller.setSelectedAudioClipVolume(0.65);
+    controller.setSelectedAudioClipPan(-0.3);
+    controller.setSelectedAudioClipFadeIn(1);
+    controller.setSelectedAudioClipFadeOut(1.5);
+    expect(controller.selectedAudioClip?.volume, 0.65);
+    expect(controller.selectedAudioClip?.pan, -0.3);
+    expect(controller.selectedAudioClip?.fadeIn, 1);
+    expect(controller.selectedAudioClip?.fadeOut, 1.5);
+
+    final moved = controller.selectedAudioClip!.copyWith(
+      timelineStart: 6,
+      timelineEnd: 14,
+      sourceStart: 2,
+      sourceEnd: 10,
+    );
+    controller.updateAudioClip(moved);
+    expect(controller.selectedAudioClip?.timelineStart, 6);
+    expect(controller.selectedAudioClip?.sourceStart, 2);
+    controller.undo();
+    expect(controller.selectedAudioClip?.timelineStart, 4);
+    controller.redo();
+    expect(controller.selectedAudioClip?.timelineStart, 6);
+
+    controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.selectedAudioClip?.muted, isTrue);
+    controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.selectedAudioClip?.muted, isFalse);
+
+    controller.setSelectedAudioClipTrack(7);
+    controller.deactivateHighestAudioTrack();
+    expect(controller.activeAudioTrackCount, 7);
+    expect(controller.projectState.audioClips.single.track, 7);
     controller.dispose();
   });
 
@@ -2485,6 +2564,27 @@ void main() {
                 sourceEnd: 2,
                 enabled: false,
               ),
+            ]
+            ..audioClips = const [
+              AudioClip(
+                id: 'audio-enabled',
+                sourcePath: r'C:\media\music.wav',
+                sourceName: 'music.wav',
+                timelineStart: 0,
+                timelineEnd: 2,
+                sourceStart: 0,
+                sourceEnd: 2,
+              ),
+              AudioClip(
+                id: 'audio-disabled',
+                sourcePath: r'C:\media\unused.wav',
+                sourceName: 'unused.wav',
+                timelineStart: 0,
+                timelineEnd: 2,
+                sourceStart: 0,
+                sourceEnd: 2,
+                enabled: false,
+              ),
             ];
 
       expect(controller.renderSafetyBlockCount, greaterThan(0));
@@ -2498,6 +2598,7 @@ void main() {
       expect(apiClient.renderSegments.single.audioMuted, isFalse);
       expect(apiClient.renderSegments.single.audioNormalize, isTrue);
       expect(apiClient.renderVideoOverlays.single.id, 'v2-enabled');
+      expect(apiClient.renderAudioClips.single.id, 'audio-enabled');
       expect(
         apiClient.renderSegments.single.duration,
         greaterThanOrEqualTo(2.0),
@@ -2539,6 +2640,17 @@ void main() {
                 sourceStart: 0,
                 sourceEnd: 6,
               ),
+            ]
+            ..audioClips = const [
+              AudioClip(
+                id: 'audio-multi',
+                sourcePath: r'C:\media\music.wav',
+                sourceName: 'music.wav',
+                timelineStart: 2,
+                timelineEnd: 8,
+                sourceStart: 0,
+                sourceEnd: 6,
+              ),
             ];
 
       controller.setExportProfiles({'16:9', '9:16', '1:1'});
@@ -2553,6 +2665,7 @@ void main() {
       expect(apiClient.batchRenderRequested, isTrue);
       expect(apiClient.batchRenderItems, hasLength(3));
       expect(apiClient.batchVideoOverlays.single.id, 'v2-multi');
+      expect(apiClient.batchAudioClips.single.id, 'audio-multi');
       expect(
         apiClient.batchRenderItems.map((item) => item['aspect_ratio']).toList(),
         ['16:9', '9:16', '1:1'],
@@ -3591,7 +3704,9 @@ class _RecordingApiClient extends ApiClient {
   bool batchRenderRequested = false;
   List<HighlightSegment> renderSegments = const [];
   List<VideoOverlayClip> renderVideoOverlays = const [];
+  List<AudioClip> renderAudioClips = const [];
   List<VideoOverlayClip> batchVideoOverlays = const [];
+  List<AudioClip> batchAudioClips = const [];
   List<Map<String, dynamic>> batchRenderItems = const [];
   String? savedProjectJobId;
   ProjectState? savedProject;
@@ -3609,6 +3724,7 @@ class _RecordingApiClient extends ApiClient {
     List<HighlightSegment> segments, {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '16:9',
     bool includeCaptions = false,
@@ -3617,6 +3733,7 @@ class _RecordingApiClient extends ApiClient {
     renderRequested = true;
     renderSegments = List<HighlightSegment>.of(segments);
     renderVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
+    renderAudioClips = List<AudioClip>.of(audioClips);
   }
 
   @override
@@ -3625,6 +3742,7 @@ class _RecordingApiClient extends ApiClient {
     List<Map<String, dynamic>> items, {
     List<CaptionSegment> captions = const [],
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     CaptionRenderStyle? captionStyle,
     String aspectRatio = '9:16',
     bool includeCaptions = true,
@@ -3632,6 +3750,7 @@ class _RecordingApiClient extends ApiClient {
     batchRenderRequested = true;
     batchRenderItems = List<Map<String, dynamic>>.of(items);
     batchVideoOverlays = List<VideoOverlayClip>.of(videoOverlays);
+    batchAudioClips = List<AudioClip>.of(audioClips);
   }
 
   @override

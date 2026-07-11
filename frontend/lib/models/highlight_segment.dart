@@ -333,6 +333,131 @@ class VideoOverlayClip {
   };
 }
 
+class AudioClip {
+  const AudioClip({
+    required this.id,
+    required this.sourcePath,
+    required this.sourceName,
+    required this.timelineStart,
+    required this.timelineEnd,
+    required this.sourceStart,
+    required this.sourceEnd,
+    this.track = 3,
+    this.enabled = true,
+    this.muted = false,
+    this.volume = 1.0,
+    this.pan = 0.0,
+    this.fadeIn = 0.0,
+    this.fadeOut = 0.0,
+  });
+
+  final String id;
+  final String sourcePath;
+  final String sourceName;
+  final double timelineStart;
+  final double timelineEnd;
+  final double sourceStart;
+  final double sourceEnd;
+  final int track;
+  final bool enabled;
+  final bool muted;
+  final double volume;
+  final double pan;
+  final double fadeIn;
+  final double fadeOut;
+
+  double get timelineDuration => timelineEnd - timelineStart;
+
+  AudioClip copyWith({
+    String? id,
+    String? sourcePath,
+    String? sourceName,
+    double? timelineStart,
+    double? timelineEnd,
+    double? sourceStart,
+    double? sourceEnd,
+    int? track,
+    bool? enabled,
+    bool? muted,
+    double? volume,
+    double? pan,
+    double? fadeIn,
+    double? fadeOut,
+  }) {
+    return AudioClip(
+      id: id ?? this.id,
+      sourcePath: sourcePath ?? this.sourcePath,
+      sourceName: sourceName ?? this.sourceName,
+      timelineStart: timelineStart ?? this.timelineStart,
+      timelineEnd: timelineEnd ?? this.timelineEnd,
+      sourceStart: sourceStart ?? this.sourceStart,
+      sourceEnd: sourceEnd ?? this.sourceEnd,
+      track: track ?? this.track,
+      enabled: enabled ?? this.enabled,
+      muted: muted ?? this.muted,
+      volume: volume ?? this.volume,
+      pan: pan ?? this.pan,
+      fadeIn: fadeIn ?? this.fadeIn,
+      fadeOut: fadeOut ?? this.fadeOut,
+    );
+  }
+
+  factory AudioClip.fromJson(Map<String, dynamic> json) {
+    final timelineStart = _jsonTimelineSeconds(json['timeline_start']);
+    final sourceStart = _jsonTimelineSeconds(json['source_start']);
+    final minimumDuration = timecodeFrameDurationSeconds;
+    final timelineEnd = math.max(
+      timelineStart + minimumDuration,
+      _jsonTimelineSeconds(json['timeline_end']),
+    );
+    final sourceEnd = math.max(
+      sourceStart + minimumDuration,
+      _jsonTimelineSeconds(json['source_end']),
+    );
+    return AudioClip(
+      id: json['id']?.toString() ?? '',
+      sourcePath: json['source_path']?.toString() ?? '',
+      sourceName: json['source_name']?.toString() ?? 'Audio',
+      timelineStart: timelineStart,
+      timelineEnd: snapSecondsToFrame(timelineEnd),
+      sourceStart: sourceStart,
+      sourceEnd: snapSecondsToFrame(sourceEnd),
+      track: ((json['track'] as num?)?.toInt() ?? 3).clamp(3, 8),
+      enabled: json['enabled'] as bool? ?? true,
+      muted: json['muted'] as bool? ?? false,
+      volume: ((json['volume'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 2.0)
+          .toDouble(),
+      pan: ((json['pan'] as num?)?.toDouble() ?? 0.0)
+          .clamp(-1.0, 1.0)
+          .toDouble(),
+      fadeIn: ((json['fade_in'] as num?)?.toDouble() ?? 0.0)
+          .clamp(0.0, 10.0)
+          .toDouble(),
+      fadeOut: ((json['fade_out'] as num?)?.toDouble() ?? 0.0)
+          .clamp(0.0, 10.0)
+          .toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'source_path': sourcePath,
+    'source_name': sourceName,
+    'timeline_start': snapSecondsToFrame(timelineStart),
+    'timeline_end': snapSecondsToFrame(timelineEnd),
+    'source_start': snapSecondsToFrame(sourceStart),
+    'source_end': snapSecondsToFrame(sourceEnd),
+    'track': track.clamp(3, 8),
+    'enabled': enabled,
+    'muted': muted,
+    'volume': volume.clamp(0.0, 2.0),
+    'pan': pan.clamp(-1.0, 1.0),
+    'fade_in': fadeIn.clamp(0.0, 10.0),
+    'fade_out': fadeOut.clamp(0.0, 10.0),
+  };
+}
+
 class HighlightSegment {
   const HighlightSegment({
     required this.order,

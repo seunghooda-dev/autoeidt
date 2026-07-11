@@ -74,6 +74,7 @@ def test_render_video_job_does_not_overwrite_existing_output(
         "previous",
         encoding="utf-8",
     )
+    rendered_kwargs: dict[str, Any] = {}
 
     def fake_render_highlights(
         video_path: Path,
@@ -81,6 +82,7 @@ def test_render_video_job_does_not_overwrite_existing_output(
         output_path: Path,
         **kwargs,
     ) -> Path:
+        rendered_kwargs.update(kwargs)
         output_path.write_text("new", encoding="utf-8")
         return output_path
 
@@ -90,13 +92,17 @@ def test_render_video_job_does_not_overwrite_existing_output(
     result = tasks.render_video_job(
         "job-1",
         [{"order": 1, "start": 0, "end": 10, "reason": "test"}],
-        {"output_name": "youtube_highlights.mp4"},
+        {
+            "output_name": "youtube_highlights.mp4",
+            "audio_clips": [{"id": "music-1", "source_path": "music.wav"}],
+        },
     )
 
     assert Path(result["render_path"]).name == "youtube_highlights_002.mp4"
     assert result["render_duration_seconds"] == 10.0
     assert result["render_size_bytes"] == 3
     assert result["render_warnings"]
+    assert rendered_kwargs["audio_clips"][0]["id"] == "music-1"
     assert "파일 크기" in result["render_warnings"][0]
     assert (fake_store.output / "youtube_highlights.mp4").read_text(
         encoding="utf-8",

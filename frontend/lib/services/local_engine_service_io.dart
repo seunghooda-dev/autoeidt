@@ -240,7 +240,8 @@ class LocalEngineService {
           featureSet.contains('v2_overlay_render_v1') &&
           featureSet.contains('v2_overlay_program_preview_v1') &&
           featureSet.contains('overlay_audio_a3_v1') &&
-          featureSet.contains('dynamic_tracks_v4_a8_v1');
+          featureSet.contains('dynamic_tracks_v4_a8_v1') &&
+          featureSet.contains('standalone_audio_clips_v1');
     } catch (_) {
       return false;
     }

@@ -165,9 +165,11 @@ class TimelineEditor extends StatefulWidget {
     required this.duration,
     required this.segments,
     this.videoOverlays = const [],
+    this.audioClips = const [],
     required this.playheadSeconds,
     required this.selectedSegmentOrder,
     this.selectedVideoOverlayId,
+    this.selectedAudioClipId,
     required this.markIn,
     required this.markOut,
     required this.timelineMarkers,
@@ -195,9 +197,11 @@ class TimelineEditor extends StatefulWidget {
     required this.razorTool,
     required this.onSegmentChanged,
     this.onVideoOverlayChanged,
+    this.onAudioClipChanged,
     required this.onScrub,
     required this.onSegmentSelected,
     this.onVideoOverlaySelected,
+    this.onAudioClipSelected,
     this.sequenceMode = false,
     this.sourceDuration,
     this.onSetMarkIn,
@@ -283,15 +287,18 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleOverlayAudioTargetAt,
     this.onToggleOverlayAudioAt,
     this.onDeleteVideoOverlay,
+    this.onDeleteAudioClip,
     this.onZoomDelta,
   });
 
   final double duration;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final List<AudioClip> audioClips;
   final double playheadSeconds;
   final int? selectedSegmentOrder;
   final String? selectedVideoOverlayId;
+  final String? selectedAudioClipId;
   final double? markIn;
   final double? markOut;
   final List<TimelineMarker> timelineMarkers;
@@ -319,9 +326,11 @@ class TimelineEditor extends StatefulWidget {
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
+  final ValueChanged<AudioClip>? onAudioClipChanged;
   final ValueChanged<double> onScrub;
   final ValueChanged<int> onSegmentSelected;
   final ValueChanged<String>? onVideoOverlaySelected;
+  final ValueChanged<String>? onAudioClipSelected;
   final bool sequenceMode;
   final double? sourceDuration;
   final ValueChanged<double>? onSetMarkIn;
@@ -407,6 +416,7 @@ class TimelineEditor extends StatefulWidget {
   final ValueChanged<int>? onToggleOverlayAudioTargetAt;
   final ValueChanged<int>? onToggleOverlayAudioAt;
   final VoidCallback? onDeleteVideoOverlay;
+  final VoidCallback? onDeleteAudioClip;
   final ValueChanged<double>? onZoomDelta;
 
   @override
@@ -586,6 +596,7 @@ class _TimelineEditorState extends State<TimelineEditor> {
                           layout: layout,
                           segments: widget.segments,
                           videoOverlays: widget.videoOverlays,
+                          audioClips: widget.audioClips,
                           activeVideoTrackCount: layout.activeVideoTracks,
                           activeAudioTrackCount: layout.activeAudioTracks,
                           targetedVideoOverlayTrack:
@@ -762,6 +773,38 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                     widget.audioTrack3Locked,
                                                 onSelected: widget
                                                     .onVideoOverlaySelected,
+                                              ),
+                                          if (widget.sequenceMode)
+                                            for (final clip
+                                                in widget.audioClips)
+                                              _StandaloneAudioBlock(
+                                                clip: clip,
+                                                duration: widget.duration,
+                                                canvasWidth: width,
+                                                top:
+                                                    layout.audioTrackTop(
+                                                      clip.track
+                                                          .clamp(
+                                                            3,
+                                                            layout
+                                                                .activeAudioTracks,
+                                                          )
+                                                          .toInt(),
+                                                    ) +
+                                                    2,
+                                                height: layout.laneHeight - 4,
+                                                selected:
+                                                    widget
+                                                        .selectedAudioClipId ==
+                                                    clip.id,
+                                                locked:
+                                                    widget.audioTrack3Locked,
+                                                onSelected:
+                                                    widget.onAudioClipSelected,
+                                                onChanged:
+                                                    widget.onAudioClipChanged,
+                                                onDelete:
+                                                    widget.onDeleteAudioClip,
                                               ),
                                           Align(
                                             alignment: Alignment.bottomLeft,
@@ -2659,11 +2702,250 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
   }
 }
 
+class _StandaloneAudioBlock extends StatefulWidget {
+  const _StandaloneAudioBlock({
+    required this.clip,
+    required this.duration,
+    required this.canvasWidth,
+    required this.top,
+    required this.height,
+    required this.selected,
+    required this.locked,
+    required this.onSelected,
+    required this.onChanged,
+    required this.onDelete,
+  });
+
+  final AudioClip clip;
+  final double duration;
+  final double canvasWidth;
+  final double top;
+  final double height;
+  final bool selected;
+  final bool locked;
+  final ValueChanged<String>? onSelected;
+  final ValueChanged<AudioClip>? onChanged;
+  final VoidCallback? onDelete;
+
+  @override
+  State<_StandaloneAudioBlock> createState() => _StandaloneAudioBlockState();
+}
+
+class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
+  AudioClip? _origin;
+  double _originGlobalX = 0;
+  _OverlayDragMode? _mode;
+
+  double get _pixelsPerSecond =>
+      widget.duration <= 0 ? 1 : widget.canvasWidth / widget.duration;
+
+  void _startDrag(DragStartDetails details, _OverlayDragMode mode) {
+    if (widget.locked || widget.onChanged == null) {
+      return;
+    }
+    widget.onSelected?.call(widget.clip.id);
+    _origin = widget.clip;
+    _originGlobalX = details.globalPosition.dx;
+    _mode = mode;
+  }
+
+  void _updateDrag(DragUpdateDetails details) {
+    final origin = _origin;
+    final mode = _mode;
+    final onChanged = widget.onChanged;
+    if (origin == null || mode == null || onChanged == null) {
+      return;
+    }
+    final delta = snapSecondsToFrame(
+      (details.globalPosition.dx - _originGlobalX) / _pixelsPerSecond,
+    );
+    final minimum = timecodeFrameDurationSeconds;
+    switch (mode) {
+      case _OverlayDragMode.move:
+        final clipDuration = origin.timelineDuration;
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta)
+              .clamp(0.0, math.max(0.0, widget.duration - clipDuration))
+              .toDouble(),
+        );
+        onChanged(
+          origin.copyWith(
+            timelineStart: start,
+            timelineEnd: snapSecondsToFrame(start + clipDuration),
+          ),
+        );
+      case _OverlayDragMode.trimStart:
+        final maxStart = origin.timelineEnd - minimum;
+        final start = snapSecondsToFrame(
+          (origin.timelineStart + delta).clamp(0.0, maxStart).toDouble(),
+        );
+        final sourceStart = snapSecondsToFrame(
+          (origin.sourceStart + (start - origin.timelineStart))
+              .clamp(0.0, origin.sourceEnd - minimum)
+              .toDouble(),
+        );
+        onChanged(
+          origin.copyWith(timelineStart: start, sourceStart: sourceStart),
+        );
+      case _OverlayDragMode.trimEnd:
+        final end = snapSecondsToFrame(
+          (origin.timelineEnd + delta)
+              .clamp(origin.timelineStart + minimum, widget.duration)
+              .toDouble(),
+        );
+        final sourceEnd = snapSecondsToFrame(
+          math.max(
+            origin.sourceStart + minimum,
+            origin.sourceEnd + (end - origin.timelineEnd),
+          ),
+        );
+        onChanged(origin.copyWith(timelineEnd: end, sourceEnd: sourceEnd));
+    }
+  }
+
+  void _endDrag(DragEndDetails details) {
+    _origin = null;
+    _mode = null;
+  }
+
+  Future<void> _showMenu(TapDownDetails details) async {
+    widget.onSelected?.call(widget.clip.id);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+        details.globalPosition.dx,
+        details.globalPosition.dy,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'delete',
+          enabled: !widget.locked,
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.delete_outline),
+            title: Text('Delete A${widget.clip.track} clip'),
+            subtitle: const Text('Delete'),
+          ),
+        ),
+      ],
+    );
+    if (action == 'delete') {
+      widget.onDelete?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clip = widget.clip;
+    final left = widget.duration <= 0
+        ? 0.0
+        : clip.timelineStart / widget.duration * widget.canvasWidth;
+    final width = math.max(
+      18.0,
+      clip.timelineDuration /
+          math.max(widget.duration, 0.001) *
+          widget.canvasWidth,
+    );
+    const accent = _TimelinePainter._standaloneAudioColor;
+    final active = clip.enabled && !clip.muted && clip.volume > 0;
+    return Positioned(
+      key: ValueKey('audio-clip-${clip.id}'),
+      left: left,
+      top: widget.top,
+      width: width,
+      height: widget.height,
+      child: Opacity(
+        opacity: active ? 1 : 0.4,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => widget.onSelected?.call(clip.id),
+          onSecondaryTapDown: _showMenu,
+          onHorizontalDragStart: (details) =>
+              _startDrag(details, _OverlayDragMode.move),
+          onHorizontalDragUpdate: _updateDrag,
+          onHorizontalDragEnd: _endDrag,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: widget.selected ? 0.96 : 0.78),
+              border: Border.all(
+                color: widget.selected ? Colors.white : accent,
+                width: widget.selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  left: 7,
+                  right: 7,
+                  child: Row(
+                    children: [
+                      Icon(
+                        active ? Icons.graphic_eq : Icons.volume_off_outlined,
+                        size: 13,
+                        color: _TimelinePainter._clipTextColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'A${clip.track} ${clip.sourceName}  ${(clip.volume * 100).round()}%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: _TimelinePainter._clipTextColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!widget.locked) ...[
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerLeft,
+                    cursor: SystemMouseCursors.resizeLeft,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimStart),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                  _OverlayTrimHandle(
+                    alignment: Alignment.centerRight,
+                    cursor: SystemMouseCursors.resizeRight,
+                    onStart: (details) =>
+                        _startDrag(details, _OverlayDragMode.trimEnd),
+                    onUpdate: _updateDrag,
+                    onEnd: _endDrag,
+                  ),
+                ],
+                if (widget.locked)
+                  const Positioned(
+                    right: 5,
+                    top: 5,
+                    child: Icon(
+                      Icons.lock,
+                      size: 12,
+                      color: _TimelinePainter._clipTextColor,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimelineTrackHeaders extends StatelessWidget {
   const _TimelineTrackHeaders({
     required this.layout,
     required this.segments,
     required this.videoOverlays,
+    required this.audioClips,
     required this.activeVideoTrackCount,
     required this.activeAudioTrackCount,
     required this.targetedVideoOverlayTrack,
@@ -2701,6 +2983,7 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final _TimelineLayout layout;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
   final int targetedVideoOverlayTrack;
@@ -2747,9 +3030,15 @@ class _TimelineTrackHeaders extends StatelessWidget {
       );
 
   bool _overlayAudioEnabledFor(int track) {
-    final clips = videoOverlays.where((overlay) => overlay.audioTrack == track);
-    return clips.isEmpty ||
-        clips.any((overlay) => !overlay.muted && overlay.audioVolume > 0);
+    final overlays = videoOverlays.where(
+      (overlay) => overlay.audioTrack == track,
+    );
+    final standalone = audioClips.where((clip) => clip.track == track);
+    return (overlays.isEmpty && standalone.isEmpty) ||
+        overlays.any((overlay) => !overlay.muted && overlay.audioVolume > 0) ||
+        standalone.any(
+          (clip) => clip.enabled && !clip.muted && clip.volume > 0,
+        );
   }
 
   void _toggleOverlayTarget(int track) {
@@ -3131,6 +3420,7 @@ class _TimelinePainter extends CustomPainter {
   static const Color _audioClipColor = Color(0xFFE7A66A);
   static const Color _audioClipActiveColor = Color(0xFFF4BE84);
   static const Color _overlayAudioColor = Color(0xFFD18A63);
+  static const Color _standaloneAudioColor = Color(0xFFF2B84B);
   static const Color _clipTextColor = Color(0xFF11140F);
 
   final _TimelineLayout layout;

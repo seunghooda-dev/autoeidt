@@ -124,6 +124,75 @@ def test_render_composites_v2_overlay_before_captions(
     assert ";[a3mix0]anull[outa]" in filter_complex
 
 
+def test_render_mixes_standalone_audio_clip_on_auxiliary_track(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+    audio_path = tmp_path / "music.wav"
+    audio_path.write_bytes(b"audio")
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [{"order": 1, "start": 0, "end": 12, "reason": "base"}],
+        tmp_path / "audio-output.mp4",
+        audio_clips=[
+            {
+                "id": "music-1",
+                "source_path": str(audio_path),
+                "source_name": "music.wav",
+                "timeline_start": 2.5,
+                "timeline_end": 8,
+                "source_start": 1,
+                "source_end": 6.5,
+                "track": 8,
+                "volume": 0.6,
+                "pan": -0.4,
+                "fade_in": 0.5,
+                "fade_out": 0.75,
+            },
+            {
+                "id": "disabled-offline",
+                "source_path": str(tmp_path / "missing.wav"),
+                "timeline_start": 0,
+                "timeline_end": 1,
+                "source_start": 0,
+                "source_end": 1,
+                "enabled": False,
+            },
+        ],
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+    input_paths = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-i"
+    ]
+    assert input_paths[1:] == [str(audio_path.resolve())]
+    assert "[1:a:0]atrim=start=1.000000:end=6.500000" in filter_complex
+    assert "aformat=sample_rates=48000:channel_layouts=stereo" in filter_complex
+    assert "volume=0.600" in filter_complex
+    assert "pan=stereo|c0=1.000000*c0|c1=0.600000*c1" in filter_complex
+    assert "afade=t=in:st=0:d=0.500000" in filter_complex
+    assert "afade=t=out:st=4.750000:d=0.750000" in filter_complex
+    assert "adelay=delays=2500:all=1" in filter_complex
+    assert "[standaloneaudio0]" in filter_complex
+    assert ";[standalonemix0]anull[outa]" in filter_complex
+
+
 def test_render_layers_higher_video_tracks_last(
     tmp_path: Path,
     monkeypatch,
@@ -366,6 +435,8 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     source.write_bytes(b"broadcast-source")
     overlay_source = tmp_path / "broll.mov"
     overlay_source.write_bytes(b"overlay-source")
+    audio_source = tmp_path / "music.wav"
+    audio_source.write_bytes(b"audio-source")
     calls: list[dict] = []
 
     def fake_render(
@@ -383,6 +454,7 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
                 "output_size": kwargs.get("output_size"),
                 "processing_size": kwargs.get("processing_size"),
                 "video_overlays": kwargs.get("video_overlays"),
+                "audio_clips": kwargs.get("audio_clips"),
             }
         )
         output_path.write_bytes(b"preview")
@@ -417,16 +489,30 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             "source_end": 1,
         }
     ]
+    audio_clips = [
+        {
+            "id": "audio-preview",
+            "source_path": str(audio_source),
+            "source_name": "music.wav",
+            "timeline_start": 0.5,
+            "timeline_end": 1.5,
+            "source_start": 2,
+            "source_end": 3,
+            "track": 8,
+        }
+    ]
     output, cached, source_start, duration = ffmpeg_service.create_program_preview_proxy(
         source,
         segment,
         video_overlays=overlays,
+        audio_clips=audio_clips,
     )
     cached_output, cached_again, _, _ = (
         ffmpeg_service.create_program_preview_proxy(
             source,
             segment,
             video_overlays=overlays,
+            audio_clips=audio_clips,
         )
     )
 
@@ -451,6 +537,10 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     assert calls[0]["video_overlays"][0]["source_path"] == str(
         overlay_source.resolve()
     )
+    assert calls[0]["audio_clips"][0]["id"] == "audio-preview"
+    assert calls[0]["audio_clips"][0]["source_path"] == str(
+        audio_source.resolve()
+    )
 
     overlay_source.write_bytes(b"updated-overlay-source")
     changed_output, changed_cached, _, _ = (
@@ -458,11 +548,25 @@ def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
             source,
             segment,
             video_overlays=overlays,
+            audio_clips=audio_clips,
         )
     )
     assert changed_output != output
     assert changed_cached is False
     assert len(calls) == 2
+
+    audio_source.write_bytes(b"updated-audio-source")
+    audio_changed_output, audio_changed_cached, _, _ = (
+        ffmpeg_service.create_program_preview_proxy(
+            source,
+            segment,
+            video_overlays=overlays,
+            audio_clips=audio_clips,
+        )
+    )
+    assert audio_changed_output != changed_output
+    assert audio_changed_cached is False
+    assert len(calls) == 3
 
 
 def test_program_preview_window_remaps_effects_audio_and_fades(

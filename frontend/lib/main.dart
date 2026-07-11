@@ -509,10 +509,15 @@ class _EditorDashboardState extends State<EditorDashboard>
         isShift &&
         (key == LogicalKeyboardKey.delete ||
             key == LogicalKeyboardKey.backspace)) {
-      editor.extractSelectedSegment();
+      if (editor.selectedAudioClip != null ||
+          editor.selectedVideoOverlay != null) {
+        editor.deleteSelectedTimelineItem();
+      } else {
+        editor.extractSelectedSegment();
+      }
     } else if (key == LogicalKeyboardKey.delete ||
         key == LogicalKeyboardKey.backspace) {
-      editor.deleteSelectedSegment();
+      editor.deleteSelectedTimelineItem();
     } else if (!isCtrl &&
         !isAlt &&
         !isShift &&
@@ -1535,10 +1540,13 @@ class _MediaPanel extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final asset = visibleAssets[index];
                       final active = controller.sourceMediaPath == asset.path;
+                      final audio = EditorController.isAudioMediaPath(
+                        asset.path,
+                      );
                       return _MediaAssetTile(
                         asset: asset,
                         active: active,
-                        onOpen: asset.isOffline
+                        onOpen: asset.isOffline || audio
                             ? null
                             : () =>
                                   _activateMediaAssetPath(context, asset.path),
@@ -1573,7 +1581,7 @@ class _MediaPanel extends StatelessWidget {
   Future<void> _importAssets(BuildContext context) async {
     final editor = context.read<EditorController>();
     final workspace = context.read<WorkspaceController>();
-    final files = await editor.pickMediaAssets();
+    final files = await editor.pickMediaAssets(includeAudio: true);
     if (!context.mounted || files.isEmpty) {
       return;
     }
@@ -1584,10 +1592,14 @@ class _MediaPanel extends StatelessWidget {
       }
     }
     if (editor.selectedFile == null) {
-      final first = files.first;
-      final path = first.path;
-      if (path != null && path.isNotEmpty) {
-        await editor.openMediaFile(first);
+      for (final file in files) {
+        final path = file.path;
+        if (path != null &&
+            path.isNotEmpty &&
+            !EditorController.isAudioMediaPath(path)) {
+          await editor.openMediaFile(file);
+          break;
+        }
       }
     }
   }
@@ -1600,6 +1612,7 @@ class _MediaPanel extends StatelessWidget {
   }) async {
     final workspace = context.read<WorkspaceController>();
     final editor = context.read<EditorController>();
+    final audio = EditorController.isAudioMediaPath(asset.path);
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -1611,28 +1624,45 @@ class _MediaPanel extends StatelessWidget {
       items: [
         PopupMenuItem(
           value: 'open',
-          enabled: !asset.isOffline && !active,
+          enabled: !asset.isOffline && !active && !audio,
           child: const ListTile(
             dense: true,
             leading: Icon(Icons.play_circle_outline),
             title: Text('Open as source'),
           ),
         ),
-        PopupMenuItem(
-          value: 'overlay',
-          enabled:
-              !asset.isOffline &&
-              editor.segments.isNotEmpty &&
-              !editor.videoOverlayTrackLocked,
-          child: ListTile(
-            dense: true,
-            leading: const Icon(Icons.layers_outlined),
-            title: Text(
-              'Add to V${editor.videoOverlayTrackTargeted ? editor.targetedVideoOverlayTrack : 2} at playhead',
+        if (audio)
+          PopupMenuItem(
+            value: 'audio',
+            enabled:
+                !asset.isOffline &&
+                editor.segments.isNotEmpty &&
+                !editor.audioTrack3Locked,
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.audio_file_outlined),
+              title: Text(
+                'Add to A${editor.targetedOverlayAudioTrack.clamp(3, editor.activeAudioTrackCount)} at playhead',
+              ),
+              subtitle: const Text('Music / narration / sound effect'),
             ),
-            subtitle: const Text('B-roll / picture-in-picture'),
+          )
+        else
+          PopupMenuItem(
+            value: 'overlay',
+            enabled:
+                !asset.isOffline &&
+                editor.segments.isNotEmpty &&
+                !editor.videoOverlayTrackLocked,
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(
+                'Add to V${editor.videoOverlayTrackTargeted ? editor.targetedVideoOverlayTrack : 2} at playhead',
+              ),
+              subtitle: const Text('B-roll / picture-in-picture'),
+            ),
           ),
-        ),
         PopupMenuItem(
           value: 'favorite',
           child: ListTile(
@@ -1678,6 +1708,11 @@ class _MediaPanel extends StatelessWidget {
       await _activateMediaAssetPath(context, asset.path);
     } else if (action == 'overlay') {
       editor.addVideoOverlay(sourcePath: asset.path, sourceName: asset.name);
+    } else if (action == 'audio') {
+      await editor.addAudioClipFromMedia(
+        sourcePath: asset.path,
+        sourceName: asset.name,
+      );
     } else if (action == 'relink') {
       await _relinkAsset(context, asset, active: active);
     } else if (action == 'favorite') {
@@ -1708,7 +1743,10 @@ class _MediaPanel extends StatelessWidget {
       }
       return;
     }
-    final files = await editor.pickMediaAssets(allowMultiple: false);
+    final files = await editor.pickMediaAssets(
+      allowMultiple: false,
+      includeAudio: EditorController.isAudioMediaPath(asset.path),
+    );
     if (!context.mounted || files.isEmpty) {
       return;
     }
@@ -1885,7 +1923,16 @@ class _MediaAssetTile extends StatelessWidget {
     final extension = name.contains('.')
         ? name.split('.').last.toLowerCase()
         : '';
-    if (const {'wav', 'mp3', 'aac', 'flac', 'm4a'}.contains(extension)) {
+    if (const {
+      'wav',
+      'mp3',
+      'aac',
+      'flac',
+      'm4a',
+      'ogg',
+      'opus',
+      'wma',
+    }.contains(extension)) {
       return Icons.graphic_eq;
     }
     if (const {'png', 'jpg', 'jpeg', 'webp', 'gif'}.contains(extension)) {
@@ -2284,7 +2331,16 @@ class _TimelineDropTarget extends StatelessWidget {
         final asset = workspace.assets.firstWhere(
           (asset) => asset.path == details.data,
         );
-        if (editor.videoOverlayTrackTargeted &&
+        if (EditorController.isAudioMediaPath(asset.path)) {
+          if (editor.segments.isNotEmpty && !editor.audioTrack3Locked) {
+            unawaited(
+              editor.addAudioClipFromMedia(
+                sourcePath: asset.path,
+                sourceName: asset.name,
+              ),
+            );
+          }
+        } else if (editor.videoOverlayTrackTargeted &&
             !editor.videoOverlayTrackLocked &&
             editor.segments.isNotEmpty) {
           editor.addVideoOverlay(
@@ -2299,6 +2355,11 @@ class _TimelineDropTarget extends StatelessWidget {
       },
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;
+        final editor = context.watch<EditorController>();
+        final candidatePath = isHovering ? candidateData.first : null;
+        final hoveringAudio =
+            candidatePath != null &&
+            EditorController.isAudioMediaPath(candidatePath);
         return Stack(
           children: [
             child,
@@ -2306,11 +2367,10 @@ class _TimelineDropTarget extends StatelessWidget {
               Positioned.fill(
                 child: IgnorePointer(
                   child: _TimelineDropOverlay(
-                    message:
-                        context
-                            .watch<EditorController>()
-                            .videoOverlayTrackTargeted
-                        ? 'Drop to place on V${context.watch<EditorController>().targetedVideoOverlayTrack} at playhead'
+                    message: hoveringAudio
+                        ? 'Drop to place on A${editor.targetedOverlayAudioTrack} at playhead'
+                        : editor.videoOverlayTrackTargeted
+                        ? 'Drop to place on V${editor.targetedVideoOverlayTrack} at playhead'
                         : 'Drop to analyze on V1/A1',
                   ),
                 ),
@@ -2657,9 +2717,11 @@ class _TimelineEditorBody extends StatelessWidget {
       sequenceMode: controller.isProgramMonitor,
       segments: controller.segments,
       videoOverlays: controller.videoOverlays,
+      audioClips: controller.audioClips,
       playheadSeconds: controller.monitorPositionSeconds,
       selectedSegmentOrder: controller.selectedSegmentOrder,
       selectedVideoOverlayId: controller.selectedVideoOverlayId,
+      selectedAudioClipId: controller.selectedAudioClipId,
       markIn: controller.markIn,
       markOut: controller.markOut,
       timelineMarkers: controller.timelineMarkers,
@@ -2689,6 +2751,7 @@ class _TimelineEditorBody extends StatelessWidget {
       onVideoOverlayChanged: context
           .read<EditorController>()
           .updateVideoOverlay,
+      onAudioClipChanged: context.read<EditorController>().updateAudioClip,
       onScrub: (seconds) {
         context.read<EditorController>().seekMonitorTo(
           seconds,
@@ -2699,6 +2762,7 @@ class _TimelineEditorBody extends StatelessWidget {
       onVideoOverlaySelected: context
           .read<EditorController>()
           .selectVideoOverlay,
+      onAudioClipSelected: context.read<EditorController>().selectAudioClip,
       onSetMarkIn: context.read<EditorController>().setMarkInAt,
       onSetMarkOut: context.read<EditorController>().setMarkOutAt,
       onClearMarks: context.read<EditorController>().clearMarks,
@@ -2880,6 +2944,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onDeleteVideoOverlay: context
           .read<EditorController>()
           .deleteSelectedVideoOverlay,
+      onDeleteAudioClip: context
+          .read<EditorController>()
+          .deleteSelectedAudioClip,
       onZoomDelta: context.read<EditorController>().zoomTimeline,
     );
   }

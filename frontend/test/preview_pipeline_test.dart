@@ -353,7 +353,7 @@ void main() {
   });
 
   test(
-    'program preview maps only overlapping V2 media into its window',
+    'program preview maps only overlapping V2 and audio media into its window',
     () async {
       final originalPlatform = VideoPlayerPlatform.instance;
       final platform = _FakeVideoPlayerPlatform();
@@ -402,6 +402,27 @@ void main() {
               sourceEnd: 4,
             ),
           ]
+          ..audioClips = const [
+            AudioClip(
+              id: 'audio-overlap',
+              sourcePath: r'C:\media\music.wav',
+              sourceName: 'music.wav',
+              timelineStart: 4,
+              timelineEnd: 12,
+              sourceStart: 2,
+              sourceEnd: 10,
+              track: 8,
+            ),
+            AudioClip(
+              id: 'audio-outside',
+              sourcePath: r'C:\media\later.wav',
+              sourceName: 'later.wav',
+              timelineStart: 20,
+              timelineEnd: 24,
+              sourceStart: 0,
+              sourceEnd: 4,
+            ),
+          ]
           ..selectedSegmentOrder = 1;
 
         await controller.setPreviewMonitorMode('program');
@@ -413,6 +434,13 @@ void main() {
         expect(overlays.single.timelineEnd, 8);
         expect(overlays.single.sourceStart, 2);
         expect(overlays.single.sourceEnd, 6);
+        final audioClips = api.requestedAudioClips.last;
+        expect(audioClips, hasLength(1));
+        expect(audioClips.single.id, 'audio-overlap');
+        expect(audioClips.single.timelineStart, 4);
+        expect(audioClips.single.timelineEnd, 8);
+        expect(audioClips.single.sourceStart, 2);
+        expect(audioClips.single.sourceEnd, 6);
       } finally {
         controller.dispose();
         await platform.close();
@@ -866,6 +894,7 @@ class _ProxyApiClient extends ApiClient {
   final List<double> requestedDurations = [];
   final List<HighlightSegment?> requestedSegments = [];
   final List<List<VideoOverlayClip>> requestedVideoOverlays = [];
+  final List<List<AudioClip>> requestedAudioClips = [];
   final List<String> requestedAspectRatios = [];
 
   @override
@@ -888,6 +917,7 @@ class _ProxyApiClient extends ApiClient {
     double? durationSeconds,
     HighlightSegment? segment,
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     String aspectRatio = '16:9',
   }) async {
     final duration = durationSeconds ?? segment?.outputDuration ?? 8;
@@ -896,6 +926,7 @@ class _ProxyApiClient extends ApiClient {
     requestedDurations.add(duration);
     requestedSegments.add(segment);
     requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
+    requestedAudioClips.add(List<AudioClip>.of(audioClips));
     requestedAspectRatios.add(aspectRatio);
     return LocalPreviewInfo(
       url:
@@ -918,6 +949,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
     double? durationSeconds,
     HighlightSegment? segment,
     List<VideoOverlayClip> videoOverlays = const [],
+    List<AudioClip> audioClips = const [],
     String aspectRatio = '16:9',
   }) async {
     if (segment != null &&
@@ -928,6 +960,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       requestedDurations.add(durationSeconds ?? segment.outputDuration);
       requestedSegments.add(segment);
       requestedVideoOverlays.add(List<VideoOverlayClip>.of(videoOverlays));
+      requestedAudioClips.add(List<AudioClip>.of(audioClips));
       requestedAspectRatios.add(aspectRatio);
       throw StateError('simulated prefetch failure');
     }
@@ -937,6 +970,7 @@ class _FailingPrefetchApiClient extends _ProxyApiClient {
       durationSeconds: durationSeconds,
       segment: segment,
       videoOverlays: videoOverlays,
+      audioClips: audioClips,
       aspectRatio: aspectRatio,
     );
   }

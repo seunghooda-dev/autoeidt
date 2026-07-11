@@ -872,6 +872,7 @@ class ProjectState {
     required this.duration,
     required this.segments,
     this.videoOverlays = const [],
+    this.audioClips = const [],
     this.activeVideoTrackCount = 2,
     this.activeAudioTrackCount = 3,
     this.transcript = const [],
@@ -901,6 +902,7 @@ class ProjectState {
   final String timelineTimecodeMode;
   final List<HighlightSegment> segments;
   final List<VideoOverlayClip> videoOverlays;
+  final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
   final List<TranscriptSegment> transcript;
@@ -921,6 +923,7 @@ class ProjectState {
     final rawTranscript = json['transcript'] as List<dynamic>? ?? const [];
     final rawVideoOverlays =
         json['video_overlays'] as List<dynamic>? ?? const [];
+    final rawAudioClips = json['audio_clips'] as List<dynamic>? ?? const [];
     final rawCaptions = json['captions'] as List<dynamic>? ?? const [];
     final rawWaveform = json['waveform'] as List<dynamic>? ?? const [];
     final rawTimelineMarkers =
@@ -934,6 +937,10 @@ class ProjectState {
           (item) => VideoOverlayClip.fromJson(Map<String, dynamic>.from(item)),
         )
         .toList();
+    final audioClips = rawAudioClips
+        .whereType<Map>()
+        .map((item) => AudioClip.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
     final highestVideoTrack = videoOverlays.fold<int>(
       1,
       (highest, overlay) =>
@@ -944,13 +951,17 @@ class ProjectState {
       (highest, overlay) =>
           overlay.audioTrack > highest ? overlay.audioTrack : highest,
     );
+    final highestStandaloneAudioTrack = audioClips.fold<int>(
+      highestAudioTrack,
+      (highest, clip) => clip.track > highest ? clip.track : highest,
+    );
     final activeVideoTrackCount =
         ((json['active_video_track_count'] as num?)?.toInt() ?? 2)
             .clamp(highestVideoTrack, 4)
             .toInt();
     final activeAudioTrackCount =
         ((json['active_audio_track_count'] as num?)?.toInt() ?? 3)
-            .clamp(highestAudioTrack, 8)
+            .clamp(highestStandaloneAudioTrack, 8)
             .toInt();
     return ProjectState(
       name: json['name'] as String? ?? 'AutoEdit Project',
@@ -964,6 +975,7 @@ class ProjectState {
           )
           .toList(),
       videoOverlays: videoOverlays,
+      audioClips: audioClips,
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
       transcript: rawTranscript
@@ -1012,6 +1024,7 @@ class ProjectState {
       'timeline_timecode_mode': 'non_drop',
       'segments': segments.map((item) => item.toJson()).toList(),
       'video_overlays': videoOverlays.map((item) => item.toJson()).toList(),
+      'audio_clips': audioClips.map((item) => item.toJson()).toList(),
       'active_video_track_count': activeVideoTrackCount.clamp(1, 4),
       'active_audio_track_count': activeAudioTrackCount.clamp(2, 8),
       'transcript': transcript.map((item) => item.toJson()).toList(),

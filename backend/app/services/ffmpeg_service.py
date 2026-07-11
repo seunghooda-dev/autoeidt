@@ -1588,6 +1588,7 @@ def _render_reencode_with_video_args(
     output_size: tuple[int, int] = (1920, 1080),
     processing_size: tuple[int, int] | None = None,
     video_overlays: list[dict] | None = None,
+    audio_clips: list[dict] | None = None,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filters: list[str] = []
@@ -1633,6 +1634,50 @@ def _render_reencode_with_video_args(
         key=lambda overlay: (
             max(2, min(int(overlay.get("video_track", 2)), 4)),
             float(overlay["timeline_start"]),
+        )
+    )
+    audio_clip_inputs: list[dict] = []
+    for raw_clip in (audio_clips or [])[:64]:
+        if (
+            not raw_clip.get("enabled", True)
+            or raw_clip.get("muted", False)
+            or float(raw_clip.get("volume", 1.0)) <= 0
+        ):
+            continue
+        raw_path = str(raw_clip.get("source_path") or "").strip()
+        if not raw_path:
+            raise ValueError("audio clip source path is required")
+        clip_path = Path(raw_path).expanduser().resolve(strict=True)
+        if not clip_path.is_file():
+            raise ValueError(f"audio clip source is not a file: {clip_path}")
+        if _audio_stream_count(clip_path) <= 0:
+            raise ValueError(f"audio clip has no audio stream: {clip_path}")
+        timeline_start = max(0.0, float(raw_clip.get("timeline_start") or 0.0))
+        timeline_end = max(
+            timeline_start,
+            float(raw_clip.get("timeline_end") or timeline_start),
+        )
+        source_start = max(0.0, float(raw_clip.get("source_start") or 0.0))
+        source_end = max(
+            source_start,
+            float(raw_clip.get("source_end") or source_start),
+        )
+        if timeline_end <= timeline_start or source_end <= source_start:
+            continue
+        audio_clip_inputs.append(
+            {
+                **raw_clip,
+                "source_path": clip_path,
+                "timeline_start": timeline_start,
+                "timeline_end": timeline_end,
+                "source_start": source_start,
+                "source_end": source_end,
+            }
+        )
+    audio_clip_inputs.sort(
+        key=lambda clip: (
+            max(3, min(int(clip.get("track", 3)), 8)),
+            float(clip["timeline_start"]),
         )
     )
     source_starts = [float(segment["start"]) for segment in segments]
@@ -2010,6 +2055,71 @@ def _render_reencode_with_video_args(
         )
         audio_chain = f"[{mixed_audio_label}]"
         audio_mix_index += 1
+    for clip_index, clip in enumerate(audio_clip_inputs):
+        timeline_start = min(float(clip["timeline_start"]), timeline_duration)
+        timeline_end = min(float(clip["timeline_end"]), timeline_duration)
+        if timeline_end <= timeline_start:
+            continue
+        source_start = float(clip["source_start"])
+        source_end = min(
+            float(clip["source_end"]),
+            source_start + (timeline_end - timeline_start),
+        )
+        clip_duration = source_end - source_start
+        if clip_duration <= 0:
+            continue
+        volume = max(0.0, min(float(clip.get("volume", 1.0)), 2.0))
+        if volume <= 0:
+            continue
+        pan = max(-1.0, min(float(clip.get("pan", 0.0)), 1.0))
+        left_gain = 1.0 if pan <= 0 else 1.0 - pan
+        right_gain = 1.0 if pan >= 0 else 1.0 + pan
+        fade_in = max(
+            0.0,
+            min(float(clip.get("fade_in", 0.0)), clip_duration / 2),
+        )
+        fade_out = max(
+            0.0,
+            min(float(clip.get("fade_out", 0.0)), clip_duration / 2),
+        )
+        input_index = 1 + len(overlay_inputs) + clip_index
+        clip_audio_label = f"standaloneaudio{clip_index}"
+        audio_steps = [
+            f"[{input_index}:a:0]atrim=start={source_start:.6f}:end={source_end:.6f}",
+            "asetpts=PTS-STARTPTS",
+            "aformat=sample_rates=48000:channel_layouts=stereo",
+            f"volume={volume:.3f}",
+        ]
+        if abs(pan) > 0.001:
+            audio_steps.append(
+                f"pan=stereo|c0={left_gain:.6f}*c0|c1={right_gain:.6f}*c1"
+            )
+        if fade_in > 0:
+            audio_steps.append(f"afade=t=in:st=0:d={fade_in:.6f}")
+        if fade_out > 0:
+            fade_start = max(0.0, clip_duration - fade_out)
+            audio_steps.append(
+                f"afade=t=out:st={fade_start:.6f}:d={fade_out:.6f}"
+            )
+        delay_ms = max(0, round(timeline_start * 1000))
+        audio_steps.extend(
+            [
+                f"adelay=delays={delay_ms}:all=1",
+                "apad",
+                f"atrim=duration={timeline_duration:.6f}",
+                f"asetpts=PTS-STARTPTS[{clip_audio_label}]",
+            ]
+        )
+        filter_complex += ";" + ",".join(audio_steps)
+        mixed_audio_label = f"standalonemix{audio_mix_index}"
+        filter_complex += (
+            f";{audio_chain}[{clip_audio_label}]"
+            "amix=inputs=2:duration=longest:normalize=0,"
+            f"atrim=duration={timeline_duration:.6f},"
+            f"asetpts=PTS-STARTPTS[{mixed_audio_label}]"
+        )
+        audio_chain = f"[{mixed_audio_label}]"
+        audio_mix_index += 1
     filter_complex += f";{audio_chain}anull[outa]"
 
     caption_file = None
@@ -2043,6 +2153,11 @@ def _render_reencode_with_video_args(
                 argument
                 for overlay in overlay_inputs
                 for argument in ("-i", str(overlay["source_path"]))
+            ],
+            *[
+                argument
+                for clip in audio_clip_inputs
+                for argument in ("-i", str(clip["source_path"]))
             ],
             "-filter_complex",
             filter_complex,
@@ -2079,6 +2194,7 @@ def render_highlights_reencoded(
     captions: list[dict] | None = None,
     caption_style: dict | None = None,
     video_overlays: list[dict] | None = None,
+    audio_clips: list[dict] | None = None,
 ) -> Path:
     settings = get_settings()
     if settings.prefer_gpu_encoding and _encoder_available("h264_nvenc"):
@@ -2092,6 +2208,7 @@ def render_highlights_reencoded(
                 captions=captions,
                 caption_style=caption_style,
                 video_overlays=video_overlays,
+                audio_clips=audio_clips,
             )
         except FFmpegError:
             pass
@@ -2105,6 +2222,7 @@ def render_highlights_reencoded(
         captions=captions,
         caption_style=caption_style,
         video_overlays=video_overlays,
+        audio_clips=audio_clips,
     )
 
 
@@ -2115,6 +2233,7 @@ def create_program_preview_proxy(
     source_start_seconds: float | None = None,
     duration_seconds: float | None = None,
     video_overlays: list[dict] | None = None,
+    audio_clips: list[dict] | None = None,
 ) -> tuple[Path, bool, float, float]:
     settings = get_settings()
     resolved = video_path.resolve(strict=True)
@@ -2216,17 +2335,38 @@ def create_program_preview_proxy(
         overlay_cache_sources.append(
             f"{resolved_overlay}|{stat_overlay.st_size}|{stat_overlay.st_mtime_ns}"
         )
+    normalized_audio_clips = [
+        dict(clip)
+        for clip in (audio_clips or [])[:64]
+        if clip.get("enabled", True)
+        and not clip.get("muted", False)
+        and float(clip.get("volume", 1.0)) > 0
+    ]
+    audio_clip_cache_sources: list[str] = []
+    for clip in normalized_audio_clips:
+        source_path = Path(str(clip.get("source_path") or "")).expanduser()
+        resolved_clip = source_path.resolve(strict=True)
+        stat_clip = resolved_clip.stat()
+        clip["source_path"] = str(resolved_clip)
+        audio_clip_cache_sources.append(
+            f"{resolved_clip}|{stat_clip.st_size}|{stat_clip.st_mtime_ns}"
+        )
     cache_payload = json.dumps(
-        {"segment": normalized_segment, "video_overlays": normalized_overlays},
+        {
+            "segment": normalized_segment,
+            "video_overlays": normalized_overlays,
+            "audio_clips": normalized_audio_clips,
+        },
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
     )
     cache_identity = (
-        f"program-preview-v3-windowed-540p|{normalized_aspect_ratio}|"
+        f"program-preview-v4-windowed-540p|{normalized_aspect_ratio}|"
         f"{cache_payload}|"
         f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
         f"|{'|'.join(overlay_cache_sources)}"
+        f"|{'|'.join(audio_clip_cache_sources)}"
     )
     cache_key = f"program_{sha1(cache_identity.encode('utf-8')).hexdigest()}"
     preview_dir = settings.data_dir / "preview_proxies"
@@ -2258,6 +2398,7 @@ def create_program_preview_proxy(
                 output_size=output_size,
                 processing_size=(960, 540),
                 video_overlays=normalized_overlays,
+                audio_clips=normalized_audio_clips,
             )
             temp_path.replace(output_path)
         finally:
@@ -2274,6 +2415,7 @@ def render_highlights(
     captions: list[dict] | None = None,
     caption_style: dict | None = None,
     video_overlays: list[dict] | None = None,
+    audio_clips: list[dict] | None = None,
 ) -> Path:
     normalized = sorted(
         segments,
@@ -2290,4 +2432,5 @@ def render_highlights(
         captions=captions,
         caption_style=caption_style,
         video_overlays=video_overlays,
+        audio_clips=audio_clips,
     )

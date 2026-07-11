@@ -20,6 +20,10 @@ class ClipInspector extends StatelessWidget {
         overlay: selectedOverlay,
       );
     }
+    final selectedAudio = controller.selectedAudioClip;
+    if (selectedAudio != null) {
+      return _AudioClipInspector(controller: controller, clip: selectedAudio);
+    }
     final selected = controller.selectedSegment;
     if (selected == null) {
       return Center(
@@ -917,6 +921,244 @@ class _VideoOverlayInspector extends StatelessWidget {
             ),
             FilledButton.tonalIcon(
               onPressed: enabled ? editor.deleteSelectedVideoOverlay : null,
+              icon: const Icon(Icons.delete_outline, size: 17),
+              label: const Text('Delete'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AudioClipInspector extends StatelessWidget {
+  const _AudioClipInspector({required this.controller, required this.clip});
+
+  final EditorController controller;
+  final AudioClip clip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final editor = context.read<EditorController>();
+    final enabled = !controller.audioTrack3Locked;
+    return ListView(
+      key: const Key('audio-clip-inspector'),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.audio_file_outlined, color: colorScheme.tertiary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'A${clip.track} Audio Clip',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    clip.sourceName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: controller.selectedAudioClipIsOffline
+                          ? colorScheme.error
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (controller.audioTrack3Locked)
+              Tooltip(
+                message: 'A${clip.track} track locked',
+                child: const Icon(Icons.lock, size: 18),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _TimecodeRow(
+          label: 'A${clip.track}',
+          start: formatSeconds(clip.timelineStart),
+          end: formatSeconds(clip.timelineEnd),
+        ),
+        const SizedBox(height: 8),
+        _TimecodeRow(
+          label: 'SRC',
+          start: formatSeconds(clip.sourceStart),
+          end: formatSeconds(clip.sourceEnd),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<int>(
+          key: const Key('audio-clip-track'),
+          initialValue: clip.track
+              .clamp(3, controller.activeAudioTrackCount)
+              .toInt(),
+          isDense: true,
+          decoration: const InputDecoration(
+            labelText: 'Audio track',
+            prefixIcon: Icon(Icons.graphic_eq, size: 18),
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (
+              var track = 3;
+              track <= controller.activeAudioTrackCount;
+              track += 1
+            )
+              DropdownMenuItem(value: track, child: Text('A$track')),
+          ],
+          onChanged: enabled
+              ? (track) {
+                  if (track != null) {
+                    editor.setSelectedAudioClipTrack(track);
+                  }
+                }
+              : null,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 7,
+          children: [
+            FilterChip(
+              key: const Key('audio-clip-enabled'),
+              selected: clip.enabled,
+              onSelected: enabled
+                  ? (_) => editor.toggleSelectedAudioClipEnabled()
+                  : null,
+              avatar: Icon(
+                clip.enabled
+                    ? Icons.check_circle_outline
+                    : Icons.block_outlined,
+                size: 17,
+              ),
+              label: Text(clip.enabled ? 'Enabled' : 'Disabled'),
+            ),
+            FilterChip(
+              key: const Key('audio-clip-mute'),
+              selected: !clip.muted,
+              onSelected: enabled
+                  ? (_) => editor.toggleSelectedAudioClipMute()
+                  : null,
+              avatar: Icon(
+                clip.muted
+                    ? Icons.volume_off_outlined
+                    : Icons.volume_up_outlined,
+                size: 17,
+              ),
+              label: Text(clip.muted ? 'Muted' : 'Audible'),
+            ),
+          ],
+        ),
+        if (controller.selectedAudioClipIsOffline) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.45),
+              border: Border.all(color: colorScheme.error),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.link_off, size: 17, color: colorScheme.error),
+                const SizedBox(width: 7),
+                const Expanded(child: Text('Source offline')),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        _InspectorSectionHeader(
+          icon: Icons.tune,
+          label: 'Clip Mix',
+          resetTooltip: '오디오 믹스 초기화',
+          onReset: enabled ? editor.resetSelectedAudioClipMix : null,
+        ),
+        const SizedBox(height: 7),
+        _PropertySlider(
+          key: const Key('audio-clip-volume'),
+          icon: Icons.volume_up_outlined,
+          label: 'Volume',
+          value: clip.volume,
+          min: 0,
+          max: 2,
+          divisions: 200,
+          valueLabel: '${(clip.volume * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedAudioClipVolume : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('audio-clip-pan'),
+          icon: Icons.surround_sound_outlined,
+          label: 'Pan',
+          value: clip.pan,
+          min: -1,
+          max: 1,
+          divisions: 200,
+          valueLabel: clip.pan.abs() < 0.01
+              ? 'C'
+              : clip.pan < 0
+              ? 'L${(clip.pan.abs() * 100).round()}'
+              : 'R${(clip.pan * 100).round()}',
+          onChanged: enabled ? editor.setSelectedAudioClipPan : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('audio-clip-fade-in'),
+          icon: Icons.trending_up,
+          label: 'Fade In',
+          value: clip.fadeIn.clamp(0.0, 10.0).toDouble(),
+          min: 0,
+          max: 10,
+          divisions: 100,
+          valueLabel: '${clip.fadeIn.toStringAsFixed(1)}s',
+          onChanged: enabled ? editor.setSelectedAudioClipFadeIn : null,
+        ),
+        const SizedBox(height: 8),
+        _PropertySlider(
+          key: const Key('audio-clip-fade-out'),
+          icon: Icons.trending_down,
+          label: 'Fade Out',
+          value: clip.fadeOut.clamp(0.0, 10.0).toDouble(),
+          min: 0,
+          max: 10,
+          divisions: 100,
+          valueLabel: '${clip.fadeOut.toStringAsFixed(1)}s',
+          onChanged: enabled ? editor.setSelectedAudioClipFadeOut : null,
+        ),
+        const SizedBox(height: 14),
+        Text(
+          clip.sourcePath,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: enabled ? editor.duplicateSelectedAudioClip : null,
+              icon: const Icon(Icons.copy_outlined, size: 17),
+              label: const Text('Duplicate'),
+            ),
+            OutlinedButton.icon(
+              onPressed: enabled
+                  ? () => unawaited(editor.relinkSelectedAudioClip())
+                  : null,
+              icon: const Icon(Icons.link, size: 17),
+              label: const Text('Relink'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: enabled ? editor.deleteSelectedAudioClip : null,
               icon: const Icon(Icons.delete_outline, size: 17),
               label: const Text('Delete'),
             ),

@@ -1151,6 +1151,9 @@ def render_video_job(
         video_overlays = options.get("video_overlays") or []
         if video_overlays:
             render_kwargs["video_overlays"] = video_overlays
+        audio_clips = options.get("audio_clips") or []
+        if audio_clips:
+            render_kwargs["audio_clips"] = audio_clips
         rendered_path = render_highlights(
             video_path,
             normalized,
@@ -1266,6 +1269,9 @@ def render_batch_video_job(
             video_overlays = options.get("video_overlays") or []
             if video_overlays:
                 render_kwargs["video_overlays"] = video_overlays
+            audio_clips = options.get("audio_clips") or []
+            if audio_clips:
+                render_kwargs["audio_clips"] = audio_clips
             rendered_path = render_highlights(
                 video_path,
                 normalized,

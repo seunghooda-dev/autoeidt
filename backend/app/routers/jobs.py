@@ -227,6 +227,7 @@ def create_local_preview(payload: LocalPreviewRequest) -> LocalPreviewResponse:
                     video_overlays=[
                         overlay.model_dump() for overlay in payload.video_overlays
                     ],
+                    audio_clips=[clip.model_dump() for clip in payload.audio_clips],
                 )
             )
         else:
@@ -519,6 +520,7 @@ def render_job(
     segments = [segment.model_dump() for segment in payload.segments]
     render_options = {
         "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
+        "audio_clips": [clip.model_dump() for clip in payload.audio_clips],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,
@@ -573,6 +575,7 @@ def batch_render_job(
     ]
     render_options = {
         "video_overlays": [overlay.model_dump() for overlay in payload.video_overlays],
+        "audio_clips": [clip.model_dump() for clip in payload.audio_clips],
         "captions": [caption.model_dump() for caption in payload.captions],
         "caption_style": payload.caption_style.model_dump(),
         "aspect_ratio": payload.aspect_ratio,

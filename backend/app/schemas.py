@@ -428,12 +428,65 @@ class VideoOverlayClip(BaseModel):
         return max(3, min(int(value), 8))
 
 
+class AudioClip(BaseModel):
+    id: str
+    source_path: str
+    source_name: str = "Audio"
+    timeline_start: float
+    timeline_end: float
+    source_start: float = 0.0
+    source_end: float
+    track: int = 3
+    enabled: bool = True
+    muted: bool = False
+    volume: float = 1.0
+    pan: float = 0.0
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+
+    @field_validator(
+        "timeline_start", "timeline_end", "source_start", "source_end", mode="before"
+    )
+    @classmethod
+    def timeline_seconds_are_30p(cls, value: Any) -> float:
+        return _snap_seconds_to_30p(value)
+
+    @model_validator(mode="after")
+    def ranges_are_valid(self) -> "AudioClip":
+        if self.timeline_end <= self.timeline_start:
+            raise ValueError("timeline_end must be greater than timeline_start")
+        if self.source_end <= self.source_start:
+            raise ValueError("source_end must be greater than source_start")
+        return self
+
+    @field_validator("track")
+    @classmethod
+    def track_is_safe(cls, value: int) -> int:
+        return max(3, min(int(value), 8))
+
+    @field_validator("volume")
+    @classmethod
+    def volume_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 2.0))
+
+    @field_validator("pan")
+    @classmethod
+    def pan_is_safe(cls, value: float) -> float:
+        return max(-1.0, min(float(value), 1.0))
+
+    @field_validator("fade_in", "fade_out")
+    @classmethod
+    def fade_is_safe(cls, value: float) -> float:
+        return max(0.0, min(float(value), 10.0))
+
+
 class LocalPreviewRequest(BaseModel):
     path: str
     start_seconds: float = 0.0
     duration_seconds: float | None = None
     segment: HighlightSegment | None = None
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
+    audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
     aspect_ratio: str = "16:9"
 
 
@@ -613,6 +666,7 @@ class TimelineMarker(BaseModel):
 class RenderRequest(BaseModel):
     segments: list[HighlightSegment]
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
+    audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "16:9"
@@ -686,6 +740,7 @@ class JobSummaryResponse(BaseModel):
 class BatchRenderRequest(BaseModel):
     items: list[BatchRenderItem]
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list, max_length=16)
+    audio_clips: list[AudioClip] = Field(default_factory=list, max_length=64)
     captions: list[CaptionSegment] = Field(default_factory=list)
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     aspect_ratio: str = "9:16"
@@ -734,6 +789,7 @@ class ProjectState(BaseModel):
     timeline_timecode_mode: str = TIMELINE_TIMECODE_MODE
     segments: list[HighlightSegment] = Field(default_factory=list)
     video_overlays: list[VideoOverlayClip] = Field(default_factory=list)
+    audio_clips: list[AudioClip] = Field(default_factory=list)
     active_video_track_count: int = Field(default=2, ge=1, le=4)
     active_audio_track_count: int = Field(default=3, ge=2, le=8)
     transcript: list[TranscriptSegment] = Field(default_factory=list)
@@ -785,7 +841,10 @@ class ProjectState(BaseModel):
             default=1,
         )
         highest_audio_track = max(
-            (overlay.audio_track for overlay in self.video_overlays),
+            (
+                *[overlay.audio_track for overlay in self.video_overlays],
+                *[clip.track for clip in self.audio_clips],
+            ),
             default=2,
         )
         self.active_video_track_count = max(
