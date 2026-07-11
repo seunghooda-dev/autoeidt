@@ -190,10 +190,14 @@ class TimelineEditor extends StatefulWidget {
     required this.videoTrackLocked,
     this.videoOverlayTrackLocked = false,
     this.videoOverlayTrackVisible = true,
+    this.lockedVideoOverlayTracks = const <int>{},
+    this.hiddenVideoOverlayTracks = const <int>{},
     required this.audioTrackLocked,
     required this.audioTrack1Locked,
     required this.audioTrack2Locked,
     this.audioTrack3Locked = false,
+    this.lockedAuxiliaryAudioTracks = const <int>{},
+    this.mutedAuxiliaryAudioTracks = const <int>{},
     required this.razorTool,
     required this.onSegmentChanged,
     this.onVideoOverlayChanged,
@@ -282,10 +286,13 @@ class TimelineEditor extends StatefulWidget {
     this.onToggleVideoOverlayTarget,
     this.onToggleVideoOverlayTargetAt,
     this.onToggleVideoOverlayLock,
+    this.onToggleVideoOverlayLockAt,
     this.onToggleVideoOverlayVisibility,
+    this.onToggleVideoOverlayVisibilityAt,
     this.onToggleVideoOverlayAudio,
     this.onToggleOverlayAudioTargetAt,
     this.onToggleOverlayAudioAt,
+    this.onToggleAuxiliaryAudioLockAt,
     this.onDeleteVideoOverlay,
     this.onDeleteAudioClip,
     this.onZoomDelta,
@@ -319,10 +326,14 @@ class TimelineEditor extends StatefulWidget {
   final bool videoTrackLocked;
   final bool videoOverlayTrackLocked;
   final bool videoOverlayTrackVisible;
+  final Set<int> lockedVideoOverlayTracks;
+  final Set<int> hiddenVideoOverlayTracks;
   final bool audioTrackLocked;
   final bool audioTrack1Locked;
   final bool audioTrack2Locked;
   final bool audioTrack3Locked;
+  final Set<int> lockedAuxiliaryAudioTracks;
+  final Set<int> mutedAuxiliaryAudioTracks;
   final bool razorTool;
   final ValueChanged<HighlightSegment> onSegmentChanged;
   final ValueChanged<VideoOverlayClip>? onVideoOverlayChanged;
@@ -411,10 +422,13 @@ class TimelineEditor extends StatefulWidget {
   final VoidCallback? onToggleVideoOverlayTarget;
   final ValueChanged<int>? onToggleVideoOverlayTargetAt;
   final VoidCallback? onToggleVideoOverlayLock;
+  final ValueChanged<int>? onToggleVideoOverlayLockAt;
   final VoidCallback? onToggleVideoOverlayVisibility;
+  final ValueChanged<int>? onToggleVideoOverlayVisibilityAt;
   final VoidCallback? onToggleVideoOverlayAudio;
   final ValueChanged<int>? onToggleOverlayAudioTargetAt;
   final ValueChanged<int>? onToggleOverlayAudioAt;
+  final ValueChanged<int>? onToggleAuxiliaryAudioLockAt;
   final VoidCallback? onDeleteVideoOverlay;
   final VoidCallback? onDeleteAudioClip;
   final ValueChanged<double>? onZoomDelta;
@@ -482,6 +496,23 @@ class _TimelineEditorState extends State<TimelineEditor> {
     activeVideoTracks: widget.activeVideoTrackCount.clamp(1, 4).toInt(),
     activeAudioTracks: widget.activeAudioTrackCount.clamp(2, 8).toInt(),
   );
+
+  bool _videoOverlayLocked(int track) =>
+      widget.lockedVideoOverlayTracks.contains(track) ||
+      (widget.lockedVideoOverlayTracks.isEmpty &&
+          widget.videoOverlayTrackLocked);
+
+  bool _videoOverlayVisible(int track) =>
+      !widget.hiddenVideoOverlayTracks.contains(track) &&
+      (widget.hiddenVideoOverlayTracks.isNotEmpty ||
+          widget.videoOverlayTrackVisible);
+
+  bool _auxiliaryAudioLocked(int track) =>
+      widget.lockedAuxiliaryAudioTracks.contains(track) ||
+      (widget.lockedAuxiliaryAudioTracks.isEmpty && widget.audioTrack3Locked);
+
+  bool _auxiliaryAudioMuted(int track) =>
+      widget.mutedAuxiliaryAudioTracks.contains(track);
 
   List<_TimelinePlacement> get _placements =>
       _buildTimelinePlacements(widget.segments);
@@ -611,6 +642,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
                           videoLocked: widget.videoTrackLocked,
                           overlayLocked: widget.videoOverlayTrackLocked,
                           overlayVisible: widget.videoOverlayTrackVisible,
+                          lockedVideoOverlayTracks:
+                              widget.lockedVideoOverlayTracks,
+                          hiddenVideoOverlayTracks:
+                              widget.hiddenVideoOverlayTracks,
                           audio1Locked:
                               widget.audioTrackLocked ||
                               widget.audioTrack1Locked,
@@ -618,6 +653,10 @@ class _TimelineEditorState extends State<TimelineEditor> {
                               widget.audioTrackLocked ||
                               widget.audioTrack2Locked,
                           audio3Locked: widget.audioTrack3Locked,
+                          lockedAuxiliaryAudioTracks:
+                              widget.lockedAuxiliaryAudioTracks,
+                          mutedAuxiliaryAudioTracks:
+                              widget.mutedAuxiliaryAudioTracks,
                           onToggleVideoTarget: widget.onToggleVideoTarget,
                           onToggleOverlayTarget:
                               widget.onToggleVideoOverlayTarget,
@@ -628,11 +667,17 @@ class _TimelineEditorState extends State<TimelineEditor> {
                           onToggleAudio3Target: widget.onToggleAudio3Target,
                           onToggleVideoLock: widget.onToggleVideoLock,
                           onToggleOverlayLock: widget.onToggleVideoOverlayLock,
+                          onToggleOverlayLockAt:
+                              widget.onToggleVideoOverlayLockAt,
                           onToggleOverlayVisibility:
                               widget.onToggleVideoOverlayVisibility,
+                          onToggleOverlayVisibilityAt:
+                              widget.onToggleVideoOverlayVisibilityAt,
                           onToggleAudio1Lock: widget.onToggleAudio1Lock,
                           onToggleAudio2Lock: widget.onToggleAudio2Lock,
                           onToggleAudio3Lock: widget.onToggleAudio3Lock,
+                          onToggleAuxiliaryAudioLockAt:
+                              widget.onToggleAuxiliaryAudioLockAt,
                           onToggleAudio1: widget.onToggleAllAudioChannel1,
                           onToggleAudio2: widget.onToggleAllAudioChannel2,
                           onToggleAudio3: widget.onToggleVideoOverlayAudio,
@@ -735,10 +780,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                     widget
                                                         .selectedVideoOverlayId ==
                                                     overlay.id,
-                                                locked: widget
-                                                    .videoOverlayTrackLocked,
-                                                trackVisible: widget
-                                                    .videoOverlayTrackVisible,
+                                                locked: _videoOverlayLocked(
+                                                  overlay.videoTrack,
+                                                ),
+                                                trackVisible:
+                                                    _videoOverlayVisible(
+                                                      overlay.videoTrack,
+                                                    ),
                                                 onSelected: widget
                                                     .onVideoOverlaySelected,
                                                 onChanged: widget
@@ -769,8 +817,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                     widget
                                                         .selectedVideoOverlayId ==
                                                     overlay.id,
-                                                locked:
-                                                    widget.audioTrack3Locked,
+                                                locked: _auxiliaryAudioLocked(
+                                                  overlay.audioTrack,
+                                                ),
+                                                trackMuted:
+                                                    _auxiliaryAudioMuted(
+                                                      overlay.audioTrack,
+                                                    ),
                                                 onSelected: widget
                                                     .onVideoOverlaySelected,
                                               ),
@@ -797,8 +850,13 @@ class _TimelineEditorState extends State<TimelineEditor> {
                                                     widget
                                                         .selectedAudioClipId ==
                                                     clip.id,
-                                                locked:
-                                                    widget.audioTrack3Locked,
+                                                locked: _auxiliaryAudioLocked(
+                                                  clip.track,
+                                                ),
+                                                trackMuted:
+                                                    _auxiliaryAudioMuted(
+                                                      clip.track,
+                                                    ),
                                                 onSelected:
                                                     widget.onAudioClipSelected,
                                                 onChanged:
@@ -2622,6 +2680,7 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
     required this.height,
     required this.selected,
     required this.locked,
+    required this.trackMuted,
     required this.onSelected,
   });
 
@@ -2632,6 +2691,7 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
   final double height;
   final bool selected;
   final bool locked;
+  final bool trackMuted;
   final ValueChanged<String>? onSelected;
 
   @override
@@ -2644,7 +2704,7 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
       overlay.timelineDuration / math.max(duration, 0.001) * canvasWidth,
     );
     final accent = _TimelinePainter._overlayAudioColor;
-    final active = !overlay.muted && overlay.audioVolume > 0;
+    final active = !trackMuted && !overlay.muted && overlay.audioVolume > 0;
     return Positioned(
       key: ValueKey('video-overlay-audio-${overlay.id}'),
       left: left,
@@ -2711,6 +2771,7 @@ class _StandaloneAudioBlock extends StatefulWidget {
     required this.height,
     required this.selected,
     required this.locked,
+    required this.trackMuted,
     required this.onSelected,
     required this.onChanged,
     required this.onDelete,
@@ -2723,6 +2784,7 @@ class _StandaloneAudioBlock extends StatefulWidget {
   final double height;
   final bool selected;
   final bool locked;
+  final bool trackMuted;
   final ValueChanged<String>? onSelected;
   final ValueChanged<AudioClip>? onChanged;
   final VoidCallback? onDelete;
@@ -2849,7 +2911,8 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
           widget.canvasWidth,
     );
     const accent = _TimelinePainter._standaloneAudioColor;
-    final active = clip.enabled && !clip.muted && clip.volume > 0;
+    final active =
+        !widget.trackMuted && clip.enabled && !clip.muted && clip.volume > 0;
     return Positioned(
       key: ValueKey('audio-clip-${clip.id}'),
       left: left,
@@ -2958,9 +3021,13 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.videoLocked,
     required this.overlayLocked,
     required this.overlayVisible,
+    required this.lockedVideoOverlayTracks,
+    required this.hiddenVideoOverlayTracks,
     required this.audio1Locked,
     required this.audio2Locked,
     required this.audio3Locked,
+    required this.lockedAuxiliaryAudioTracks,
+    required this.mutedAuxiliaryAudioTracks,
     required this.onToggleVideoTarget,
     required this.onToggleOverlayTarget,
     required this.onToggleOverlayTargetAt,
@@ -2969,10 +3036,13 @@ class _TimelineTrackHeaders extends StatelessWidget {
     required this.onToggleAudio3Target,
     required this.onToggleVideoLock,
     required this.onToggleOverlayLock,
+    required this.onToggleOverlayLockAt,
     required this.onToggleOverlayVisibility,
+    required this.onToggleOverlayVisibilityAt,
     required this.onToggleAudio1Lock,
     required this.onToggleAudio2Lock,
     required this.onToggleAudio3Lock,
+    required this.onToggleAuxiliaryAudioLockAt,
     required this.onToggleAudio1,
     required this.onToggleAudio2,
     required this.onToggleAudio3,
@@ -2996,9 +3066,13 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final bool videoLocked;
   final bool overlayLocked;
   final bool overlayVisible;
+  final Set<int> lockedVideoOverlayTracks;
+  final Set<int> hiddenVideoOverlayTracks;
   final bool audio1Locked;
   final bool audio2Locked;
   final bool audio3Locked;
+  final Set<int> lockedAuxiliaryAudioTracks;
+  final Set<int> mutedAuxiliaryAudioTracks;
   final VoidCallback? onToggleVideoTarget;
   final VoidCallback? onToggleOverlayTarget;
   final ValueChanged<int>? onToggleOverlayTargetAt;
@@ -3007,10 +3081,13 @@ class _TimelineTrackHeaders extends StatelessWidget {
   final VoidCallback? onToggleAudio3Target;
   final VoidCallback? onToggleVideoLock;
   final VoidCallback? onToggleOverlayLock;
+  final ValueChanged<int>? onToggleOverlayLockAt;
   final VoidCallback? onToggleOverlayVisibility;
+  final ValueChanged<int>? onToggleOverlayVisibilityAt;
   final VoidCallback? onToggleAudio1Lock;
   final VoidCallback? onToggleAudio2Lock;
   final VoidCallback? onToggleAudio3Lock;
+  final ValueChanged<int>? onToggleAuxiliaryAudioLockAt;
   final VoidCallback? onToggleAudio1;
   final VoidCallback? onToggleAudio2;
   final VoidCallback? onToggleAudio3;
@@ -3030,6 +3107,9 @@ class _TimelineTrackHeaders extends StatelessWidget {
       );
 
   bool _overlayAudioEnabledFor(int track) {
+    if (mutedAuxiliaryAudioTracks.contains(track)) {
+      return false;
+    }
     final overlays = videoOverlays.where(
       (overlay) => overlay.audioTrack == track,
     );
@@ -3047,6 +3127,45 @@ class _TimelineTrackHeaders extends StatelessWidget {
       callback(track);
     } else {
       onToggleOverlayTarget?.call();
+    }
+  }
+
+  bool _overlayTrackLocked(int track) =>
+      lockedVideoOverlayTracks.contains(track) ||
+      (lockedVideoOverlayTracks.isEmpty && overlayLocked);
+
+  bool _overlayTrackVisible(int track) =>
+      !hiddenVideoOverlayTracks.contains(track) &&
+      (hiddenVideoOverlayTracks.isNotEmpty || overlayVisible);
+
+  bool _auxiliaryTrackLocked(int track) =>
+      lockedAuxiliaryAudioTracks.contains(track) ||
+      (lockedAuxiliaryAudioTracks.isEmpty && audio3Locked);
+
+  void _toggleOverlayLock(int track) {
+    final callback = onToggleOverlayLockAt;
+    if (callback != null) {
+      callback(track);
+    } else {
+      onToggleOverlayLock?.call();
+    }
+  }
+
+  void _toggleOverlayVisibility(int track) {
+    final callback = onToggleOverlayVisibilityAt;
+    if (callback != null) {
+      callback(track);
+    } else {
+      onToggleOverlayVisibility?.call();
+    }
+  }
+
+  void _toggleAuxiliaryAudioLock(int track) {
+    final callback = onToggleAuxiliaryAudioLockAt;
+    if (callback != null) {
+      callback(track);
+    } else {
+      onToggleAudio3Lock?.call();
     }
   }
 
@@ -3128,15 +3247,17 @@ class _TimelineTrackHeaders extends StatelessWidget {
                 trackLabel: track == 2 ? 'Overlay / B-roll' : 'Video $track',
                 accent: _TimelinePainter._overlayClipColor,
                 targeted: overlayTargeted && targetedVideoOverlayTrack == track,
-                locked: overlayLocked,
-                mediaEnabled: overlayVisible,
-                mediaIcon: overlayVisible
+                locked: _overlayTrackLocked(track),
+                mediaEnabled: _overlayTrackVisible(track),
+                mediaIcon: _overlayTrackVisible(track)
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
-                mediaTooltip: overlayVisible ? 'V$track 숨기기' : 'V$track 표시',
+                mediaTooltip: _overlayTrackVisible(track)
+                    ? 'V$track 숨기기'
+                    : 'V$track 표시',
                 onToggleTarget: () => _toggleOverlayTarget(track),
-                onToggleLock: onToggleOverlayLock,
-                onToggleMedia: onToggleOverlayVisibility,
+                onToggleLock: () => _toggleOverlayLock(track),
+                onToggleMedia: () => _toggleOverlayVisibility(track),
               ),
             _TrackHeaderLane(
               key: const Key('track-header-v1'),
@@ -3195,12 +3316,12 @@ class _TimelineTrackHeaders extends StatelessWidget {
                 top: layout.audioTrackTop(track),
                 height: layout.laneHeight,
                 patchLabel: 'A$track',
-                trackLabel: track == 3 ? 'Overlay Audio' : 'Audio $track',
+                trackLabel: track == 3 ? 'Audio 3 / B-roll' : 'Audio $track',
                 accent: _TimelinePainter._overlayAudioColor,
                 targeted:
                     targetedOverlayAudioTrack == track &&
                     (track != 3 || audio3Targeted),
-                locked: audio3Locked,
+                locked: _auxiliaryTrackLocked(track),
                 mediaEnabled: _overlayAudioEnabledFor(track),
                 mediaIcon: _overlayAudioEnabledFor(track)
                     ? Icons.volume_up_outlined
@@ -3209,8 +3330,8 @@ class _TimelineTrackHeaders extends StatelessWidget {
                     ? 'A$track 전체 비활성화'
                     : 'A$track 전체 활성화',
                 onToggleTarget: () => _toggleOverlayAudioTarget(track),
-                onToggleLock: onToggleAudio3Lock,
-                onToggleMedia: audio3Locked
+                onToggleLock: () => _toggleAuxiliaryAudioLock(track),
+                onToggleMedia: _auxiliaryTrackLocked(track)
                     ? null
                     : () => _toggleOverlayAudio(track),
               ),

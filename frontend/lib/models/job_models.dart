@@ -866,6 +866,25 @@ bool _boolFromJson(Object? value, bool fallback) {
   return fallback;
 }
 
+List<int> _trackListFromJson(
+  Object? value, {
+  required int min,
+  required int max,
+}) {
+  if (value is! List) {
+    return const [];
+  }
+  final tracks =
+      value
+          .whereType<num>()
+          .map((item) => item.toInt())
+          .where((track) => track >= min && track <= max)
+          .toSet()
+          .toList()
+        ..sort();
+  return tracks;
+}
+
 class ProjectState {
   const ProjectState({
     required this.name,
@@ -875,6 +894,10 @@ class ProjectState {
     this.audioClips = const [],
     this.activeVideoTrackCount = 2,
     this.activeAudioTrackCount = 3,
+    this.lockedVideoTracks = const [],
+    this.hiddenVideoTracks = const [],
+    this.lockedAudioTracks = const [],
+    this.mutedAudioTracks = const [],
     this.transcript = const [],
     required this.captions,
     required this.waveform,
@@ -905,6 +928,10 @@ class ProjectState {
   final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
+  final List<int> lockedVideoTracks;
+  final List<int> hiddenVideoTracks;
+  final List<int> lockedAudioTracks;
+  final List<int> mutedAudioTracks;
   final List<TranscriptSegment> transcript;
   final List<CaptionSegment> captions;
   final List<double> waveform;
@@ -978,6 +1005,26 @@ class ProjectState {
       audioClips: audioClips,
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
+      lockedVideoTracks: _trackListFromJson(
+        json['locked_video_tracks'],
+        min: 2,
+        max: activeVideoTrackCount,
+      ),
+      hiddenVideoTracks: _trackListFromJson(
+        json['hidden_video_tracks'],
+        min: 2,
+        max: activeVideoTrackCount,
+      ),
+      lockedAudioTracks: _trackListFromJson(
+        json['locked_audio_tracks'],
+        min: 3,
+        max: activeAudioTrackCount,
+      ),
+      mutedAudioTracks: _trackListFromJson(
+        json['muted_audio_tracks'],
+        min: 3,
+        max: activeAudioTrackCount,
+      ),
       transcript: rawTranscript
           .whereType<Map>()
           .map(
@@ -1027,6 +1074,10 @@ class ProjectState {
       'audio_clips': audioClips.map((item) => item.toJson()).toList(),
       'active_video_track_count': activeVideoTrackCount.clamp(1, 4),
       'active_audio_track_count': activeAudioTrackCount.clamp(2, 8),
+      'locked_video_tracks': [...lockedVideoTracks]..sort(),
+      'hidden_video_tracks': [...hiddenVideoTracks]..sort(),
+      'locked_audio_tracks': [...lockedAudioTracks]..sort(),
+      'muted_audio_tracks': [...mutedAudioTracks]..sort(),
       'transcript': transcript.map((item) => item.toJson()).toList(),
       'captions': captions.map((item) => item.toJson()).toList(),
       'waveform': waveform,

@@ -30,6 +30,7 @@ def test_health_endpoint() -> None:
     assert "timeline_30p_ndf" in payload["features"]
     assert "timeline_thumbnails_v1" in payload["features"]
     assert "standalone_audio_clips_v1" in payload["features"]
+    assert "per_track_controls_v1" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:

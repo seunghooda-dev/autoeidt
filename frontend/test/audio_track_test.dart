@@ -312,6 +312,10 @@ void main() {
       ],
       activeVideoTrackCount: 4,
       activeAudioTrackCount: 8,
+      lockedVideoTracks: [4, 2],
+      hiddenVideoTracks: [3],
+      lockedAudioTracks: [8, 5],
+      mutedAudioTracks: [7, 4],
       transcript: [
         TranscriptSegment(start: 10.5, end: 14.2, text: '보존되어야 하는 전체 STT 원문'),
       ],
@@ -400,6 +404,10 @@ void main() {
     expect(restored.videoOverlays.single.audioTrack, 8);
     expect(restored.activeVideoTrackCount, 4);
     expect(restored.activeAudioTrackCount, 8);
+    expect(restored.lockedVideoTracks, [2, 4]);
+    expect(restored.hiddenVideoTracks, [3]);
+    expect(restored.lockedAudioTracks, [5, 8]);
+    expect(restored.mutedAudioTracks, [4, 7]);
     expect(restored.audioClips.single.id, 'audio-1');
     expect(restored.audioClips.single.track, 7);
     expect(restored.audioClips.single.volume, 0.65);
@@ -478,11 +486,13 @@ void main() {
     expect(controller.selectedVideoOverlay?.muted, isFalse);
     controller.toggleAudioTrack3Lock();
     controller.toggleAllVideoOverlayAudio();
-    expect(controller.selectedVideoOverlay?.muted, isTrue);
+    expect(controller.isAuxiliaryAudioTrackMuted(3), isTrue);
+    expect(controller.selectedVideoOverlay?.muted, isFalse);
     controller.setSelectedVideoOverlayAudioVolume(0);
     controller.toggleAllVideoOverlayAudio();
+    expect(controller.isAuxiliaryAudioTrackMuted(3), isFalse);
     expect(controller.selectedVideoOverlay?.muted, isFalse);
-    expect(controller.selectedVideoOverlay?.audioVolume, 1);
+    expect(controller.selectedVideoOverlay?.audioVolume, 0);
 
     controller.toggleVideoOverlayTrackLock();
     controller.updateVideoOverlay(moved.copyWith(timelineStart: 8));
@@ -527,8 +537,10 @@ void main() {
     expect(controller.canDeactivateVideoTrack, isFalse);
     expect(controller.canDeactivateAudioTrack, isFalse);
     controller.toggleVideoOverlayAudioTrack(8);
-    expect(controller.selectedVideoOverlay?.muted, isFalse);
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isTrue);
+    expect(controller.selectedVideoOverlay?.muted, isTrue);
     controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isFalse);
     expect(controller.selectedVideoOverlay?.muted, isTrue);
 
     controller.setSelectedVideoOverlayVideoTrack(3);
@@ -542,6 +554,106 @@ void main() {
 
     controller.undo();
     expect(controller.activeAudioTrackCount, 8);
+    controller.dispose();
+  });
+
+  test('V2-V4 and A3-A8 controls stay independent per track', () {
+    final controller = EditorController(autoStartEngine: false)
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 60, reason: 'base video'),
+      ];
+    controller.activateVideoTrack();
+    controller.activateVideoTrack();
+    for (var index = 0; index < 5; index++) {
+      controller.activateAudioTrack();
+    }
+
+    controller.toggleVideoOverlayTrackTargetAt(2);
+    controller.toggleOverlayAudioTrackTargetAt(7);
+    controller.addVideoOverlay(
+      sourcePath: r'C:\media\v2.mov',
+      sourceName: 'v2.mov',
+      timelineStart: 1,
+      sourceDuration: 5,
+    );
+    final v2 = controller.selectedVideoOverlay!;
+
+    controller.toggleVideoOverlayTrackTargetAt(4);
+    controller.toggleOverlayAudioTrackTargetAt(8);
+    controller.addVideoOverlay(
+      sourcePath: r'C:\media\v4.mov',
+      sourceName: 'v4.mov',
+      timelineStart: 8,
+      sourceDuration: 5,
+    );
+    final v4 = controller.selectedVideoOverlay!;
+
+    controller.toggleOverlayAudioTrackTargetAt(7);
+    controller.addAudioClip(
+      sourcePath: r'C:\media\a7.wav',
+      sourceName: 'a7.wav',
+      timelineStart: 15,
+      sourceDuration: 5,
+    );
+    final a7 = controller.selectedAudioClip!;
+    controller.toggleOverlayAudioTrackTargetAt(8);
+    controller.addAudioClip(
+      sourcePath: r'C:\media\a8.wav',
+      sourceName: 'a8.wav',
+      timelineStart: 22,
+      sourceDuration: 5,
+    );
+    final a8 = controller.selectedAudioClip!;
+
+    controller.toggleVideoOverlayTrackLockAt(4);
+    expect(controller.isVideoOverlayTrackLocked(2), isFalse);
+    expect(controller.isVideoOverlayTrackLocked(4), isTrue);
+    controller.updateVideoOverlay(v2.copyWith(opacity: 0.55));
+    controller.updateVideoOverlay(v4.copyWith(opacity: 0.25));
+    expect(
+      controller.videoOverlays.singleWhere((clip) => clip.id == v2.id).opacity,
+      0.55,
+    );
+    expect(
+      controller.videoOverlays.singleWhere((clip) => clip.id == v4.id).opacity,
+      1,
+    );
+
+    controller.toggleVideoOverlayTrackVisibilityAt(4);
+    expect(controller.isVideoOverlayTrackVisible(2), isTrue);
+    expect(controller.isVideoOverlayTrackVisible(4), isFalse);
+
+    controller.toggleAuxiliaryAudioTrackLockAt(8);
+    expect(controller.isAuxiliaryAudioTrackLocked(7), isFalse);
+    expect(controller.isAuxiliaryAudioTrackLocked(8), isTrue);
+    controller.updateAudioClip(a7.copyWith(volume: 0.7));
+    controller.updateAudioClip(a8.copyWith(volume: 0.2));
+    expect(
+      controller.audioClips.singleWhere((clip) => clip.id == a7.id).volume,
+      0.7,
+    );
+    expect(
+      controller.audioClips.singleWhere((clip) => clip.id == a8.id).volume,
+      1,
+    );
+
+    controller.toggleAuxiliaryAudioTrackLockAt(8);
+    controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.isAuxiliaryAudioTrackMuted(7), isFalse);
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isTrue);
+    expect(
+      controller.audioClips.singleWhere((clip) => clip.id == a8.id).muted,
+      isFalse,
+    );
+    expect(controller.projectState.lockedVideoTracks, [4]);
+    expect(controller.projectState.hiddenVideoTracks, [4]);
+    expect(controller.projectState.lockedAudioTracks, isEmpty);
+    expect(controller.projectState.mutedAudioTracks, [8]);
+
+    controller.undo();
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isFalse);
+    controller.redo();
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isTrue);
     controller.dispose();
   });
 
@@ -615,8 +727,10 @@ void main() {
     expect(controller.selectedAudioClip?.timelineStart, 6);
 
     controller.toggleVideoOverlayAudioTrack(8);
-    expect(controller.selectedAudioClip?.muted, isTrue);
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isTrue);
+    expect(controller.selectedAudioClip?.muted, isFalse);
     controller.toggleVideoOverlayAudioTrack(8);
+    expect(controller.isAuxiliaryAudioTrackMuted(8), isFalse);
     expect(controller.selectedAudioClip?.muted, isFalse);
 
     controller.setSelectedAudioClipTrack(7);
@@ -2531,6 +2645,10 @@ void main() {
           EditorController(apiClient: apiClient, autoStartEngine: false)
             ..jobId = 'job-3'
             ..duration = 120
+            ..activeVideoTrackCount = 4
+            ..activeAudioTrackCount = 8
+            ..hiddenVideoTracks = <int>{4}
+            ..mutedAudioTracks = <int>{8}
             ..segments = const [
               HighlightSegment(
                 order: 1,
@@ -2553,6 +2671,9 @@ void main() {
                 timelineEnd: 2,
                 sourceStart: 0,
                 sourceEnd: 2,
+                videoTrack: 4,
+                audioTrack: 7,
+                muted: false,
               ),
               VideoOverlayClip(
                 id: 'v2-disabled',
@@ -2574,6 +2695,17 @@ void main() {
                 timelineEnd: 2,
                 sourceStart: 0,
                 sourceEnd: 2,
+                track: 7,
+              ),
+              AudioClip(
+                id: 'audio-track-muted',
+                sourcePath: r'C:\media\muted.wav',
+                sourceName: 'muted.wav',
+                timelineStart: 2,
+                timelineEnd: 4,
+                sourceStart: 0,
+                sourceEnd: 2,
+                track: 8,
               ),
               AudioClip(
                 id: 'audio-disabled',
@@ -2598,7 +2730,9 @@ void main() {
       expect(apiClient.renderSegments.single.audioMuted, isFalse);
       expect(apiClient.renderSegments.single.audioNormalize, isTrue);
       expect(apiClient.renderVideoOverlays.single.id, 'v2-enabled');
+      expect(apiClient.renderVideoOverlays.single.opacity, 0);
       expect(apiClient.renderAudioClips.single.id, 'audio-enabled');
+      expect(apiClient.renderAudioClips.single.track, 7);
       expect(
         apiClient.renderSegments.single.duration,
         greaterThanOrEqualTo(2.0),

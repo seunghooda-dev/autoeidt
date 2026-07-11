@@ -702,7 +702,7 @@ void main() {
       expect(find.text('Overlay / B-roll'), findsOneWidget);
       expect(find.text('Audio 1'), findsOneWidget);
       expect(find.text('Audio 2'), findsOneWidget);
-      expect(find.text('Overlay Audio'), findsOneWidget);
+      expect(find.text('Audio 3 / B-roll'), findsOneWidget);
 
       await tester.tap(find.text('V1'));
       await tester.pump();
@@ -912,6 +912,125 @@ void main() {
     await tester.pump();
     expect(changedAudioClip, isNotNull);
     expect(changedAudioClip!.timelineStart, greaterThan(12));
+  });
+
+  testWidgets('track header controls dispatch exact V2-V4 and A3-A8 track', (
+    tester,
+  ) async {
+    int? lockedVideoTrack;
+    int? hiddenVideoTrack;
+    int? lockedAudioTrack;
+    int? mutedAudioTrack;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 760,
+            child: TimelineEditor(
+              duration: 30,
+              sequenceMode: true,
+              sourceDuration: 30,
+              activeVideoTrackCount: 4,
+              activeAudioTrackCount: 8,
+              targetedVideoOverlayTrack: 4,
+              targetedOverlayAudioTrack: 8,
+              lockedVideoOverlayTracks: const <int>{4},
+              hiddenVideoOverlayTracks: const <int>{3},
+              lockedAuxiliaryAudioTracks: const <int>{8},
+              mutedAuxiliaryAudioTracks: const <int>{7},
+              segments: const [
+                HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+              ],
+              playheadSeconds: 0,
+              selectedSegmentOrder: null,
+              markIn: null,
+              markOut: null,
+              timelineMarkers: const [],
+              waveform: const [],
+              zoom: 1,
+              trackHeightScale: 1,
+              snappingEnabled: true,
+              videoTrackTargeted: true,
+              videoOverlayTrackTargeted: true,
+              audioTrack1Targeted: true,
+              audioTrack2Targeted: true,
+              videoTrackLocked: false,
+              audioTrackLocked: false,
+              audioTrack1Locked: false,
+              audioTrack2Locked: false,
+              razorTool: false,
+              onSegmentChanged: (_) {},
+              onScrub: (_) {},
+              onSegmentSelected: (_) {},
+              onToggleVideoOverlayLockAt: (track) {
+                lockedVideoTrack = track;
+              },
+              onToggleVideoOverlayVisibilityAt: (track) {
+                hiddenVideoTrack = track;
+              },
+              onToggleAuxiliaryAudioLockAt: (track) {
+                lockedAudioTrack = track;
+              },
+              onToggleOverlayAudioAt: (track) {
+                mutedAudioTrack = track;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final v4Header = find.byKey(const Key('track-header-v4'));
+    final v3Header = find.byKey(const Key('track-header-v3'));
+    final a8Header = find.byKey(const Key('track-header-a8'));
+    final a7Header = find.byKey(const Key('track-header-a7'));
+    expect(
+      find.descendant(of: v4Header, matching: find.byIcon(Icons.lock)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: v3Header,
+        matching: find.byIcon(Icons.visibility_off_outlined),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: a8Header, matching: find.byIcon(Icons.lock)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: a7Header,
+        matching: find.byIcon(Icons.volume_off_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.descendant(of: v4Header, matching: find.byIcon(Icons.lock)),
+    );
+    await tester.tap(
+      find.descendant(
+        of: v3Header,
+        matching: find.byIcon(Icons.visibility_off_outlined),
+      ),
+    );
+    await tester.tap(
+      find.descendant(of: a8Header, matching: find.byIcon(Icons.lock)),
+    );
+    await tester.tap(
+      find.descendant(
+        of: a7Header,
+        matching: find.byIcon(Icons.volume_off_outlined),
+      ),
+    );
+    await tester.pump();
+    expect(lockedVideoTrack, 4);
+    expect(hiddenVideoTrack, 3);
+    expect(lockedAudioTrack, 8);
+    expect(mutedAudioTrack, 7);
   });
 
   testWidgets('timeline paints multiple cached video frames inside V1 clips', (

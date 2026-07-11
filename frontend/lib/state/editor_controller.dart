@@ -76,6 +76,7 @@ class EditorController extends ChangeNotifier {
   String? _lastRecoveryPayload;
   int _projectRevision = 0;
   int _savedProjectRevision = 0;
+  int _timelineAssetIdSequence = 0;
   bool _isDisposed = false;
 
   LocalEngineState engineState = LocalEngineState.idle();
@@ -139,12 +140,13 @@ class EditorController extends ChangeNotifier {
   int targetedVideoOverlayTrack = 2;
   int targetedOverlayAudioTrack = 3;
   bool videoTrackLocked = false;
-  bool videoOverlayTrackLocked = false;
-  bool videoOverlayTrackVisible = true;
+  Set<int> lockedVideoTracks = <int>{};
+  Set<int> hiddenVideoTracks = <int>{};
   bool audioTrackLocked = false;
   bool audioTrack1Locked = false;
   bool audioTrack2Locked = false;
-  bool audioTrack3Locked = false;
+  Set<int> lockedAudioTracks = <int>{};
+  Set<int> mutedAudioTracks = <int>{};
   String projectName = 'AutoEdit Project';
   String? projectFilePath;
   HighlightSegment? _clipClipboard;
@@ -246,6 +248,55 @@ class EditorController extends ChangeNotifier {
     r'루머|카더라|추정|추측|아마도|미확인|확인되지|일각에서는|떠돌|rumor|unconfirmed|allegedly|speculation',
     caseSensitive: false,
   );
+
+  bool isVideoOverlayTrackLocked(int track) =>
+      track >= 2 && lockedVideoTracks.contains(track);
+
+  bool isVideoOverlayTrackVisible(int track) =>
+      track >= 2 && !hiddenVideoTracks.contains(track);
+
+  bool isAuxiliaryAudioTrackLocked(int track) =>
+      track >= 3 && lockedAudioTracks.contains(track);
+
+  bool isAuxiliaryAudioTrackMuted(int track) =>
+      track >= 3 && mutedAudioTracks.contains(track);
+
+  bool get videoOverlayTrackLocked =>
+      isVideoOverlayTrackLocked(targetedVideoOverlayTrack);
+
+  set videoOverlayTrackLocked(bool value) {
+    final track = targetedVideoOverlayTrack.clamp(2, 4).toInt();
+    if (value) {
+      lockedVideoTracks.add(track);
+    } else {
+      lockedVideoTracks.remove(track);
+    }
+  }
+
+  bool get videoOverlayTrackVisible =>
+      isVideoOverlayTrackVisible(targetedVideoOverlayTrack);
+
+  set videoOverlayTrackVisible(bool value) {
+    final track = targetedVideoOverlayTrack.clamp(2, 4).toInt();
+    if (value) {
+      hiddenVideoTracks.remove(track);
+    } else {
+      hiddenVideoTracks.add(track);
+    }
+  }
+
+  bool get audioTrack3Locked =>
+      isAuxiliaryAudioTrackLocked(targetedOverlayAudioTrack);
+
+  set audioTrack3Locked(bool value) {
+    final track = targetedOverlayAudioTrack.clamp(3, 8).toInt();
+    if (value) {
+      lockedAudioTracks.add(track);
+    } else {
+      lockedAudioTracks.remove(track);
+    }
+  }
+
   static const Set<String> _newsSignalTags = {
     '뉴스핵심',
     '근거',
@@ -750,9 +801,45 @@ class EditorController extends ChangeNotifier {
 
   bool get videoOverlayAudioEnabled =>
       videoOverlays.any(
-        (overlay) => !overlay.muted && overlay.audioVolume > 0,
+        (overlay) =>
+            !isAuxiliaryAudioTrackMuted(overlay.audioTrack) &&
+            !overlay.muted &&
+            overlay.audioVolume > 0,
       ) ||
-      audioClips.any((clip) => clip.enabled && !clip.muted && clip.volume > 0);
+      audioClips.any(
+        (clip) =>
+            !isAuxiliaryAudioTrackMuted(clip.track) &&
+            clip.enabled &&
+            !clip.muted &&
+            clip.volume > 0,
+      );
+
+  List<VideoOverlayClip> _videoOverlaysForOutput() {
+    final resolved = <VideoOverlayClip>[];
+    for (final overlay in videoOverlays) {
+      if (!overlay.enabled) {
+        continue;
+      }
+      final videoVisible = isVideoOverlayTrackVisible(overlay.videoTrack);
+      final audioMuted =
+          overlay.muted || isAuxiliaryAudioTrackMuted(overlay.audioTrack);
+      final audioAudible = !audioMuted && overlay.audioVolume > 0;
+      if (!videoVisible && !audioAudible) {
+        continue;
+      }
+      resolved.add(
+        overlay.copyWith(
+          opacity: videoVisible ? overlay.opacity : 0,
+          muted: audioMuted,
+        ),
+      );
+    }
+    return resolved;
+  }
+
+  List<AudioClip> _audioClipsForOutput() => audioClips
+      .where((clip) => clip.enabled && !isAuxiliaryAudioTrackMuted(clip.track))
+      .toList();
 
   double get selectedMotionLocalTime {
     final selected = selectedSegment;
@@ -1268,6 +1355,10 @@ class EditorController extends ChangeNotifier {
       audioClips: audioClips,
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
+      lockedVideoTracks: lockedVideoTracks.toList(),
+      hiddenVideoTracks: hiddenVideoTracks.toList(),
+      lockedAudioTracks: lockedAudioTracks.toList(),
+      mutedAudioTracks: mutedAudioTracks.toList(),
       transcript: transcript,
       captions: captions,
       waveform: waveform,
@@ -1595,12 +1686,13 @@ class EditorController extends ChangeNotifier {
     targetedVideoOverlayTrack = 2;
     targetedOverlayAudioTrack = 3;
     videoTrackLocked = false;
-    videoOverlayTrackLocked = false;
-    videoOverlayTrackVisible = true;
+    lockedVideoTracks = <int>{};
+    hiddenVideoTracks = <int>{};
     audioTrackLocked = false;
     audioTrack1Locked = false;
     audioTrack2Locked = false;
-    audioTrack3Locked = false;
+    lockedAudioTracks = <int>{};
+    mutedAudioTracks = <int>{};
     comparisonDefaultSegments = [];
     comparisonReferenceSegments = [];
     comparisonSelection = 'current';
@@ -1950,10 +2042,8 @@ class EditorController extends ChangeNotifier {
         id,
         segments,
         captions: captions,
-        videoOverlays: videoOverlayTrackVisible
-            ? videoOverlays.where((overlay) => overlay.enabled).toList()
-            : const [],
-        audioClips: audioClips.where((clip) => clip.enabled).toList(),
+        videoOverlays: _videoOverlaysForOutput(),
+        audioClips: _audioClipsForOutput(),
         captionStyle: captionRenderStyle,
         aspectRatio: aspectRatio,
         includeCaptions: includeCaptions,
@@ -2011,10 +2101,8 @@ class EditorController extends ChangeNotifier {
             },
         ],
         captions: captions,
-        videoOverlays: videoOverlayTrackVisible
-            ? videoOverlays.where((overlay) => overlay.enabled).toList()
-            : const [],
-        audioClips: audioClips.where((clip) => clip.enabled).toList(),
+        videoOverlays: _videoOverlaysForOutput(),
+        audioClips: _audioClipsForOutput(),
         captionStyle: captionRenderStyle,
         aspectRatio: selectedExportProfiles.first,
         includeCaptions: includeCaptions,
@@ -2524,6 +2612,11 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  String _nextTimelineAssetId(String prefix) {
+    final sequence = _timelineAssetIdSequence++;
+    return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$sequence';
+  }
+
   void addVideoOverlay({
     required String sourcePath,
     required String sourceName,
@@ -2531,10 +2624,9 @@ class EditorController extends ChangeNotifier {
     double sourceStart = 0,
     double? sourceDuration,
   }) {
-    if (videoOverlayTrackLocked || sourcePath.trim().isEmpty) {
+    if (sourcePath.trim().isEmpty) {
       return;
     }
-    _commitHistory();
     if (activeVideoTrackCount < 2) {
       activeVideoTrackCount = 2;
     }
@@ -2548,6 +2640,11 @@ class EditorController extends ChangeNotifier {
     final audioTrack = targetedOverlayAudioTrack
         .clamp(3, activeAudioTrackCount)
         .toInt();
+    if (isVideoOverlayTrackLocked(videoTrack) ||
+        isAuxiliaryAudioTrackLocked(audioTrack)) {
+      return;
+    }
+    _commitHistory();
     final sequenceDuration = math.max(
       timecodeFrameDurationSeconds,
       outputDurationSeconds,
@@ -2575,7 +2672,7 @@ class EditorController extends ChangeNotifier {
       math.max(0.0, sourceStart),
     );
     final overlay = VideoOverlayClip(
-      id: 'v2-${DateTime.now().microsecondsSinceEpoch}',
+      id: _nextTimelineAssetId('v2'),
       sourcePath: sourcePath,
       sourceName: sourceName,
       timelineStart: start,
@@ -2600,8 +2697,19 @@ class EditorController extends ChangeNotifier {
   }
 
   void updateVideoOverlay(VideoOverlayClip updated, {bool audioOnly = false}) {
-    if ((audioOnly ? audioTrack3Locked : videoOverlayTrackLocked) ||
-        !videoOverlays.any((overlay) => overlay.id == updated.id)) {
+    final existingIndex = videoOverlays.indexWhere(
+      (overlay) => overlay.id == updated.id,
+    );
+    if (existingIndex < 0) {
+      return;
+    }
+    final existing = videoOverlays[existingIndex];
+    final locked = audioOnly
+        ? isAuxiliaryAudioTrackLocked(existing.audioTrack) ||
+              isAuxiliaryAudioTrackLocked(updated.audioTrack)
+        : isVideoOverlayTrackLocked(existing.videoTrack) ||
+              isVideoOverlayTrackLocked(updated.videoTrack);
+    if (locked) {
       return;
     }
     _commitHistory();
@@ -2627,12 +2735,16 @@ class EditorController extends ChangeNotifier {
   }
 
   void deleteSelectedVideoOverlay() {
-    final id = selectedVideoOverlayId;
-    if (id == null || videoOverlayTrackLocked) {
+    final overlay = selectedVideoOverlay;
+    if (overlay == null ||
+        isVideoOverlayTrackLocked(overlay.videoTrack) ||
+        isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     _commitHistory();
-    videoOverlays = videoOverlays.where((overlay) => overlay.id != id).toList();
+    videoOverlays = videoOverlays
+        .where((item) => item.id != overlay.id)
+        .toList();
     selectedVideoOverlayId = null;
     renderUrl = null;
     notifyListeners();
@@ -2641,7 +2753,7 @@ class EditorController extends ChangeNotifier {
 
   void toggleSelectedVideoOverlayEnabled() {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || videoOverlayTrackLocked) {
+    if (overlay == null || isVideoOverlayTrackLocked(overlay.videoTrack)) {
       return;
     }
     updateVideoOverlay(overlay.copyWith(enabled: !overlay.enabled));
@@ -2699,10 +2811,13 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayVideoTrack(int track) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || videoOverlayTrackLocked) {
+    if (overlay == null || isVideoOverlayTrackLocked(overlay.videoTrack)) {
       return;
     }
     final normalized = track.clamp(2, activeVideoTrackCount).toInt();
+    if (isVideoOverlayTrackLocked(normalized)) {
+      return;
+    }
     updateVideoOverlay(overlay.copyWith(videoTrack: normalized));
     targetedVideoOverlayTrack = normalized;
     videoOverlayTrackTargeted = true;
@@ -2710,10 +2825,13 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayAudioTrack(int track) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     final normalized = track.clamp(3, activeAudioTrackCount).toInt();
+    if (isAuxiliaryAudioTrackLocked(normalized)) {
+      return;
+    }
     updateVideoOverlay(
       overlay.copyWith(audioTrack: normalized),
       audioOnly: true,
@@ -2724,7 +2842,7 @@ class EditorController extends ChangeNotifier {
 
   void toggleSelectedVideoOverlayAudioMute() {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2735,7 +2853,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayAudioVolume(double value) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2746,7 +2864,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayAudioPan(double value) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2757,7 +2875,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayAudioFadeIn(double value) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2770,7 +2888,7 @@ class EditorController extends ChangeNotifier {
 
   void setSelectedVideoOverlayAudioFadeOut(double value) {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2783,7 +2901,7 @@ class EditorController extends ChangeNotifier {
 
   void resetSelectedVideoOverlayAudio() {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || audioTrack3Locked) {
+    if (overlay == null || isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     updateVideoOverlay(
@@ -2825,7 +2943,9 @@ class EditorController extends ChangeNotifier {
 
   void duplicateSelectedVideoOverlay() {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || videoOverlayTrackLocked) {
+    if (overlay == null ||
+        isVideoOverlayTrackLocked(overlay.videoTrack) ||
+        isAuxiliaryAudioTrackLocked(overlay.audioTrack)) {
       return;
     }
     final duration = overlay.timelineDuration;
@@ -2835,7 +2955,7 @@ class EditorController extends ChangeNotifier {
         ? requestedStart
         : math.max(0.0, overlay.timelineStart - duration);
     final duplicate = overlay.copyWith(
-      id: 'v2-${DateTime.now().microsecondsSinceEpoch}',
+      id: _nextTimelineAssetId('v2'),
       timelineStart: snapSecondsToFrame(start),
       timelineEnd: snapSecondsToFrame(start + duration),
     );
@@ -2850,7 +2970,7 @@ class EditorController extends ChangeNotifier {
 
   Future<void> relinkSelectedVideoOverlay() async {
     final overlay = selectedVideoOverlay;
-    if (overlay == null || videoOverlayTrackLocked) {
+    if (overlay == null || isVideoOverlayTrackLocked(overlay.videoTrack)) {
       return;
     }
     final files = await pickMediaAssets(allowMultiple: false);
@@ -2872,7 +2992,10 @@ class EditorController extends ChangeNotifier {
     required String sourceName,
     double? timelineStart,
   }) async {
-    if (sourcePath.trim().isEmpty || audioTrack3Locked) {
+    final targetTrack = targetedOverlayAudioTrack
+        .clamp(3, math.max(3, activeAudioTrackCount))
+        .toInt();
+    if (sourcePath.trim().isEmpty || isAuxiliaryAudioTrackLocked(targetTrack)) {
       return;
     }
     try {
@@ -2900,16 +3023,18 @@ class EditorController extends ChangeNotifier {
     double? timelineStart,
     double sourceStart = 0,
   }) {
-    if (sourcePath.trim().isEmpty || sourceDuration <= 0 || audioTrack3Locked) {
+    if (sourcePath.trim().isEmpty || sourceDuration <= 0) {
       return;
     }
-    _commitHistory();
     if (activeAudioTrackCount < 3) {
       activeAudioTrackCount = 3;
     }
     final track = targetedOverlayAudioTrack
         .clamp(3, activeAudioTrackCount)
         .toInt();
+    if (isAuxiliaryAudioTrackLocked(track)) {
+      return;
+    }
     final sequenceDuration = math.max(
       timecodeFrameDurationSeconds,
       outputDurationSeconds > 0 ? outputDurationSeconds : duration,
@@ -2937,8 +3062,9 @@ class EditorController extends ChangeNotifier {
     if (clipDuration < timecodeFrameDurationSeconds / 2) {
       return;
     }
+    _commitHistory();
     final clip = AudioClip(
-      id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+      id: _nextTimelineAssetId('a'),
       sourcePath: sourcePath,
       sourceName: sourceName,
       timelineStart: start,
@@ -3004,7 +3130,15 @@ class EditorController extends ChangeNotifier {
   }
 
   void updateAudioClip(AudioClip updated) {
-    if (audioTrack3Locked || !audioClips.any((clip) => clip.id == updated.id)) {
+    final existingIndex = audioClips.indexWhere(
+      (clip) => clip.id == updated.id,
+    );
+    if (existingIndex < 0) {
+      return;
+    }
+    final existing = audioClips[existingIndex];
+    if (isAuxiliaryAudioTrackLocked(existing.track) ||
+        isAuxiliaryAudioTrackLocked(updated.track)) {
       return;
     }
     _commitHistory();
@@ -3032,12 +3166,12 @@ class EditorController extends ChangeNotifier {
   }
 
   void deleteSelectedAudioClip() {
-    final id = selectedAudioClipId;
-    if (id == null || audioTrack3Locked) {
+    final clip = selectedAudioClip;
+    if (clip == null || isAuxiliaryAudioTrackLocked(clip.track)) {
       return;
     }
     _commitHistory();
-    audioClips = audioClips.where((clip) => clip.id != id).toList();
+    audioClips = audioClips.where((item) => item.id != clip.id).toList();
     selectedAudioClipId = null;
     renderUrl = null;
     notifyListeners();
@@ -3114,7 +3248,7 @@ class EditorController extends ChangeNotifier {
 
   void duplicateSelectedAudioClip() {
     final clip = selectedAudioClip;
-    if (clip == null || audioTrack3Locked) {
+    if (clip == null || isAuxiliaryAudioTrackLocked(clip.track)) {
       return;
     }
     final sequenceDuration = math.max(
@@ -3126,7 +3260,7 @@ class EditorController extends ChangeNotifier {
         ? requestedStart
         : math.max(0.0, clip.timelineStart - clip.timelineDuration);
     final duplicate = clip.copyWith(
-      id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+      id: _nextTimelineAssetId('a'),
       timelineStart: snapSecondsToFrame(start),
       timelineEnd: snapSecondsToFrame(start + clip.timelineDuration),
     );
@@ -3143,7 +3277,7 @@ class EditorController extends ChangeNotifier {
 
   Future<void> relinkSelectedAudioClip() async {
     final clip = selectedAudioClip;
-    if (clip == null || audioTrack3Locked) {
+    if (clip == null || isAuxiliaryAudioTrackLocked(clip.track)) {
       return;
     }
     final files = await pickMediaAssets(
@@ -3201,13 +3335,35 @@ class EditorController extends ChangeNotifier {
   }
 
   void toggleVideoOverlayTrackLock() {
-    videoOverlayTrackLocked = !videoOverlayTrackLocked;
+    toggleVideoOverlayTrackLockAt(targetedVideoOverlayTrack);
+  }
+
+  void toggleVideoOverlayTrackLockAt(int track) {
+    if (track < 2 || track > activeVideoTrackCount) {
+      return;
+    }
+    _commitHistory();
+    if (!lockedVideoTracks.remove(track)) {
+      lockedVideoTracks.add(track);
+    }
     notifyListeners();
   }
 
   void toggleVideoOverlayTrackVisibility() {
-    videoOverlayTrackVisible = !videoOverlayTrackVisible;
+    toggleVideoOverlayTrackVisibilityAt(targetedVideoOverlayTrack);
+  }
+
+  void toggleVideoOverlayTrackVisibilityAt(int track) {
+    if (track < 2 || track > activeVideoTrackCount) {
+      return;
+    }
+    _commitHistory();
+    if (!hiddenVideoTracks.remove(track)) {
+      hiddenVideoTracks.add(track);
+    }
+    renderUrl = null;
     notifyListeners();
+    _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void toggleAudioTrack3Target() {
@@ -3226,78 +3382,52 @@ class EditorController extends ChangeNotifier {
   }
 
   void toggleAudioTrack3Lock() {
-    audioTrack3Locked = !audioTrack3Locked;
+    toggleAuxiliaryAudioTrackLockAt(targetedOverlayAudioTrack);
+  }
+
+  void toggleAuxiliaryAudioTrackLockAt(int track) {
+    if (track < 3 || track > activeAudioTrackCount) {
+      return;
+    }
+    _commitHistory();
+    if (!lockedAudioTracks.remove(track)) {
+      lockedAudioTracks.add(track);
+    }
     notifyListeners();
   }
 
   void toggleAllVideoOverlayAudio() {
-    if (audioTrack3Locked || (videoOverlays.isEmpty && audioClips.isEmpty)) {
+    final editableTracks = [
+      for (var track = 3; track <= activeAudioTrackCount; track += 1)
+        if (!isAuxiliaryAudioTrackLocked(track)) track,
+    ];
+    if (editableTracks.isEmpty) {
       return;
     }
-    final muteAll = videoOverlayAudioEnabled;
+    final muteAll = editableTracks.any(
+      (track) => !isAuxiliaryAudioTrackMuted(track),
+    );
     _commitHistory();
-    videoOverlays = [
-      for (final overlay in videoOverlays)
-        overlay.copyWith(
-          muted: muteAll,
-          audioVolume: !muteAll && overlay.audioVolume <= 0
-              ? 1
-              : overlay.audioVolume,
-        ),
-    ];
-    audioClips = [
-      for (final clip in audioClips)
-        clip.copyWith(
-          muted: muteAll,
-          volume: !muteAll && clip.volume <= 0 ? 1 : clip.volume,
-        ),
-    ];
+    if (muteAll) {
+      mutedAudioTracks.addAll(editableTracks);
+    } else {
+      mutedAudioTracks.removeAll(editableTracks);
+    }
     renderUrl = null;
     notifyListeners();
     _refreshProgramPreviewAfterOverlayEdit();
   }
 
   void toggleVideoOverlayAudioTrack(int track) {
-    if (audioTrack3Locked || track < 3 || track > activeAudioTrackCount) {
+    if (track < 3 ||
+        track > activeAudioTrackCount ||
+        isAuxiliaryAudioTrackLocked(track)) {
       return;
     }
-    final trackOverlays = videoOverlays
-        .where((overlay) => overlay.audioTrack == track)
-        .toList();
-    final trackClips = audioClips.where((clip) => clip.track == track).toList();
-    if (trackOverlays.isEmpty && trackClips.isEmpty) {
-      return;
-    }
-    final muteTrack =
-        trackOverlays.any(
-          (overlay) => !overlay.muted && overlay.audioVolume > 0,
-        ) ||
-        trackClips.any(
-          (clip) => clip.enabled && !clip.muted && clip.volume > 0,
-        );
     _commitHistory();
-    videoOverlays = [
-      for (final overlay in videoOverlays)
-        if (overlay.audioTrack == track)
-          overlay.copyWith(
-            muted: muteTrack,
-            audioVolume: !muteTrack && overlay.audioVolume <= 0
-                ? 1
-                : overlay.audioVolume,
-          )
-        else
-          overlay,
-    ];
-    audioClips = [
-      for (final clip in audioClips)
-        if (clip.track == track)
-          clip.copyWith(
-            muted: muteTrack,
-            volume: !muteTrack && clip.volume <= 0 ? 1 : clip.volume,
-          )
-        else
-          clip,
-    ];
+    if (!mutedAudioTracks.remove(track)) {
+      mutedAudioTracks.add(track);
+    }
     renderUrl = null;
     notifyListeners();
     _refreshProgramPreviewAfterOverlayEdit();
@@ -3333,6 +3463,8 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _commitHistory();
+    lockedVideoTracks.remove(activeVideoTrackCount);
+    hiddenVideoTracks.remove(activeVideoTrackCount);
     activeVideoTrackCount -= 1;
     if (targetedVideoOverlayTrack > activeVideoTrackCount) {
       targetedVideoOverlayTrack = activeVideoTrackCount >= 2
@@ -3359,6 +3491,8 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _commitHistory();
+    lockedAudioTracks.remove(activeAudioTrackCount);
+    mutedAudioTracks.remove(activeAudioTrackCount);
     activeAudioTrackCount -= 1;
     if (targetedOverlayAudioTrack > activeAudioTrackCount) {
       targetedOverlayAudioTrack = activeAudioTrackCount >= 3
@@ -8269,8 +8403,8 @@ class EditorController extends ChangeNotifier {
 
   String _programPreviewSignature(HighlightSegment segment) =>
       '$exportAspectRatio|${jsonEncode(segment.toJson())}|'
-      '${jsonEncode(videoOverlayTrackVisible ? videoOverlays.where((overlay) => overlay.enabled).map((overlay) => overlay.toJson()).toList() : const [])}|'
-      '${jsonEncode(audioClips.where((clip) => clip.enabled).map((clip) => clip.toJson()).toList())}';
+      '${jsonEncode(_videoOverlaysForOutput().map((overlay) => overlay.toJson()).toList())}|'
+      '${jsonEncode(_audioClipsForOutput().map((clip) => clip.toJson()).toList())}';
 
   List<VideoOverlayClip> _videoOverlaysForProgramWindow(
     HighlightSegment segment,
@@ -8278,7 +8412,7 @@ class EditorController extends ChangeNotifier {
     double duration,
   ) {
     final span = _programSpanForOrder(segment.order);
-    if (span == null || duration <= 0 || !videoOverlayTrackVisible) {
+    if (span == null || duration <= 0) {
       return const [];
     }
     final outputWindowOffset =
@@ -8286,10 +8420,7 @@ class EditorController extends ChangeNotifier {
     final sequenceWindowStart = span.sequenceStart + outputWindowOffset;
     final sequenceWindowEnd = sequenceWindowStart + duration;
     final mapped = <VideoOverlayClip>[];
-    for (final overlay in videoOverlays) {
-      if (!overlay.enabled) {
-        continue;
-      }
+    for (final overlay in _videoOverlaysForOutput()) {
       final overlapStart = math.max(overlay.timelineStart, sequenceWindowStart);
       final overlapEnd = math.min(overlay.timelineEnd, sequenceWindowEnd);
       if (overlapEnd - overlapStart < timecodeFrameDurationSeconds / 2) {
@@ -8333,10 +8464,7 @@ class EditorController extends ChangeNotifier {
     final sequenceWindowStart = span.sequenceStart + outputWindowOffset;
     final sequenceWindowEnd = sequenceWindowStart + duration;
     final mapped = <AudioClip>[];
-    for (final clip in audioClips) {
-      if (!clip.enabled) {
-        continue;
-      }
+    for (final clip in _audioClipsForOutput()) {
       final overlapStart = math.max(clip.timelineStart, sequenceWindowStart);
       final overlapEnd = math.min(clip.timelineEnd, sequenceWindowEnd);
       if (overlapEnd - overlapStart < timecodeFrameDurationSeconds / 2) {
@@ -10728,6 +10856,18 @@ class EditorController extends ChangeNotifier {
     audioClips = List<AudioClip>.of(project.audioClips);
     activeVideoTrackCount = project.activeVideoTrackCount.clamp(1, 4).toInt();
     activeAudioTrackCount = project.activeAudioTrackCount.clamp(2, 8).toInt();
+    lockedVideoTracks = project.lockedVideoTracks
+        .where((track) => track >= 2 && track <= activeVideoTrackCount)
+        .toSet();
+    hiddenVideoTracks = project.hiddenVideoTracks
+        .where((track) => track >= 2 && track <= activeVideoTrackCount)
+        .toSet();
+    lockedAudioTracks = project.lockedAudioTracks
+        .where((track) => track >= 3 && track <= activeAudioTrackCount)
+        .toSet();
+    mutedAudioTracks = project.mutedAudioTracks
+        .where((track) => track >= 3 && track <= activeAudioTrackCount)
+        .toSet();
     targetedVideoOverlayTrack = activeVideoTrackCount >= 2 ? 2 : 1;
     targetedOverlayAudioTrack = activeAudioTrackCount >= 3 ? 3 : 2;
     videoOverlayTrackTargeted = activeVideoTrackCount >= 2;
@@ -10821,6 +10961,10 @@ class EditorController extends ChangeNotifier {
       audioClips: List<AudioClip>.of(audioClips),
       activeVideoTrackCount: activeVideoTrackCount,
       activeAudioTrackCount: activeAudioTrackCount,
+      lockedVideoTracks: Set<int>.of(lockedVideoTracks),
+      hiddenVideoTracks: Set<int>.of(hiddenVideoTracks),
+      lockedAudioTracks: Set<int>.of(lockedAudioTracks),
+      mutedAudioTracks: Set<int>.of(mutedAudioTracks),
       targetedVideoOverlayTrack: targetedVideoOverlayTrack,
       targetedOverlayAudioTrack: targetedOverlayAudioTrack,
       captions: List<CaptionSegment>.of(captions),
@@ -10843,6 +10987,10 @@ class EditorController extends ChangeNotifier {
     audioClips = List<AudioClip>.of(snapshot.audioClips);
     activeVideoTrackCount = snapshot.activeVideoTrackCount;
     activeAudioTrackCount = snapshot.activeAudioTrackCount;
+    lockedVideoTracks = Set<int>.of(snapshot.lockedVideoTracks);
+    hiddenVideoTracks = Set<int>.of(snapshot.hiddenVideoTracks);
+    lockedAudioTracks = Set<int>.of(snapshot.lockedAudioTracks);
+    mutedAudioTracks = Set<int>.of(snapshot.mutedAudioTracks);
     targetedVideoOverlayTrack = snapshot.targetedVideoOverlayTrack;
     targetedOverlayAudioTrack = snapshot.targetedOverlayAudioTrack;
     videoOverlayTrackTargeted = targetedVideoOverlayTrack >= 2;
@@ -11350,6 +11498,10 @@ class _EditorSnapshot {
     required this.audioClips,
     required this.activeVideoTrackCount,
     required this.activeAudioTrackCount,
+    required this.lockedVideoTracks,
+    required this.hiddenVideoTracks,
+    required this.lockedAudioTracks,
+    required this.mutedAudioTracks,
     required this.targetedVideoOverlayTrack,
     required this.targetedOverlayAudioTrack,
     required this.captions,
@@ -11371,6 +11523,10 @@ class _EditorSnapshot {
   final List<AudioClip> audioClips;
   final int activeVideoTrackCount;
   final int activeAudioTrackCount;
+  final Set<int> lockedVideoTracks;
+  final Set<int> hiddenVideoTracks;
+  final Set<int> lockedAudioTracks;
+  final Set<int> mutedAudioTracks;
   final int targetedVideoOverlayTrack;
   final int targetedOverlayAudioTrack;
   final List<CaptionSegment> captions;

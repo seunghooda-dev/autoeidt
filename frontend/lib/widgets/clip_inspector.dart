@@ -541,7 +541,16 @@ class _VideoOverlayInspector extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final editor = context.read<EditorController>();
-    final enabled = !controller.videoOverlayTrackLocked;
+    final videoTrackLocked = controller.isVideoOverlayTrackLocked(
+      overlay.videoTrack,
+    );
+    final audioTrackLocked = controller.isAuxiliaryAudioTrackLocked(
+      overlay.audioTrack,
+    );
+    final audioTrackMuted = controller.isAuxiliaryAudioTrackMuted(
+      overlay.audioTrack,
+    );
+    final enabled = !videoTrackLocked;
     return ListView(
       key: const Key('video-overlay-inspector'),
       children: [
@@ -572,7 +581,7 @@ class _VideoOverlayInspector extends StatelessWidget {
                 ],
               ),
             ),
-            if (controller.videoOverlayTrackLocked)
+            if (videoTrackLocked)
               Tooltip(
                 message: 'V${overlay.videoTrack} track locked',
                 child: const Icon(Icons.lock, size: 18),
@@ -644,7 +653,7 @@ class _VideoOverlayInspector extends StatelessWidget {
                   )
                     DropdownMenuItem(value: track, child: Text('A$track')),
                 ],
-                onChanged: controller.audioTrack3Locked
+                onChanged: audioTrackLocked
                     ? null
                     : (track) {
                         if (track != null) {
@@ -811,24 +820,26 @@ class _VideoOverlayInspector extends StatelessWidget {
           icon: Icons.graphic_eq,
           label: 'A${overlay.audioTrack} Overlay Audio',
           resetTooltip: 'A${overlay.audioTrack} 오디오 초기화',
-          onReset: controller.audioTrack3Locked
+          onReset: audioTrackLocked
               ? null
               : editor.resetSelectedVideoOverlayAudio,
         ),
         const SizedBox(height: 7),
         FilterChip(
-          selected: !overlay.muted,
-          onSelected: controller.audioTrack3Locked
+          selected: !audioTrackMuted && !overlay.muted,
+          onSelected: audioTrackLocked || audioTrackMuted
               ? null
               : (_) => editor.toggleSelectedVideoOverlayAudioMute(),
           avatar: Icon(
-            overlay.muted
+            audioTrackMuted || overlay.muted
                 ? Icons.volume_off_outlined
                 : Icons.volume_up_outlined,
             size: 18,
           ),
           label: Text(
-            overlay.muted
+            audioTrackMuted
+                ? 'A${overlay.audioTrack} 트랙 음소거'
+                : overlay.muted
                 ? 'A${overlay.audioTrack} 음소거'
                 : 'A${overlay.audioTrack} 활성',
           ),
@@ -843,7 +854,7 @@ class _VideoOverlayInspector extends StatelessWidget {
           max: 2,
           divisions: 200,
           valueLabel: '${(overlay.audioVolume * 100).round()}%',
-          onChanged: controller.audioTrack3Locked
+          onChanged: audioTrackLocked
               ? null
               : editor.setSelectedVideoOverlayAudioVolume,
         ),
@@ -861,7 +872,7 @@ class _VideoOverlayInspector extends StatelessWidget {
               : overlay.audioPan < 0
               ? 'L${(overlay.audioPan.abs() * 100).round()}'
               : 'R${(overlay.audioPan * 100).round()}',
-          onChanged: controller.audioTrack3Locked
+          onChanged: audioTrackLocked
               ? null
               : editor.setSelectedVideoOverlayAudioPan,
         ),
@@ -875,7 +886,7 @@ class _VideoOverlayInspector extends StatelessWidget {
           max: 10,
           divisions: 100,
           valueLabel: '${overlay.audioFadeIn.toStringAsFixed(1)}s',
-          onChanged: controller.audioTrack3Locked
+          onChanged: audioTrackLocked
               ? null
               : editor.setSelectedVideoOverlayAudioFadeIn,
         ),
@@ -889,7 +900,7 @@ class _VideoOverlayInspector extends StatelessWidget {
           max: 10,
           divisions: 100,
           valueLabel: '${overlay.audioFadeOut.toStringAsFixed(1)}s',
-          onChanged: controller.audioTrack3Locked
+          onChanged: audioTrackLocked
               ? null
               : editor.setSelectedVideoOverlayAudioFadeOut,
         ),
@@ -941,7 +952,9 @@ class _AudioClipInspector extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final editor = context.read<EditorController>();
-    final enabled = !controller.audioTrack3Locked;
+    final trackLocked = controller.isAuxiliaryAudioTrackLocked(clip.track);
+    final trackMuted = controller.isAuxiliaryAudioTrackMuted(clip.track);
+    final enabled = !trackLocked;
     return ListView(
       key: const Key('audio-clip-inspector'),
       children: [
@@ -972,7 +985,7 @@ class _AudioClipInspector extends StatelessWidget {
                 ],
               ),
             ),
-            if (controller.audioTrack3Locked)
+            if (trackLocked)
               Tooltip(
                 message: 'A${clip.track} track locked',
                 child: const Icon(Icons.lock, size: 18),
@@ -1040,17 +1053,23 @@ class _AudioClipInspector extends StatelessWidget {
             ),
             FilterChip(
               key: const Key('audio-clip-mute'),
-              selected: !clip.muted,
-              onSelected: enabled
+              selected: !trackMuted && !clip.muted,
+              onSelected: enabled && !trackMuted
                   ? (_) => editor.toggleSelectedAudioClipMute()
                   : null,
               avatar: Icon(
-                clip.muted
+                trackMuted || clip.muted
                     ? Icons.volume_off_outlined
                     : Icons.volume_up_outlined,
                 size: 17,
               ),
-              label: Text(clip.muted ? 'Muted' : 'Audible'),
+              label: Text(
+                trackMuted
+                    ? 'A${clip.track} Track Muted'
+                    : clip.muted
+                    ? 'Muted'
+                    : 'Audible',
+              ),
             ),
           ],
         ),

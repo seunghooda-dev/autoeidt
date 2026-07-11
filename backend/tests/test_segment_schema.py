@@ -193,6 +193,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
         timeline_timecode_mode="drop",
         mark_in=12.516,
         mark_out=58.019,
+        locked_video_tracks=[4, 4, 1, 9],
+        hidden_video_tracks=[3, 8],
+        locked_audio_tracks=[8, 8, 2, 10],
+        muted_audio_tracks=[7, 1, 9],
         timeline_markers=[{"id": 1, "seconds": 7.018, "label": "Snap"}],
         video_overlays=[
             {
@@ -270,6 +274,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.video_overlays[0].audio_track == 8
     assert project.active_video_track_count == 4
     assert project.active_audio_track_count == 8
+    assert project.locked_video_tracks == [4]
+    assert project.hidden_video_tracks == [3]
+    assert project.locked_audio_tracks == [8]
+    assert project.muted_audio_tracks == [7]
     assert project.audio_clips[0].timeline_start == 20.033333
     assert project.audio_clips[0].track == 8
     assert project.audio_clips[0].volume == 2.0

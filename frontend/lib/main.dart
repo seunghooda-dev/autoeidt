@@ -2740,12 +2740,13 @@ class _TimelineEditorBody extends StatelessWidget {
       targetedVideoOverlayTrack: controller.targetedVideoOverlayTrack,
       targetedOverlayAudioTrack: controller.targetedOverlayAudioTrack,
       videoTrackLocked: controller.videoTrackLocked,
-      videoOverlayTrackLocked: controller.videoOverlayTrackLocked,
-      videoOverlayTrackVisible: controller.videoOverlayTrackVisible,
+      lockedVideoOverlayTracks: controller.lockedVideoTracks,
+      hiddenVideoOverlayTracks: controller.hiddenVideoTracks,
       audioTrackLocked: controller.audioTrackLocked,
       audioTrack1Locked: controller.audioTrack1Locked,
       audioTrack2Locked: controller.audioTrack2Locked,
-      audioTrack3Locked: controller.audioTrack3Locked,
+      lockedAuxiliaryAudioTracks: controller.lockedAudioTracks,
+      mutedAuxiliaryAudioTracks: controller.mutedAudioTracks,
       razorTool: controller.isRazorTool,
       onSegmentChanged: context.read<EditorController>().updateSegment,
       onVideoOverlayChanged: context
@@ -2929,9 +2930,15 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleVideoOverlayLock: context
           .read<EditorController>()
           .toggleVideoOverlayTrackLock,
+      onToggleVideoOverlayLockAt: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackLockAt,
       onToggleVideoOverlayVisibility: context
           .read<EditorController>()
           .toggleVideoOverlayTrackVisibility,
+      onToggleVideoOverlayVisibilityAt: context
+          .read<EditorController>()
+          .toggleVideoOverlayTrackVisibilityAt,
       onToggleVideoOverlayAudio: context
           .read<EditorController>()
           .toggleAllVideoOverlayAudio,
@@ -2941,6 +2948,9 @@ class _TimelineEditorBody extends StatelessWidget {
       onToggleOverlayAudioAt: context
           .read<EditorController>()
           .toggleVideoOverlayAudioTrack,
+      onToggleAuxiliaryAudioLockAt: context
+          .read<EditorController>()
+          .toggleAuxiliaryAudioTrackLockAt,
       onDeleteVideoOverlay: context
           .read<EditorController>()
           .deleteSelectedVideoOverlay,

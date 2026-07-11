@@ -792,6 +792,10 @@ class ProjectState(BaseModel):
     audio_clips: list[AudioClip] = Field(default_factory=list)
     active_video_track_count: int = Field(default=2, ge=1, le=4)
     active_audio_track_count: int = Field(default=3, ge=2, le=8)
+    locked_video_tracks: list[int] = Field(default_factory=list)
+    hidden_video_tracks: list[int] = Field(default_factory=list)
+    locked_audio_tracks: list[int] = Field(default_factory=list)
+    muted_audio_tracks: list[int] = Field(default_factory=list)
     transcript: list[TranscriptSegment] = Field(default_factory=list)
     captions: list[CaptionSegment] = Field(default_factory=list)
     waveform: list[float] = Field(default_factory=list)
@@ -854,6 +858,34 @@ class ProjectState(BaseModel):
         self.active_audio_track_count = max(
             self.active_audio_track_count,
             highest_audio_track,
+        )
+        self.locked_video_tracks = sorted(
+            {
+                int(track)
+                for track in self.locked_video_tracks
+                if 2 <= int(track) <= self.active_video_track_count
+            }
+        )
+        self.hidden_video_tracks = sorted(
+            {
+                int(track)
+                for track in self.hidden_video_tracks
+                if 2 <= int(track) <= self.active_video_track_count
+            }
+        )
+        self.locked_audio_tracks = sorted(
+            {
+                int(track)
+                for track in self.locked_audio_tracks
+                if 3 <= int(track) <= self.active_audio_track_count
+            }
+        )
+        self.muted_audio_tracks = sorted(
+            {
+                int(track)
+                for track in self.muted_audio_tracks
+                if 3 <= int(track) <= self.active_audio_track_count
+            }
         )
         return self
 
