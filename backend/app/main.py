@@ -39,7 +39,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "app": settings.app_name,
-        "engine_version": "2026.07.11-audio-solo-v1",
+        "engine_version": "2026.07.11-audio-automation-v1",
         "timeline_frame_rate": "30",
         "preview_proxy_seconds": settings.preview_proxy_seconds,
         "features": [
@@ -69,5 +69,6 @@ def health() -> dict[str, object]:
             "per_track_controls_v1",
             "audio_track_solo_v1",
             "lossless_multitrack_project_v1",
+            "audio_gain_keyframes_v1",
         ],
     }

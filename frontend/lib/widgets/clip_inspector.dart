@@ -472,17 +472,33 @@ class ClipInspector extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
+        _AudioGainKeyframeControl(
+          count: selected.audioGainKeyframes.length,
+          currentTime: controller.selectedAudioGainLocalTime,
+          atKeyframe: controller.selectedAudioGainHasKeyframeAtPlayhead,
+          enabled: controller.canEditSelectedAudioGain,
+          onPrevious: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: false)),
+          onToggle: editor.addOrUpdateSelectedAudioGainKeyframe,
+          onNext: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: true)),
+          onDelete: controller.selectedAudioGainHasKeyframeAtPlayhead
+              ? editor.removeSelectedAudioGainKeyframe
+              : null,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
+          key: const Key('clip-audio-volume'),
           icon: Icons.graphic_eq,
           label: 'Volume',
-          value: selected.audioVolume.clamp(0.0, 2.0).toDouble(),
+          value: controller.selectedAudioGainValue.clamp(0.0, 2.0).toDouble(),
           min: 0,
           max: 2,
-          divisions: 20,
-          valueLabel: '${(selected.audioVolume * 100).round()}%',
+          divisions: 200,
+          valueLabel: '${(controller.selectedAudioGainValue * 100).round()}%',
           onChanged: controller.anyAudioTrackEditLocked
               ? null
-              : editor.setSelectedAudioVolume,
+              : editor.setSelectedAudioAutomationVolume,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -852,18 +868,33 @@ class _VideoOverlayInspector extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+        _AudioGainKeyframeControl(
+          count: overlay.audioGainKeyframes.length,
+          currentTime: controller.selectedAudioGainLocalTime,
+          atKeyframe: controller.selectedAudioGainHasKeyframeAtPlayhead,
+          enabled: controller.canEditSelectedAudioGain,
+          onPrevious: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: false)),
+          onToggle: editor.addOrUpdateSelectedAudioGainKeyframe,
+          onNext: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: true)),
+          onDelete: controller.selectedAudioGainHasKeyframeAtPlayhead
+              ? editor.removeSelectedAudioGainKeyframe
+              : null,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
           key: const Key('overlay-audio-volume'),
           icon: Icons.volume_up_outlined,
           label: 'Volume',
-          value: overlay.audioVolume,
+          value: controller.selectedAudioGainValue.clamp(0.0, 2.0).toDouble(),
           min: 0,
           max: 2,
           divisions: 200,
-          valueLabel: '${(overlay.audioVolume * 100).round()}%',
+          valueLabel: '${(controller.selectedAudioGainValue * 100).round()}%',
           onChanged: audioTrackLocked
               ? null
-              : editor.setSelectedVideoOverlayAudioVolume,
+              : editor.setSelectedAudioAutomationVolume,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -1111,16 +1142,31 @@ class _AudioClipInspector extends StatelessWidget {
           onReset: enabled ? editor.resetSelectedAudioClipMix : null,
         ),
         const SizedBox(height: 7),
+        _AudioGainKeyframeControl(
+          count: clip.gainKeyframes.length,
+          currentTime: controller.selectedAudioGainLocalTime,
+          atKeyframe: controller.selectedAudioGainHasKeyframeAtPlayhead,
+          enabled: controller.canEditSelectedAudioGain,
+          onPrevious: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: false)),
+          onToggle: editor.addOrUpdateSelectedAudioGainKeyframe,
+          onNext: () =>
+              unawaited(editor.jumpToSelectedAudioGainKeyframe(next: true)),
+          onDelete: controller.selectedAudioGainHasKeyframeAtPlayhead
+              ? editor.removeSelectedAudioGainKeyframe
+              : null,
+        ),
+        const SizedBox(height: 8),
         _PropertySlider(
           key: const Key('audio-clip-volume'),
           icon: Icons.volume_up_outlined,
           label: 'Volume',
-          value: clip.volume,
+          value: controller.selectedAudioGainValue.clamp(0.0, 2.0).toDouble(),
           min: 0,
           max: 2,
           divisions: 200,
-          valueLabel: '${(clip.volume * 100).round()}%',
-          onChanged: enabled ? editor.setSelectedAudioClipVolume : null,
+          valueLabel: '${(controller.selectedAudioGainValue * 100).round()}%',
+          onChanged: enabled ? editor.setSelectedAudioAutomationVolume : null,
         ),
         const SizedBox(height: 8),
         _PropertySlider(
@@ -1356,6 +1402,108 @@ class _MotionKeyframeControl extends StatelessWidget {
             icon: const Icon(Icons.delete_outline, size: 17),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AudioGainKeyframeControl extends StatelessWidget {
+  const _AudioGainKeyframeControl({
+    required this.count,
+    required this.currentTime,
+    required this.atKeyframe,
+    required this.enabled,
+    required this.onPrevious,
+    required this.onToggle,
+    required this.onNext,
+    required this.onDelete,
+  });
+
+  final int count;
+  final double currentTime;
+  final bool atKeyframe;
+  final bool enabled;
+  final VoidCallback onPrevious;
+  final VoidCallback onToggle;
+  final VoidCallback onNext;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final active = count > 0;
+    return Semantics(
+      container: true,
+      label: active ? '볼륨 자동화, 키프레임 $count개' : '볼륨 자동화, 정적 볼륨',
+      child: Container(
+        key: const Key('audio-gain-keyframes'),
+        height: 38,
+        padding: const EdgeInsets.only(left: 8, right: 2),
+        decoration: BoxDecoration(
+          color: active
+              ? colorScheme.tertiaryContainer.withValues(alpha: 0.26)
+              : colorScheme.surfaceContainerHighest,
+          border: Border.all(
+            color: active
+                ? colorScheme.tertiary.withValues(alpha: 0.62)
+                : colorScheme.outline,
+          ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              active ? Icons.multiline_chart : Icons.horizontal_rule,
+              size: 17,
+              color: active
+                  ? colorScheme.tertiary
+                  : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                active
+                    ? 'Volume · $count · ${formatSeconds(currentTime)}'
+                    : 'Volume · Static',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
+            IconButton(
+              key: const Key('audio-gain-keyframe-previous'),
+              tooltip: '이전 볼륨 키프레임',
+              visualDensity: VisualDensity.compact,
+              onPressed: enabled && active ? onPrevious : null,
+              icon: const Icon(Icons.skip_previous, size: 18),
+            ),
+            IconButton(
+              key: const Key('audio-gain-keyframe-toggle'),
+              tooltip: atKeyframe ? '현재 볼륨 키프레임 갱신' : '현재 위치에 볼륨 키프레임 추가',
+              visualDensity: VisualDensity.compact,
+              onPressed: enabled ? onToggle : null,
+              icon: Icon(
+                atKeyframe ? Icons.diamond : Icons.diamond_outlined,
+                size: 17,
+                color: atKeyframe ? colorScheme.tertiary : null,
+              ),
+            ),
+            IconButton(
+              key: const Key('audio-gain-keyframe-next'),
+              tooltip: '다음 볼륨 키프레임',
+              visualDensity: VisualDensity.compact,
+              onPressed: enabled && active ? onNext : null,
+              icon: const Icon(Icons.skip_next, size: 18),
+            ),
+            IconButton(
+              key: const Key('audio-gain-keyframe-delete'),
+              tooltip: '현재 볼륨 키프레임 삭제',
+              visualDensity: VisualDensity.compact,
+              onPressed: enabled ? onDelete : null,
+              icon: const Icon(Icons.delete_outline, size: 17),
+            ),
+          ],
+        ),
       ),
     );
   }

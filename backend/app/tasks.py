@@ -516,6 +516,44 @@ def _normalize_highlights(
                 deduplicated_motion_keyframes[-1] = keyframe
             else:
                 deduplicated_motion_keyframes.append(keyframe)
+        audio_gain_keyframes: list[dict[str, float]] = []
+        for keyframe in item.get("audio_gain_keyframes", []) or []:
+            if not isinstance(keyframe, dict):
+                continue
+            try:
+                audio_gain_keyframes.append(
+                    {
+                        "time": _round_timecode_seconds(
+                            max(
+                                0.0,
+                                min(float(keyframe.get("time", 0.0)), output_duration),
+                            )
+                        ),
+                        "volume": round(
+                            max(
+                                0.0,
+                                min(
+                                    float(keyframe.get("volume", audio_volume)),
+                                    2.0,
+                                ),
+                            ),
+                            4,
+                        ),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        audio_gain_keyframes.sort(key=lambda keyframe: keyframe["time"])
+        deduplicated_audio_gain_keyframes: list[dict[str, float]] = []
+        for keyframe in audio_gain_keyframes[:64]:
+            if (
+                deduplicated_audio_gain_keyframes
+                and deduplicated_audio_gain_keyframes[-1]["time"]
+                == keyframe["time"]
+            ):
+                deduplicated_audio_gain_keyframes[-1] = keyframe
+            else:
+                deduplicated_audio_gain_keyframes.append(keyframe)
         video_fade_in = max(0.0, min(float(item.get("video_fade_in", 0.0)), 10.0))
         video_fade_out = max(0.0, min(float(item.get("video_fade_out", 0.0)), 10.0))
         color_brightness = max(-0.3, min(float(item.get("color_brightness", 0.0)), 0.3))
@@ -607,6 +645,7 @@ def _normalize_highlights(
                 "transition_duration": round(transition_duration, 6),
                 "audio_fade_in": round(audio_fade_in, 3),
                 "audio_fade_out": round(audio_fade_out, 3),
+                "audio_gain_keyframes": deduplicated_audio_gain_keyframes,
                 "score": round(score, 2),
                 "tags": tags[:8],
             }

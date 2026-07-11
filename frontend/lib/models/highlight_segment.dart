@@ -161,6 +161,128 @@ MotionKeyframe sampleMotionKeyframes({
   return fallback.copyWith(time: time);
 }
 
+class AudioGainKeyframe {
+  const AudioGainKeyframe({required this.time, required this.volume});
+
+  final double time;
+  final double volume;
+
+  AudioGainKeyframe copyWith({double? time, double? volume}) {
+    return AudioGainKeyframe(
+      time: time ?? this.time,
+      volume: volume ?? this.volume,
+    );
+  }
+
+  factory AudioGainKeyframe.fromJson(Map<String, dynamic> json) {
+    return AudioGainKeyframe(
+      time: snapSecondsToFrame(
+        ((json['time'] as num?)?.toDouble() ?? 0).clamp(0.0, double.infinity),
+      ),
+      volume: ((json['volume'] as num?)?.toDouble() ?? 1.0)
+          .clamp(0.0, 2.0)
+          .toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'time': snapSecondsToFrame(time),
+    'volume': volume.clamp(0.0, 2.0),
+  };
+}
+
+List<AudioGainKeyframe> normalizeAudioGainKeyframes({
+  required Iterable<AudioGainKeyframe> keyframes,
+  required double duration,
+}) {
+  final safeDuration = math.max(0.0, duration);
+  final normalized =
+      keyframes
+          .take(64)
+          .map(
+            (keyframe) => AudioGainKeyframe(
+              time: snapSecondsToFrame(
+                keyframe.time.clamp(0.0, safeDuration).toDouble(),
+              ),
+              volume: keyframe.volume.clamp(0.0, 2.0).toDouble(),
+            ),
+          )
+          .toList()
+        ..sort((a, b) => a.time.compareTo(b.time));
+  final deduplicated = <AudioGainKeyframe>[];
+  for (final keyframe in normalized) {
+    if (deduplicated.isNotEmpty &&
+        (deduplicated.last.time - keyframe.time).abs() <=
+            timecodeFrameDurationSeconds / 2) {
+      deduplicated[deduplicated.length - 1] = keyframe;
+    } else {
+      deduplicated.add(keyframe);
+    }
+  }
+  return deduplicated;
+}
+
+double sampleAudioGainKeyframes({
+  required List<AudioGainKeyframe> keyframes,
+  required double time,
+  required double fallback,
+}) {
+  if (keyframes.isEmpty) {
+    return fallback.clamp(0.0, 2.0).toDouble();
+  }
+  final sorted = [...keyframes]..sort((a, b) => a.time.compareTo(b.time));
+  if (time <= sorted.first.time) {
+    return sorted.first.volume;
+  }
+  if (time >= sorted.last.time) {
+    return sorted.last.volume;
+  }
+  for (var index = 0; index < sorted.length - 1; index++) {
+    final left = sorted[index];
+    final right = sorted[index + 1];
+    if (time > right.time) {
+      continue;
+    }
+    final duration = math.max(
+      timecodeFrameDurationSeconds,
+      right.time - left.time,
+    );
+    final progress = ((time - left.time) / duration).clamp(0.0, 1.0);
+    return left.volume + (right.volume - left.volume) * progress;
+  }
+  return fallback.clamp(0.0, 2.0).toDouble();
+}
+
+List<AudioGainKeyframe> windowAudioGainKeyframes({
+  required List<AudioGainKeyframe> keyframes,
+  required double offset,
+  required double duration,
+  required double fallback,
+}) {
+  if (keyframes.isEmpty || duration <= 0) {
+    return const [];
+  }
+  final start = math.max(0.0, offset);
+  final end = start + duration;
+  final sampleTimes = <double>{start, end};
+  sampleTimes.addAll(
+    keyframes
+        .map((keyframe) => keyframe.time)
+        .where((time) => time > start && time < end),
+  );
+  return [
+    for (final time in sampleTimes.toList()..sort())
+      AudioGainKeyframe(
+        time: snapSecondsToFrame(math.max(0.0, time - start)),
+        volume: sampleAudioGainKeyframes(
+          keyframes: keyframes,
+          time: time,
+          fallback: fallback,
+        ),
+      ),
+  ];
+}
+
 class VideoOverlayClip {
   const VideoOverlayClip({
     required this.id,
@@ -181,6 +303,7 @@ class VideoOverlayClip {
     this.audioPan = 0.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
+    this.audioGainKeyframes = const [],
     this.videoTrack = 2,
     this.audioTrack = 3,
   });
@@ -203,6 +326,7 @@ class VideoOverlayClip {
   final double audioPan;
   final double audioFadeIn;
   final double audioFadeOut;
+  final List<AudioGainKeyframe> audioGainKeyframes;
   final int videoTrack;
   final int audioTrack;
 
@@ -228,6 +352,7 @@ class VideoOverlayClip {
     double? audioPan,
     double? audioFadeIn,
     double? audioFadeOut,
+    List<AudioGainKeyframe>? audioGainKeyframes,
     int? videoTrack,
     int? audioTrack,
   }) {
@@ -250,6 +375,7 @@ class VideoOverlayClip {
       audioPan: audioPan ?? this.audioPan,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
+      audioGainKeyframes: audioGainKeyframes ?? this.audioGainKeyframes,
       videoTrack: videoTrack ?? this.videoTrack,
       audioTrack: audioTrack ?? this.audioTrack,
     );
@@ -304,6 +430,14 @@ class VideoOverlayClip {
       audioFadeOut: ((json['audio_fade_out'] as num?)?.toDouble() ?? 0.0)
           .clamp(0.0, 10.0)
           .toDouble(),
+      audioGainKeyframes:
+          (json['audio_gain_keyframes'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map(
+                (item) =>
+                    AudioGainKeyframe.fromJson(Map<String, dynamic>.from(item)),
+              )
+              .toList(),
       videoTrack: ((json['video_track'] as num?)?.toInt() ?? 2).clamp(2, 4),
       audioTrack: ((json['audio_track'] as num?)?.toInt() ?? 3).clamp(3, 8),
     );
@@ -328,6 +462,9 @@ class VideoOverlayClip {
     'audio_pan': audioPan,
     'audio_fade_in': audioFadeIn,
     'audio_fade_out': audioFadeOut,
+    'audio_gain_keyframes': audioGainKeyframes
+        .map((keyframe) => keyframe.toJson())
+        .toList(),
     'video_track': videoTrack.clamp(2, 4),
     'audio_track': audioTrack.clamp(3, 8),
   };
@@ -349,6 +486,7 @@ class AudioClip {
     this.pan = 0.0,
     this.fadeIn = 0.0,
     this.fadeOut = 0.0,
+    this.gainKeyframes = const [],
   });
 
   final String id;
@@ -365,6 +503,7 @@ class AudioClip {
   final double pan;
   final double fadeIn;
   final double fadeOut;
+  final List<AudioGainKeyframe> gainKeyframes;
 
   double get timelineDuration => timelineEnd - timelineStart;
 
@@ -383,6 +522,7 @@ class AudioClip {
     double? pan,
     double? fadeIn,
     double? fadeOut,
+    List<AudioGainKeyframe>? gainKeyframes,
   }) {
     return AudioClip(
       id: id ?? this.id,
@@ -399,6 +539,7 @@ class AudioClip {
       pan: pan ?? this.pan,
       fadeIn: fadeIn ?? this.fadeIn,
       fadeOut: fadeOut ?? this.fadeOut,
+      gainKeyframes: gainKeyframes ?? this.gainKeyframes,
     );
   }
 
@@ -437,6 +578,13 @@ class AudioClip {
       fadeOut: ((json['fade_out'] as num?)?.toDouble() ?? 0.0)
           .clamp(0.0, 10.0)
           .toDouble(),
+      gainKeyframes: (json['gain_keyframes'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) =>
+                AudioGainKeyframe.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(),
     );
   }
 
@@ -455,6 +603,9 @@ class AudioClip {
     'pan': pan.clamp(-1.0, 1.0),
     'fade_in': fadeIn.clamp(0.0, 10.0),
     'fade_out': fadeOut.clamp(0.0, 10.0),
+    'gain_keyframes': gainKeyframes
+        .map((keyframe) => keyframe.toJson())
+        .toList(),
   };
 }
 
@@ -500,6 +651,7 @@ class HighlightSegment {
     this.transitionDuration = 0.0,
     this.audioFadeIn = 0.0,
     this.audioFadeOut = 0.0,
+    this.audioGainKeyframes = const [],
     this.score = 0.0,
     this.tags = const [],
   });
@@ -544,6 +696,7 @@ class HighlightSegment {
   final double transitionDuration;
   final double audioFadeIn;
   final double audioFadeOut;
+  final List<AudioGainKeyframe> audioGainKeyframes;
   final double score;
   final List<String> tags;
 
@@ -596,6 +749,7 @@ class HighlightSegment {
     double? transitionDuration,
     double? audioFadeIn,
     double? audioFadeOut,
+    List<AudioGainKeyframe>? audioGainKeyframes,
     double? score,
     List<String>? tags,
   }) {
@@ -644,6 +798,7 @@ class HighlightSegment {
       transitionDuration: transitionDuration ?? this.transitionDuration,
       audioFadeIn: audioFadeIn ?? this.audioFadeIn,
       audioFadeOut: audioFadeOut ?? this.audioFadeOut,
+      audioGainKeyframes: audioGainKeyframes ?? this.audioGainKeyframes,
       score: score ?? this.score,
       tags: tags ?? this.tags,
     );
@@ -805,6 +960,14 @@ class HighlightSegment {
           (json['audio_fade_out'] as num?)?.toDouble() ??
           (json['audioFadeOut'] as num?)?.toDouble() ??
           0.0,
+      audioGainKeyframes:
+          (json['audio_gain_keyframes'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map(
+                (item) =>
+                    AudioGainKeyframe.fromJson(Map<String, dynamic>.from(item)),
+              )
+              .toList(),
       score:
           (json['score'] as num?)?.toDouble() ??
           (json['highlightScore'] as num?)?.toDouble() ??
@@ -864,6 +1027,9 @@ class HighlightSegment {
       ),
       'audio_fade_in': audioFadeIn,
       'audio_fade_out': audioFadeOut,
+      'audio_gain_keyframes': audioGainKeyframes
+          .map((keyframe) => keyframe.toJson())
+          .toList(),
       'score': score,
       'tags': tags,
     };

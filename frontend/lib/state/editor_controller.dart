@@ -821,7 +821,10 @@ class EditorController extends ChangeNotifier {
             isAudioTrackIncludedBySolo(overlay.audioTrack) &&
             !isAuxiliaryAudioTrackMuted(overlay.audioTrack) &&
             !overlay.muted &&
-            overlay.audioVolume > 0,
+            (overlay.audioVolume > 0 ||
+                overlay.audioGainKeyframes.any(
+                  (keyframe) => keyframe.volume > 0,
+                )),
       ) ||
       audioClips.any(
         (clip) =>
@@ -829,7 +832,8 @@ class EditorController extends ChangeNotifier {
             !isAuxiliaryAudioTrackMuted(clip.track) &&
             clip.enabled &&
             !clip.muted &&
-            clip.volume > 0,
+            (clip.volume > 0 ||
+                clip.gainKeyframes.any((keyframe) => keyframe.volume > 0)),
       );
 
   List<VideoOverlayClip> _videoOverlaysForOutput() {
@@ -843,7 +847,12 @@ class EditorController extends ChangeNotifier {
           overlay.muted ||
           isAuxiliaryAudioTrackMuted(overlay.audioTrack) ||
           !isAudioTrackIncludedBySolo(overlay.audioTrack);
-      final audioAudible = !audioMuted && overlay.audioVolume > 0;
+      final audioAudible =
+          !audioMuted &&
+          (overlay.audioVolume > 0 ||
+              overlay.audioGainKeyframes.any(
+                (keyframe) => keyframe.volume > 0,
+              ));
       if (!videoVisible && !audioAudible) {
         continue;
       }
@@ -939,6 +948,88 @@ class EditorController extends ChangeNotifier {
 
   bool get selectedMotionHasKeyframeAtPlayhead =>
       selectedMotionKeyframeIndex >= 0;
+
+  List<AudioGainKeyframe> get selectedAudioGainKeyframes {
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      return audioClip.gainKeyframes;
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      return overlay.audioGainKeyframes;
+    }
+    return selectedSegment?.audioGainKeyframes ?? const [];
+  }
+
+  double get selectedAudioGainBaseVolume =>
+      selectedAudioClip?.volume ??
+      selectedVideoOverlay?.audioVolume ??
+      selectedSegment?.audioVolume ??
+      1.0;
+
+  double get selectedAudioGainDuration =>
+      selectedAudioClip?.timelineDuration ??
+      selectedVideoOverlay?.timelineDuration ??
+      selectedSegment?.outputDuration ??
+      0.0;
+
+  double get selectedAudioGainLocalTime {
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      return _snapToFrame(
+        ((_audioAutomationSequencePosition - audioClip.timelineStart).clamp(
+          0.0,
+          audioClip.timelineDuration,
+        )).toDouble(),
+      );
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      return _snapToFrame(
+        ((_audioAutomationSequencePosition - overlay.timelineStart).clamp(
+          0.0,
+          overlay.timelineDuration,
+        )).toDouble(),
+      );
+    }
+    return selectedMotionLocalTime;
+  }
+
+  double get _audioAutomationSequencePosition =>
+      isProgramMonitor ? monitorPositionSeconds : _programPlayheadSeconds;
+
+  double get selectedAudioGainValue => sampleAudioGainKeyframes(
+    keyframes: selectedAudioGainKeyframes,
+    time: selectedAudioGainLocalTime,
+    fallback: selectedAudioGainBaseVolume,
+  );
+
+  int get selectedAudioGainKeyframeIndex {
+    final time = selectedAudioGainLocalTime;
+    final keyframes = selectedAudioGainKeyframes;
+    for (var index = 0; index < keyframes.length; index++) {
+      if ((keyframes[index].time - time).abs() <=
+          timecodeFrameDurationSeconds / 2 + 0.0001) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  bool get selectedAudioGainHasKeyframeAtPlayhead =>
+      selectedAudioGainKeyframeIndex >= 0;
+
+  bool get canEditSelectedAudioGain {
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      return !isAuxiliaryAudioTrackLocked(audioClip.track);
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      return !isAuxiliaryAudioTrackLocked(overlay.audioTrack);
+    }
+    return selectedSegment != null && !anyAudioTrackEditLocked;
+  }
 
   bool get canApplySelectedTransition =>
       selectedSegment != null &&
@@ -2751,20 +2842,26 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final existing = videoOverlays[existingIndex];
+    final normalized = updated.copyWith(
+      audioGainKeyframes: normalizeAudioGainKeyframes(
+        keyframes: updated.audioGainKeyframes,
+        duration: updated.timelineDuration,
+      ),
+    );
     final locked = audioOnly
         ? isAuxiliaryAudioTrackLocked(existing.audioTrack) ||
-              isAuxiliaryAudioTrackLocked(updated.audioTrack)
+              isAuxiliaryAudioTrackLocked(normalized.audioTrack)
         : isVideoOverlayTrackLocked(existing.videoTrack) ||
-              isVideoOverlayTrackLocked(updated.videoTrack);
+              isVideoOverlayTrackLocked(normalized.videoTrack);
     if (locked) {
       return;
     }
     _commitHistory();
     videoOverlays = [
       for (final overlay in videoOverlays)
-        if (overlay.id == updated.id) updated else overlay,
+        if (overlay.id == normalized.id) normalized else overlay,
     ]..sort((a, b) => a.timelineStart.compareTo(b.timelineStart));
-    selectedVideoOverlayId = updated.id;
+    selectedVideoOverlayId = normalized.id;
     selectedAudioClipId = null;
     renderUrl = null;
     notifyListeners();
@@ -2957,6 +3054,7 @@ class EditorController extends ChangeNotifier {
         audioPan: 0,
         audioFadeIn: 0,
         audioFadeOut: 0,
+        audioGainKeyframes: const [],
       ),
       audioOnly: true,
     );
@@ -3173,6 +3271,10 @@ class EditorController extends ChangeNotifier {
       pan: clip.pan.clamp(-1.0, 1.0).toDouble(),
       fadeIn: clip.fadeIn.clamp(0.0, normalizedClipDuration / 2).toDouble(),
       fadeOut: clip.fadeOut.clamp(0.0, normalizedClipDuration / 2).toDouble(),
+      gainKeyframes: normalizeAudioGainKeyframes(
+        keyframes: clip.gainKeyframes,
+        duration: normalizedClipDuration,
+      ),
     );
   }
 
@@ -3289,7 +3391,15 @@ class EditorController extends ChangeNotifier {
   void resetSelectedAudioClipMix() {
     final clip = selectedAudioClip;
     if (clip != null) {
-      updateAudioClip(clip.copyWith(volume: 1, pan: 0, fadeIn: 0, fadeOut: 0));
+      updateAudioClip(
+        clip.copyWith(
+          volume: 1,
+          pan: 0,
+          fadeIn: 0,
+          fadeOut: 0,
+          gainKeyframes: const [],
+        ),
+      );
     }
   }
 
@@ -5167,6 +5277,155 @@ class EditorController extends ChangeNotifier {
         source: selected.source == 'ai' ? 'ai+manual' : selected.source,
       ),
     );
+  }
+
+  void _writeSelectedAudioGain({
+    required List<AudioGainKeyframe> keyframes,
+    double? baseVolume,
+  }) {
+    final normalized = normalizeAudioGainKeyframes(
+      keyframes: keyframes,
+      duration: selectedAudioGainDuration,
+    );
+    final audioClip = selectedAudioClip;
+    if (audioClip != null) {
+      updateAudioClip(
+        audioClip.copyWith(volume: baseVolume, gainKeyframes: normalized),
+      );
+      return;
+    }
+    final overlay = selectedVideoOverlay;
+    if (overlay != null) {
+      updateVideoOverlay(
+        overlay.copyWith(
+          audioVolume: baseVolume,
+          audioGainKeyframes: normalized,
+        ),
+        audioOnly: true,
+      );
+      return;
+    }
+    final selected = selectedSegment;
+    if (selected == null || anyAudioTrackEditLocked) {
+      return;
+    }
+    updateSegment(
+      selected.copyWith(
+        audioVolume: baseVolume,
+        audioGainKeyframes: normalized,
+        source: selected.source == 'ai' ? 'ai+manual' : selected.source,
+      ),
+    );
+  }
+
+  void setSelectedAudioAutomationVolume(double value) {
+    if (!canEditSelectedAudioGain) {
+      return;
+    }
+    final normalizedValue = value.clamp(0.0, 2.0).toDouble();
+    final keyframes = [...selectedAudioGainKeyframes];
+    if (keyframes.isEmpty) {
+      _writeSelectedAudioGain(keyframes: const [], baseVolume: normalizedValue);
+      return;
+    }
+    final next = AudioGainKeyframe(
+      time: selectedAudioGainLocalTime,
+      volume: normalizedValue,
+    );
+    final existingIndex = selectedAudioGainKeyframeIndex;
+    if (existingIndex >= 0) {
+      keyframes[existingIndex] = next;
+    } else {
+      keyframes.add(next);
+    }
+    _writeSelectedAudioGain(keyframes: keyframes);
+  }
+
+  void addOrUpdateSelectedAudioGainKeyframe() {
+    if (!canEditSelectedAudioGain) {
+      return;
+    }
+    final keyframes = [...selectedAudioGainKeyframes];
+    final next = AudioGainKeyframe(
+      time: selectedAudioGainLocalTime,
+      volume: selectedAudioGainValue,
+    );
+    final existingIndex = selectedAudioGainKeyframeIndex;
+    if (existingIndex >= 0) {
+      keyframes[existingIndex] = next;
+    } else {
+      keyframes.add(next);
+    }
+    _writeSelectedAudioGain(keyframes: keyframes);
+  }
+
+  void removeSelectedAudioGainKeyframe() {
+    if (!canEditSelectedAudioGain) {
+      return;
+    }
+    final index = selectedAudioGainKeyframeIndex;
+    if (index < 0) {
+      return;
+    }
+    final keyframes = [...selectedAudioGainKeyframes];
+    final removed = keyframes.removeAt(index);
+    _writeSelectedAudioGain(
+      keyframes: keyframes,
+      baseVolume: keyframes.isEmpty ? removed.volume : null,
+    );
+  }
+
+  void resetSelectedAudioGainAutomation() {
+    if (!canEditSelectedAudioGain) {
+      return;
+    }
+    _writeSelectedAudioGain(keyframes: const [], baseVolume: 1.0);
+  }
+
+  Future<void> jumpToSelectedAudioGainKeyframe({required bool next}) async {
+    final keyframes = selectedAudioGainKeyframes;
+    if (keyframes.isEmpty) {
+      return;
+    }
+    final current = selectedAudioGainLocalTime;
+    final threshold = timecodeFrameDurationSeconds / 2;
+    AudioGainKeyframe? target;
+    if (next) {
+      for (final keyframe in keyframes) {
+        if (keyframe.time > current + threshold) {
+          target = keyframe;
+          break;
+        }
+      }
+    } else {
+      for (final keyframe in keyframes.reversed) {
+        if (keyframe.time < current - threshold) {
+          target = keyframe;
+          break;
+        }
+      }
+    }
+    if (target == null) {
+      return;
+    }
+    final audioClip = selectedAudioClip;
+    final overlay = selectedVideoOverlay;
+    if (audioClip != null || overlay != null) {
+      if (!isProgramMonitor) {
+        await setPreviewMonitorMode('program');
+      }
+      final timelineStart = audioClip?.timelineStart ?? overlay!.timelineStart;
+      await seekMonitorTo(timelineStart + target.time, autoplay: false);
+      return;
+    }
+    final selected = selectedSegment;
+    if (selected == null) {
+      return;
+    }
+    final targetSeconds = isProgramMonitor
+        ? programStartForSegment(selected.order) + target.time
+        : selected.start + target.time * selected.playbackSpeed;
+    await seekMonitorTo(targetSeconds, autoplay: false);
   }
 
   void nudgeSelectedAudio(double delta) {
@@ -8517,6 +8776,12 @@ class EditorController extends ChangeNotifier {
           timelineEnd: snapSecondsToFrame(localStart + mappedDuration),
           sourceStart: mappedSourceStart,
           sourceEnd: snapSecondsToFrame(mappedSourceStart + mappedDuration),
+          audioGainKeyframes: windowAudioGainKeyframes(
+            keyframes: overlay.audioGainKeyframes,
+            offset: sourceOffset,
+            duration: mappedDuration,
+            fallback: overlay.audioVolume,
+          ),
         ),
       );
     }
@@ -8561,6 +8826,12 @@ class EditorController extends ChangeNotifier {
           timelineEnd: snapSecondsToFrame(localStart + mappedDuration),
           sourceStart: mappedSourceStart,
           sourceEnd: snapSecondsToFrame(mappedSourceStart + mappedDuration),
+          gainKeyframes: windowAudioGainKeyframes(
+            keyframes: clip.gainKeyframes,
+            offset: sourceOffset,
+            duration: mappedDuration,
+            fallback: clip.volume,
+          ),
         ),
       );
     }
@@ -9251,6 +9522,10 @@ class EditorController extends ChangeNotifier {
         motionKeyframes.add(normalized);
       }
     }
+    final audioGainKeyframes = normalizeAudioGainKeyframes(
+      keyframes: segment.audioGainKeyframes,
+      duration: motionDuration,
+    );
     final transitionType = normalizeClipTransitionType(segment.transitionType);
     final transitionDuration = transitionType == 'cut'
         ? 0.0
@@ -9283,6 +9558,7 @@ class EditorController extends ChangeNotifier {
       focusConfidence: focusConfidence,
       focusKeyframes: focusKeyframes,
       motionKeyframes: motionKeyframes,
+      audioGainKeyframes: audioGainKeyframes,
       topicId: math.max(0, segment.topicId),
       audioChannel1Enabled: audioChannel1Enabled,
       audioChannel2Enabled: audioChannel2Enabled,
@@ -9373,6 +9649,11 @@ class EditorController extends ChangeNotifier {
       splitAt,
       firstHalf: firstHalf,
     );
+    final audioGainKeyframes = _audioGainKeyframesForSplit(
+      segment,
+      splitAt,
+      firstHalf: firstHalf,
+    );
     if (segment.audioLinked) {
       final start = firstHalf ? segment.start : splitAt;
       final end = firstHalf ? splitAt : segment.end;
@@ -9385,6 +9666,7 @@ class EditorController extends ChangeNotifier {
           transitionType: firstHalf ? segment.transitionType : 'cut',
           transitionDuration: firstHalf ? segment.transitionDuration : 0,
           motionKeyframes: motionKeyframes,
+          audioGainKeyframes: audioGainKeyframes,
           reason: '${segment.reason} / $reasonSuffix',
           source: source,
         ),
@@ -9409,6 +9691,7 @@ class EditorController extends ChangeNotifier {
         transitionType: firstHalf ? segment.transitionType : 'cut',
         transitionDuration: firstHalf ? segment.transitionDuration : 0,
         motionKeyframes: motionKeyframes,
+        audioGainKeyframes: audioGainKeyframes,
         reason: '${segment.reason} / $reasonSuffix',
         source: source,
       ),
@@ -9451,6 +9734,48 @@ class EditorController extends ChangeNotifier {
     final output = <MotionKeyframe>[boundary.copyWith(time: 0)];
     output.addAll(
       segment.motionKeyframes
+          .where((keyframe) => keyframe.time > splitTime + tolerance)
+          .map(
+            (keyframe) => keyframe.copyWith(
+              time: _snapToFrame(keyframe.time - splitTime),
+            ),
+          ),
+    );
+    return output;
+  }
+
+  List<AudioGainKeyframe> _audioGainKeyframesForSplit(
+    HighlightSegment segment,
+    double splitAt, {
+    required bool firstHalf,
+  }) {
+    if (segment.audioGainKeyframes.isEmpty) {
+      return const [];
+    }
+    final splitTime = _snapToFrame(
+      ((splitAt - segment.start) / segment.playbackSpeed)
+          .clamp(0.0, segment.outputDuration)
+          .toDouble(),
+    );
+    final boundary = AudioGainKeyframe(
+      time: splitTime,
+      volume: sampleAudioGainKeyframes(
+        keyframes: segment.audioGainKeyframes,
+        time: splitTime,
+        fallback: segment.audioVolume,
+      ),
+    );
+    final tolerance = timecodeFrameDurationSeconds / 2;
+    if (firstHalf) {
+      final output = segment.audioGainKeyframes
+          .where((keyframe) => keyframe.time < splitTime - tolerance)
+          .toList();
+      output.add(boundary);
+      return output;
+    }
+    final output = <AudioGainKeyframe>[boundary.copyWith(time: 0)];
+    output.addAll(
+      segment.audioGainKeyframes
           .where((keyframe) => keyframe.time > splitTime + tolerance)
           .map(
             (keyframe) => keyframe.copyWith(
@@ -10929,10 +11254,21 @@ class EditorController extends ChangeNotifier {
     _programSegmentOrder = null;
     _programCutPending = false;
     segments = _reorderSegments(project.segments);
-    videoOverlays = List<VideoOverlayClip>.of(project.videoOverlays);
-    audioClips = List<AudioClip>.of(project.audioClips);
     activeVideoTrackCount = project.activeVideoTrackCount.clamp(1, 4).toInt();
     activeAudioTrackCount = project.activeAudioTrackCount.clamp(2, 8).toInt();
+    videoOverlays = [
+      for (final overlay in project.videoOverlays)
+        overlay.copyWith(
+          audioGainKeyframes: normalizeAudioGainKeyframes(
+            keyframes: overlay.audioGainKeyframes,
+            duration: overlay.timelineDuration,
+          ),
+        ),
+    ];
+    audioClips = [
+      for (final clip in project.audioClips)
+        _normalizeStandaloneAudioClip(clip),
+    ];
     lockedVideoTracks = project.lockedVideoTracks
         .where((track) => track >= 2 && track <= activeVideoTrackCount)
         .toSet();

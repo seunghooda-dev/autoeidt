@@ -427,6 +427,92 @@ def test_render_interpolates_motion_keyframes_on_output_time(
     assert "[motioncanvas0][motion0]overlay=x='0':y='0'" in filter_complex
 
 
+def test_render_interpolates_volume_for_main_overlay_and_aux_audio(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+    overlay_path = tmp_path / "overlay.mov"
+    audio_path = tmp_path / "music.wav"
+    overlay_path.write_bytes(b"overlay")
+    audio_path.write_bytes(b"audio")
+
+    def fake_run(
+        command: list[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(ffmpeg_service, "get_settings", lambda: _FakeSettings(tmp_path))
+    monkeypatch.setattr(ffmpeg_service, "_audio_stream_count", lambda path: 1)
+    monkeypatch.setattr(ffmpeg_service, "_audio_channel_counts", lambda path, count: [2])
+    monkeypatch.setattr(ffmpeg_service, "_run", fake_run)
+
+    ffmpeg_service.render_highlights_reencoded(
+        Path("C:/media/source.mxf"),
+        [
+            {
+                "order": 1,
+                "start": 0,
+                "end": 4,
+                "reason": "main volume ride",
+                "audio_volume": 0,
+                "audio_gain_keyframes": [
+                    {"time": 0, "volume": 0},
+                    {"time": 4, "volume": 1},
+                ],
+            }
+        ],
+        tmp_path / "audio-automation.mp4",
+        video_overlays=[
+            {
+                "id": "overlay-audio",
+                "source_path": str(overlay_path),
+                "timeline_start": 0,
+                "timeline_end": 4,
+                "source_start": 0,
+                "source_end": 4,
+                "muted": False,
+                "audio_volume": 0,
+                "audio_gain_keyframes": [
+                    {"time": 0, "volume": 0.25},
+                    {"time": 4, "volume": 1.25},
+                ],
+            }
+        ],
+        audio_clips=[
+            {
+                "id": "music",
+                "source_path": str(audio_path),
+                "timeline_start": 0,
+                "timeline_end": 4,
+                "source_start": 0,
+                "source_end": 4,
+                "volume": 0,
+                "gain_keyframes": [
+                    {"time": 0, "volume": 0.5},
+                    {"time": 4, "volume": 1.5},
+                ],
+            }
+        ],
+    )
+
+    command = commands[-1]
+    filter_complex = _command_value(command, "-filter_complex")
+    input_paths = [
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-i"
+    ]
+    assert input_paths[1:] == [str(overlay_path.resolve()), str(audio_path.resolve())]
+    assert filter_complex.count(":eval=frame") == 3
+    assert "volume='if(lt(t,4.000000)" in filter_complex
+    assert "0.000000+(1.000000)*clip((t-0.000000)/4.000000,0,1)" in filter_complex
+    assert "0.250000+(1.000000)*clip((t-0.000000)/4.000000,0,1)" in filter_complex
+    assert "0.500000+(1.000000)*clip((t-0.000000)/4.000000,0,1)" in filter_complex
+
+
 def test_program_preview_proxy_uses_effect_segment_and_fast_preview_size(
     tmp_path: Path,
     monkeypatch,
@@ -606,6 +692,10 @@ def test_program_preview_window_remaps_effects_audio_and_fades(
         "video_fade_out": 1,
         "audio_fade_in": 1,
         "audio_fade_out": 1,
+        "audio_gain_keyframes": [
+            {"time": 0, "volume": 0.2},
+            {"time": 10, "volume": 1.2},
+        ],
         "motion_keyframes": [
             {"time": 0, "scale": 1},
             {"time": 10, "scale": 3},
@@ -638,6 +728,10 @@ def test_program_preview_window_remaps_effects_audio_and_fades(
     assert window["motion_keyframes"][0]["scale"] == 1.8
     assert window["motion_keyframes"][-1]["time"] == 3
     assert window["motion_keyframes"][-1]["scale"] == 2.4
+    assert window["audio_gain_keyframes"][0]["time"] == 0
+    assert abs(window["audio_gain_keyframes"][0]["volume"] - 0.6) < 0.000001
+    assert window["audio_gain_keyframes"][-1]["time"] == 3
+    assert abs(window["audio_gain_keyframes"][-1]["volume"] - 0.9) < 0.000001
     assert window["focus_keyframes"][0]["time"] == 0
     assert abs(window["focus_keyframes"][0]["x"] - 0.44) < 0.000001
     assert window["focus_keyframes"][-1]["time"] == 6

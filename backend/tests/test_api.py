@@ -33,6 +33,7 @@ def test_health_endpoint() -> None:
     assert "per_track_controls_v1" in payload["features"]
     assert "audio_track_solo_v1" in payload["features"]
     assert "lossless_multitrack_project_v1" in payload["features"]
+    assert "audio_gain_keyframes_v1" in payload["features"]
 
 
 def test_timeline_returns_not_found_for_unknown_job() -> None:
@@ -335,6 +336,10 @@ def test_project_endpoints_preserve_render_settings(
                     "timeline_end": 9,
                     "source_start": 1,
                     "source_end": 6,
+                    "audio_gain_keyframes": [
+                        {"time": 0, "volume": 0.2},
+                        {"time": 5, "volume": 1.1},
+                    ],
                     "video_track": 4,
                     "audio_track": 8,
                 }
@@ -348,6 +353,10 @@ def test_project_endpoints_preserve_render_settings(
                     "timeline_end": 20,
                     "source_start": 0,
                     "source_end": 20,
+                    "gain_keyframes": [
+                        {"time": 0, "volume": 0.5},
+                        {"time": 20, "volume": 0.8},
+                    ],
                     "track": 7,
                 }
             ],
@@ -417,6 +426,8 @@ def test_project_endpoints_preserve_render_settings(
     assert payload["selected_shorts_id"] == 2
     assert payload["video_overlays"][0]["id"] == "v4-news"
     assert payload["audio_clips"][0]["id"] == "a7-bed"
+    assert payload["video_overlays"][0]["audio_gain_keyframes"][1]["volume"] == 1.1
+    assert payload["audio_clips"][0]["gain_keyframes"][1]["time"] == 20.0
     assert payload["active_video_track_count"] == 4
     assert payload["active_audio_track_count"] == 8
     assert payload["locked_video_tracks"] == [4]
@@ -444,6 +455,8 @@ def test_project_endpoints_preserve_render_settings(
     assert get_payload["video_overlays"][0]["video_track"] == 4
     assert get_payload["video_overlays"][0]["audio_track"] == 8
     assert get_payload["audio_clips"][0]["track"] == 7
+    assert get_payload["video_overlays"][0]["audio_gain_keyframes"][0]["volume"] == 0.2
+    assert get_payload["audio_clips"][0]["gain_keyframes"][0]["volume"] == 0.5
     assert get_payload["active_video_track_count"] == 4
     assert get_payload["active_audio_track_count"] == 8
     assert get_payload["locked_video_tracks"] == [4]

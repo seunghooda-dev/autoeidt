@@ -730,6 +730,31 @@ def _segment_audio_volume(segment: dict) -> float:
     return max(0.0, min(float(segment.get("audio_volume", 1.0)), 2.0))
 
 
+def _payload_has_audible_audio_gain(
+    payload: dict,
+    *,
+    static_field: str,
+    keyframe_field: str,
+) -> bool:
+    try:
+        if float(payload.get(static_field, 1.0)) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    raw_keyframes = payload.get(keyframe_field, [])
+    if not isinstance(raw_keyframes, list):
+        return False
+    for item in raw_keyframes[:64]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            if float(item.get("volume", 0.0)) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _segment_audio_pan(segment: dict) -> float:
     return max(-1.0, min(float(segment.get("audio_pan", 0.0)), 1.0))
 
@@ -868,6 +893,48 @@ def _segment_motion_keyframes(
     return deduplicated
 
 
+def _normalized_audio_gain_keyframes(
+    value: Any,
+    duration: float,
+    fallback: float,
+) -> list[dict[str, float]]:
+    if not isinstance(value, list):
+        return []
+    safe_duration = max(0.0, duration)
+    output: list[dict[str, float]] = []
+    for item in value[:64]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            time_seconds = max(
+                0.0,
+                min(float(item.get("time", 0.0)), safe_duration),
+            )
+            output.append(
+                {
+                    "time": round(
+                        round(time_seconds * RENDER_FRAME_RATE)
+                        / RENDER_FRAME_RATE,
+                        6,
+                    ),
+                    "volume": max(
+                        0.0,
+                        min(float(item.get("volume", fallback)), 2.0),
+                    ),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    output.sort(key=lambda item: item["time"])
+    deduplicated: list[dict[str, float]] = []
+    for item in output:
+        if deduplicated and deduplicated[-1]["time"] == item["time"]:
+            deduplicated[-1] = item
+        else:
+            deduplicated.append(item)
+    return deduplicated
+
+
 def _motion_track_expression(
     keyframes: list[dict[str, float]],
     field: str,
@@ -892,6 +959,21 @@ def _motion_track_expression(
             f"if(lt({variable},{right_time:.6f}),{interpolation},{expression})"
         )
     return expression
+
+
+def _audio_gain_filter(
+    keyframes: list[dict[str, float]],
+    fallback: float,
+) -> str:
+    if not keyframes:
+        return f"volume={fallback:.6f}"
+    expression = _motion_track_expression(
+        keyframes,
+        "volume",
+        fallback,
+        "t",
+    )
+    return f"volume='{expression}':eval=frame"
 
 
 def _sample_motion_keyframe(
@@ -957,6 +1039,59 @@ def _window_motion_keyframes(
         }
         for time_seconds in sorted(sample_times)
     ]
+
+
+def _window_audio_gain_keyframes(
+    segment: dict,
+    output_offset: float,
+    output_duration: float,
+    full_output_duration: float,
+) -> list[dict[str, float]]:
+    fallback = _segment_audio_volume(segment)
+    keyframes = _normalized_audio_gain_keyframes(
+        segment.get("audio_gain_keyframes", []),
+        full_output_duration,
+        fallback,
+    )
+    if not keyframes:
+        return []
+    window_end = output_offset + output_duration
+    sample_times = {output_offset, window_end}
+    sample_times.update(
+        item["time"]
+        for item in keyframes
+        if output_offset < item["time"] < window_end
+    )
+    output: list[dict[str, float]] = []
+    for time_seconds in sorted(sample_times):
+        sampled = _sample_audio_gain_keyframes(keyframes, time_seconds, fallback)
+        output.append(
+            {
+                "time": max(0.0, time_seconds - output_offset),
+                "volume": sampled,
+            }
+        )
+    return output
+
+
+def _sample_audio_gain_keyframes(
+    keyframes: list[dict[str, float]],
+    time_seconds: float,
+    fallback: float,
+) -> float:
+    if not keyframes:
+        return fallback
+    if time_seconds <= keyframes[0]["time"]:
+        return keyframes[0]["volume"]
+    if time_seconds >= keyframes[-1]["time"]:
+        return keyframes[-1]["volume"]
+    for left, right in zip(keyframes, keyframes[1:]):
+        if time_seconds > right["time"]:
+            continue
+        duration = max(1 / RENDER_FRAME_RATE, right["time"] - left["time"])
+        progress = max(0.0, min((time_seconds - left["time"]) / duration, 1.0))
+        return left["volume"] + (right["volume"] - left["volume"]) * progress
+    return fallback
 
 
 def _sample_focus_keyframe(
@@ -1304,6 +1439,8 @@ def _atempo_filters(speed: float) -> list[str]:
 def _segment_uses_default_audio(segment: dict) -> bool:
     if bool(segment.get("audio_muted", False)):
         return False
+    if bool(segment.get("audio_gain_keyframes")):
+        return False
     if abs(_segment_audio_volume(segment) - 1.0) > 0.001:
         return False
     if abs(_segment_audio_pan(segment)) > 0.001:
@@ -1641,7 +1778,11 @@ def _render_reencode_with_video_args(
         if (
             not raw_clip.get("enabled", True)
             or raw_clip.get("muted", False)
-            or float(raw_clip.get("volume", 1.0)) <= 0
+            or not _payload_has_audible_audio_gain(
+                raw_clip,
+                static_field="volume",
+                keyframe_field="gain_keyframes",
+            )
         ):
             continue
         raw_path = str(raw_clip.get("source_path") or "").strip()
@@ -1700,6 +1841,15 @@ def _render_reencode_with_video_args(
             if segment.get("audio_muted", False)
             else _segment_audio_volume(segment)
         )
+        audio_gain_keyframes = _normalized_audio_gain_keyframes(
+            segment.get("audio_gain_keyframes", []),
+            output_duration,
+            volume,
+        )
+        has_audio_gain_automation = bool(audio_gain_keyframes) and not bool(
+            segment.get("audio_muted", False)
+        )
+        source_volume = 1.0 if has_audio_gain_automation else volume
         channel_1_enabled = _segment_audio_channel_1_enabled(segment)
         channel_2_enabled = _segment_audio_channel_2_enabled(segment)
         source_channel_left = _segment_audio_source_channel(segment, "left")
@@ -1838,7 +1988,7 @@ def _render_reencode_with_video_args(
             audio_start,
             audio_end,
             video_duration,
-            volume,
+            source_volume,
             channel_1_enabled,
             channel_2_enabled,
             audio_channel_counts,
@@ -1861,12 +2011,14 @@ def _render_reencode_with_video_args(
             f"atrim=duration={output_duration:.6f}",
             "asetpts=PTS-STARTPTS",
         ]
-        if _segment_audio_normalize(segment) and volume > 0:
+        if _segment_audio_normalize(segment) and source_volume > 0:
             loudness_target = _segment_audio_loudness_target(segment)
             true_peak = -2.0 if loudness_target <= -20 else -1.5
             audio_steps.append(
                 f"loudnorm=I={loudness_target:.1f}:TP={true_peak:.1f}:LRA=11"
             )
+        if has_audio_gain_automation:
+            audio_steps.append(_audio_gain_filter(audio_gain_keyframes, volume))
         fade_in = _segment_audio_fade_in(segment, output_duration)
         fade_out = _segment_audio_fade_out(segment, output_duration)
         if fade_in > 0:
@@ -1998,13 +2150,20 @@ def _render_reencode_with_video_args(
         ):
             continue
         volume = max(0.0, min(float(overlay.get("audio_volume", 1.0)), 2.0))
-        if volume <= 0:
-            continue
         timeline_start = float(overlay["render_timeline_start"])
         source_start = float(overlay["render_source_start"])
         source_end = float(overlay["render_source_end"])
         clip_duration = source_end - source_start
         if clip_duration <= 0:
+            continue
+        audio_gain_keyframes = _normalized_audio_gain_keyframes(
+            overlay.get("audio_gain_keyframes", []),
+            clip_duration,
+            volume,
+        )
+        if volume <= 0 and not any(
+            keyframe["volume"] > 0 for keyframe in audio_gain_keyframes
+        ):
             continue
         pan = max(-1.0, min(float(overlay.get("audio_pan", 0.0)), 1.0))
         left_gain = 1.0 if pan <= 0 else 1.0 - pan
@@ -2023,7 +2182,7 @@ def _render_reencode_with_video_args(
             f"[{input_index}:a:0]atrim=start={source_start:.6f}:end={source_end:.6f}",
             "asetpts=PTS-STARTPTS",
             "aformat=sample_rates=48000:channel_layouts=stereo",
-            f"volume={volume:.3f}",
+            _audio_gain_filter(audio_gain_keyframes, volume),
         ]
         if abs(pan) > 0.001:
             audio_steps.append(
@@ -2069,7 +2228,14 @@ def _render_reencode_with_video_args(
         if clip_duration <= 0:
             continue
         volume = max(0.0, min(float(clip.get("volume", 1.0)), 2.0))
-        if volume <= 0:
+        audio_gain_keyframes = _normalized_audio_gain_keyframes(
+            clip.get("gain_keyframes", []),
+            clip_duration,
+            volume,
+        )
+        if volume <= 0 and not any(
+            keyframe["volume"] > 0 for keyframe in audio_gain_keyframes
+        ):
             continue
         pan = max(-1.0, min(float(clip.get("pan", 0.0)), 1.0))
         left_gain = 1.0 if pan <= 0 else 1.0 - pan
@@ -2088,7 +2254,7 @@ def _render_reencode_with_video_args(
             f"[{input_index}:a:0]atrim=start={source_start:.6f}:end={source_end:.6f}",
             "asetpts=PTS-STARTPTS",
             "aformat=sample_rates=48000:channel_layouts=stereo",
-            f"volume={volume:.3f}",
+            _audio_gain_filter(audio_gain_keyframes, volume),
         ]
         if abs(pan) > 0.001:
             audio_steps.append(
@@ -2293,6 +2459,12 @@ def create_program_preview_proxy(
                 output_duration,
                 full_output_duration,
             ),
+            "audio_gain_keyframes": _window_audio_gain_keyframes(
+                full_segment,
+                output_offset,
+                output_duration,
+                full_output_duration,
+            ),
             "focus_keyframes": _window_focus_keyframes(
                 full_segment,
                 source_offset,
@@ -2340,7 +2512,11 @@ def create_program_preview_proxy(
         for clip in (audio_clips or [])[:64]
         if clip.get("enabled", True)
         and not clip.get("muted", False)
-        and float(clip.get("volume", 1.0)) > 0
+        and _payload_has_audible_audio_gain(
+            clip,
+            static_field="volume",
+            keyframe_field="gain_keyframes",
+        )
     ]
     audio_clip_cache_sources: list[str] = []
     for clip in normalized_audio_clips:
@@ -2362,7 +2538,7 @@ def create_program_preview_proxy(
         separators=(",", ":"),
     )
     cache_identity = (
-        f"program-preview-v4-windowed-540p|{normalized_aspect_ratio}|"
+        f"program-preview-v5-audio-automation-540p|{normalized_aspect_ratio}|"
         f"{cache_payload}|"
         f"{resolved}|{stat.st_size}|{stat.st_mtime_ns}"
         f"|{'|'.join(overlay_cache_sources)}"

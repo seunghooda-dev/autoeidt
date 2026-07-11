@@ -94,6 +94,10 @@ void main() {
       transitionDuration: 0.6,
       audioFadeIn: 0.5,
       audioFadeOut: 1.0,
+      audioGainKeyframes: [
+        AudioGainKeyframe(time: 0, volume: 0.7),
+        AudioGainKeyframe(time: 4, volume: 1.2),
+      ],
       score: 8.4,
       tags: ['핵심', '문제해결'],
     );
@@ -120,6 +124,10 @@ void main() {
     expect(json['audio_end'], 22);
     expect(json['audio_muted'], isTrue);
     expect(json['audio_volume'], 0.7);
+    expect((json['audio_gain_keyframes'] as List), [
+      {'time': 0.0, 'volume': 0.7},
+      {'time': 4.0, 'volume': 1.2},
+    ]);
     expect(json['audio_pan'], -0.4);
     expect(json['audio_normalize'], isTrue);
     expect(json['audio_loudness_target'], -24);
@@ -244,6 +252,103 @@ void main() {
     },
   );
 
+  test('audio gain keyframes interpolate and survive 30p clip split', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 20
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 10, reason: 'audio ride'),
+      ]
+      ..selectedSegmentOrder = 1;
+
+    controller.setSelectedAudioVolume(0.8);
+    controller.addOrUpdateSelectedAudioGainKeyframe();
+    expect(controller.selectedAudioGainHasKeyframeAtPlayhead, isTrue);
+
+    await controller.seekTo(10, autoplay: false);
+    controller.setSelectedAudioAutomationVolume(0.2);
+    expect(controller.selectedSegment!.audioGainKeyframes, hasLength(2));
+
+    await controller.seekTo(5, autoplay: false);
+    expect(controller.selectedAudioGainValue, closeTo(0.5, 0.001));
+    expect(controller.selectedAudioGainHasKeyframeAtPlayhead, isFalse);
+
+    controller.splitSelectedAt(5);
+    expect(controller.segments, hasLength(2));
+    expect(
+      controller.segments.first.audioGainKeyframes.last.volume,
+      closeTo(0.5, 0.001),
+    );
+    expect(controller.segments.first.audioGainKeyframes.last.time, 5);
+    expect(
+      controller.segments.last.audioGainKeyframes.first.volume,
+      closeTo(0.5, 0.001),
+    );
+    expect(controller.segments.last.audioGainKeyframes.first.time, 0);
+
+    controller.undo();
+    expect(controller.segments, hasLength(1));
+    expect(controller.segments.single.audioGainKeyframes, hasLength(2));
+    controller.dispose();
+  });
+
+  test('linked and standalone audio use one gain automation editor', () async {
+    final controller = EditorController(autoStartEngine: false)
+      ..duration = 30
+      ..segments = const [
+        HighlightSegment(order: 1, start: 0, end: 30, reason: 'base'),
+      ]
+      ..videoOverlays = const [
+        VideoOverlayClip(
+          id: 'overlay',
+          sourcePath: r'C:\media\overlay.mov',
+          sourceName: 'overlay.mov',
+          timelineStart: 0,
+          timelineEnd: 10,
+          sourceStart: 0,
+          sourceEnd: 10,
+          muted: false,
+        ),
+      ]
+      ..audioClips = const [
+        AudioClip(
+          id: 'music',
+          sourcePath: r'C:\media\music.wav',
+          sourceName: 'music.wav',
+          timelineStart: 10,
+          timelineEnd: 20,
+          sourceStart: 0,
+          sourceEnd: 10,
+        ),
+      ];
+
+    controller.selectVideoOverlay('overlay');
+    await controller.setPreviewMonitorMode('program');
+    await controller.seekMonitorTo(5, autoplay: false);
+    controller.addOrUpdateSelectedAudioGainKeyframe();
+    controller.setSelectedAudioAutomationVolume(0.4);
+    expect(controller.selectedVideoOverlay!.audioGainKeyframes.single.time, 5);
+    expect(
+      controller.selectedVideoOverlay!.audioGainKeyframes.single.volume,
+      0.4,
+    );
+
+    controller.selectAudioClip('music');
+    await controller.seekMonitorTo(12, autoplay: false);
+    controller.addOrUpdateSelectedAudioGainKeyframe();
+    controller.setSelectedAudioAutomationVolume(0.6);
+    expect(controller.selectedAudioClip!.gainKeyframes.single.time, 2);
+    expect(controller.selectedAudioClip!.gainKeyframes.single.volume, 0.6);
+
+    controller.toggleAuxiliaryAudioTrackLockAt(3);
+    controller.setSelectedAudioAutomationVolume(1.5);
+    expect(controller.selectedAudioClip!.gainKeyframes.single.volume, 0.6);
+    controller.toggleAuxiliaryAudioTrackLockAt(3);
+    controller.removeSelectedAudioGainKeyframe();
+    expect(controller.selectedAudioClip!.gainKeyframes, isEmpty);
+    expect(controller.selectedAudioClip!.volume, 0.6);
+    controller.dispose();
+  });
+
   test('selected clip routes broadcast source channels to stereo output', () {
     final controller = EditorController(autoStartEngine: false)
       ..selectedMediaProbe = MediaProbeInfo.fromJson({
@@ -290,6 +395,10 @@ void main() {
           audioPan: -0.25,
           audioFadeIn: 0.5,
           audioFadeOut: 0.75,
+          audioGainKeyframes: [
+            AudioGainKeyframe(time: 0, volume: 0.25),
+            AudioGainKeyframe(time: 9, volume: 1.25),
+          ],
           videoTrack: 4,
           audioTrack: 8,
         ),
@@ -308,6 +417,10 @@ void main() {
           pan: 0.2,
           fadeIn: 1,
           fadeOut: 1.5,
+          gainKeyframes: [
+            AudioGainKeyframe(time: 0, volume: 0.4),
+            AudioGainKeyframe(time: 10, volume: 0.9),
+          ],
         ),
       ],
       activeVideoTrackCount: 4,
@@ -401,6 +514,8 @@ void main() {
     expect(restored.videoOverlays.single.audioPan, -0.25);
     expect(restored.videoOverlays.single.audioFadeIn, 0.5);
     expect(restored.videoOverlays.single.audioFadeOut, 0.75);
+    expect(restored.videoOverlays.single.audioGainKeyframes, hasLength(2));
+    expect(restored.videoOverlays.single.audioGainKeyframes.last.volume, 1.25);
     expect(restored.videoOverlays.single.videoTrack, 4);
     expect(restored.videoOverlays.single.audioTrack, 8);
     expect(restored.activeVideoTrackCount, 4);
@@ -416,6 +531,8 @@ void main() {
     expect(restored.audioClips.single.pan, 0.2);
     expect(restored.audioClips.single.fadeIn, 1);
     expect(restored.audioClips.single.fadeOut, 1.5);
+    expect(restored.audioClips.single.gainKeyframes, hasLength(2));
+    expect(restored.audioClips.single.gainKeyframes.last.volume, 0.9);
     expect(restored.timelineMarkers.single.label, 'Hook');
     expect(restored.timelineMarkers.single.seconds, 12.5);
     expect(restored.timelineMarkers.single.note, 'opening marker');

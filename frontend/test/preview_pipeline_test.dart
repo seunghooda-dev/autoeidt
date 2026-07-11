@@ -393,6 +393,10 @@ void main() {
               sourceEnd: 10,
               audioTrack: 7,
               muted: false,
+              audioGainKeyframes: [
+                AudioGainKeyframe(time: 0, volume: 0.2),
+                AudioGainKeyframe(time: 8, volume: 1.8),
+              ],
             ),
             VideoOverlayClip(
               id: 'v2-outside',
@@ -414,6 +418,10 @@ void main() {
               sourceStart: 2,
               sourceEnd: 10,
               track: 8,
+              gainKeyframes: [
+                AudioGainKeyframe(time: 0, volume: 0.4),
+                AudioGainKeyframe(time: 8, volume: 1.2),
+              ],
             ),
             AudioClip(
               id: 'audio-outside',
@@ -438,6 +446,10 @@ void main() {
         expect(overlays.single.sourceStart, 2);
         expect(overlays.single.sourceEnd, 6);
         expect(overlays.single.muted, isTrue);
+        expect(overlays.single.audioGainKeyframes, hasLength(2));
+        expect(overlays.single.audioGainKeyframes.first.time, 0);
+        expect(overlays.single.audioGainKeyframes.last.time, 4);
+        expect(overlays.single.audioGainKeyframes.last.volume, 1.0);
         expect(api.requestedSegments.last?.audioMuted, isTrue);
         expect(api.requestedSegments.last?.audioChannel1Enabled, isFalse);
         expect(api.requestedSegments.last?.audioChannel2Enabled, isFalse);
@@ -448,6 +460,10 @@ void main() {
         expect(audioClips.single.timelineEnd, 8);
         expect(audioClips.single.sourceStart, 2);
         expect(audioClips.single.sourceEnd, 6);
+        expect(audioClips.single.gainKeyframes, hasLength(2));
+        expect(audioClips.single.gainKeyframes.first.time, 0);
+        expect(audioClips.single.gainKeyframes.last.time, 4);
+        expect(audioClips.single.gainKeyframes.last.volume, 0.8);
       } finally {
         controller.dispose();
         await platform.close();

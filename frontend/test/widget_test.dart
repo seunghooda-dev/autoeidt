@@ -115,6 +115,16 @@ void main() {
     expect(controller.selectedSegment!.videoPositionY, 0);
     expect(controller.selectedSegment!.videoRotation, 0);
     expect(controller.selectedSegment!.motionKeyframes, isEmpty);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('audio-gain-keyframes')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.byKey(const Key('clip-audio-volume')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('audio-gain-keyframe-toggle')));
+    await tester.pump();
+    expect(controller.selectedSegment!.audioGainKeyframes, hasLength(1));
     controller.dispose();
   });
 
@@ -170,10 +180,15 @@ void main() {
     expect(find.byKey(const Key('overlay-video-track')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-track')), findsOneWidget);
     expect(find.text('A3 Overlay Audio'), findsOneWidget);
+    expect(find.byKey(const Key('audio-gain-keyframes')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-volume')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-pan')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-fade-in')), findsOneWidget);
     expect(find.byKey(const Key('overlay-audio-fade-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('audio-gain-keyframe-toggle')));
+    await tester.pump();
+    expect(controller.selectedVideoOverlay!.audioGainKeyframes, hasLength(1));
 
     await tester.tap(find.byKey(const Key('overlay-video-track')));
     await tester.pumpAndSettle();
@@ -248,10 +263,15 @@ void main() {
     expect(find.text('A6 Audio Clip'), findsOneWidget);
     expect(find.text('music.wav'), findsOneWidget);
     expect(find.byKey(const Key('audio-clip-track')), findsOneWidget);
+    expect(find.byKey(const Key('audio-gain-keyframes')), findsOneWidget);
     expect(find.byKey(const Key('audio-clip-volume')), findsOneWidget);
     expect(find.byKey(const Key('audio-clip-pan')), findsOneWidget);
     expect(find.byKey(const Key('audio-clip-fade-in')), findsOneWidget);
     expect(find.byKey(const Key('audio-clip-fade-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('audio-gain-keyframe-toggle')));
+    await tester.pump();
+    expect(controller.selectedAudioClip!.gainKeyframes, hasLength(1));
 
     await tester.tap(find.byKey(const Key('audio-clip-track')));
     await tester.pumpAndSettle();

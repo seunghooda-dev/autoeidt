@@ -39,6 +39,12 @@ def test_highlight_segment_accepts_track_controls() -> None:
         ],
         topic_id=-3,
         audio_volume=3,
+        audio_gain_keyframes=[
+            {"time": 2.019, "volume": 3},
+            {"time": -1, "volume": -2},
+            {"time": 2.018, "volume": 0.75},
+            {"time": "invalid", "volume": 1},
+        ],
         audio_pan=-2,
         audio_normalize=True,
         audio_loudness_target=-99,
@@ -75,6 +81,10 @@ def test_highlight_segment_accepts_track_controls() -> None:
     assert segment.focus_keyframes[0] == {"time": 0.0, "x": 1.0, "y": 0.0}
     assert segment.topic_id == 0
     assert segment.audio_volume == 2.0
+    assert segment.audio_gain_keyframes == [
+        {"time": 0.0, "volume": 0.0},
+        {"time": 2.033333, "volume": 0.75},
+    ]
     assert segment.audio_pan == -1.0
     assert segment.audio_normalize is True
     assert segment.audio_loudness_target == -24.0
@@ -214,6 +224,11 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
                 "audio_pan": -2.0,
                 "audio_fade_in": 12.0,
                 "audio_fade_out": -1.0,
+                "audio_gain_keyframes": [
+                    {"time": 3.019, "volume": 3.0},
+                    {"time": 1.017, "volume": -1.0},
+                    {"time": 1.018, "volume": 0.4},
+                ],
                 "video_track": 9,
                 "audio_track": 20,
             }
@@ -232,6 +247,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
                 "pan": 2.0,
                 "fade_in": 12.0,
                 "fade_out": -1.0,
+                "gain_keyframes": [
+                    {"time": 4.019, "volume": 1.4},
+                    {"time": -2, "volume": -1},
+                ],
             }
         ],
         shorts_candidates=[
@@ -271,6 +290,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.video_overlays[0].audio_pan == -1.0
     assert project.video_overlays[0].audio_fade_in == 10.0
     assert project.video_overlays[0].audio_fade_out == 0.0
+    assert project.video_overlays[0].audio_gain_keyframes == [
+        {"time": 1.033333, "volume": 0.4},
+        {"time": 3.033333, "volume": 2.0},
+    ]
     assert project.video_overlays[0].video_track == 4
     assert project.video_overlays[0].audio_track == 8
     assert project.active_video_track_count == 4
@@ -286,6 +309,10 @@ def test_timeline_payloads_snap_to_30p_non_drop_grid() -> None:
     assert project.audio_clips[0].pan == 1.0
     assert project.audio_clips[0].fade_in == 10.0
     assert project.audio_clips[0].fade_out == 0.0
+    assert project.audio_clips[0].gain_keyframes == [
+        {"time": 0.0, "volume": 0.0},
+        {"time": 4.033333, "volume": 1.4},
+    ]
     assert project.shorts_candidates[0]["segments"][0]["start"] == 8.033333
     assert project.shorts_candidates[0]["segments"][0]["end"] == 9.033333
 

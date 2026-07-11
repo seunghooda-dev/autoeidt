@@ -244,7 +244,8 @@ class LocalEngineService {
           featureSet.contains('standalone_audio_clips_v1') &&
           featureSet.contains('per_track_controls_v1') &&
           featureSet.contains('audio_track_solo_v1') &&
-          featureSet.contains('lossless_multitrack_project_v1');
+          featureSet.contains('lossless_multitrack_project_v1') &&
+          featureSet.contains('audio_gain_keyframes_v1');
     } catch (_) {
       return false;
     }

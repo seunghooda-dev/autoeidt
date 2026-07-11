@@ -23,6 +23,37 @@ def _snap_optional_seconds_to_30p(value: Any) -> float | None:
     return _snap_seconds_to_30p(value)
 
 
+def _normalize_audio_gain_keyframes(value: Any) -> list[dict[str, float]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, float]] = []
+    for item in value[:64]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            normalized.append(
+                {
+                    "time": _snap_seconds_to_30p(
+                        max(0.0, float(item.get("time", 0.0)))
+                    ),
+                    "volume": round(
+                        max(0.0, min(float(item.get("volume", 1.0)), 2.0)),
+                        4,
+                    ),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    normalized.sort(key=lambda item: item["time"])
+    deduplicated: list[dict[str, float]] = []
+    for keyframe in normalized:
+        if deduplicated and deduplicated[-1]["time"] == keyframe["time"]:
+            deduplicated[-1] = keyframe
+        else:
+            deduplicated.append(keyframe)
+    return deduplicated
+
+
 class JobStatus(StrEnum):
     queued = "queued"
     processing = "processing"
@@ -162,6 +193,7 @@ class HighlightSegment(BaseModel):
     transition_duration: float = 0.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
+    audio_gain_keyframes: list[dict[str, float]] = Field(default_factory=list)
     score: float = 0.0
     tags: list[str] = Field(default_factory=list)
 
@@ -223,6 +255,13 @@ class HighlightSegment(BaseModel):
     @classmethod
     def audio_fade_must_be_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("audio_gain_keyframes", mode="before")
+    @classmethod
+    def audio_gain_keyframes_must_be_safe(
+        cls, value: Any
+    ) -> list[dict[str, float]]:
+        return _normalize_audio_gain_keyframes(value)
 
     @field_validator("video_opacity")
     @classmethod
@@ -364,6 +403,7 @@ class VideoOverlayClip(BaseModel):
     audio_pan: float = 0.0
     audio_fade_in: float = 0.0
     audio_fade_out: float = 0.0
+    audio_gain_keyframes: list[dict[str, float]] = Field(default_factory=list)
     video_track: int = 2
     audio_track: int = 3
 
@@ -417,6 +457,11 @@ class VideoOverlayClip(BaseModel):
     def audio_fade_is_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
 
+    @field_validator("audio_gain_keyframes", mode="before")
+    @classmethod
+    def audio_gain_keyframes_are_safe(cls, value: Any) -> list[dict[str, float]]:
+        return _normalize_audio_gain_keyframes(value)
+
     @field_validator("video_track")
     @classmethod
     def video_track_is_safe(cls, value: int) -> int:
@@ -443,6 +488,7 @@ class AudioClip(BaseModel):
     pan: float = 0.0
     fade_in: float = 0.0
     fade_out: float = 0.0
+    gain_keyframes: list[dict[str, float]] = Field(default_factory=list)
 
     @field_validator(
         "timeline_start", "timeline_end", "source_start", "source_end", mode="before"
@@ -478,6 +524,11 @@ class AudioClip(BaseModel):
     @classmethod
     def fade_is_safe(cls, value: float) -> float:
         return max(0.0, min(float(value), 10.0))
+
+    @field_validator("gain_keyframes", mode="before")
+    @classmethod
+    def gain_keyframes_are_safe(cls, value: Any) -> list[dict[str, float]]:
+        return _normalize_audio_gain_keyframes(value)
 
 
 class LocalPreviewRequest(BaseModel):

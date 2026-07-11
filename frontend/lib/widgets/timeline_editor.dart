@@ -2491,7 +2491,16 @@ class _VideoOverlayBlockState extends State<_VideoOverlayBlock> {
               .toDouble(),
         );
         onChanged(
-          origin.copyWith(timelineStart: start, sourceStart: sourceStart),
+          origin.copyWith(
+            timelineStart: start,
+            sourceStart: sourceStart,
+            audioGainKeyframes: windowAudioGainKeyframes(
+              keyframes: origin.audioGainKeyframes,
+              offset: start - origin.timelineStart,
+              duration: origin.timelineEnd - start,
+              fallback: origin.audioVolume,
+            ),
+          ),
         );
       case _OverlayDragMode.trimEnd:
         final end = snapSecondsToFrame(
@@ -2505,7 +2514,18 @@ class _VideoOverlayBlockState extends State<_VideoOverlayBlock> {
             origin.sourceEnd + (end - origin.timelineEnd),
           ),
         );
-        onChanged(origin.copyWith(timelineEnd: end, sourceEnd: sourceEnd));
+        onChanged(
+          origin.copyWith(
+            timelineEnd: end,
+            sourceEnd: sourceEnd,
+            audioGainKeyframes: windowAudioGainKeyframes(
+              keyframes: origin.audioGainKeyframes,
+              offset: 0,
+              duration: end - origin.timelineStart,
+              fallback: origin.audioVolume,
+            ),
+          ),
+        );
     }
   }
 
@@ -2686,6 +2706,33 @@ class _OverlayTrimHandle extends StatelessWidget {
   }
 }
 
+class _AudioAutomationDiamond extends StatelessWidget {
+  const _AudioAutomationDiamond({required this.fraction});
+
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = fraction.clamp(0.0, 1.0).toDouble();
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment(normalized * 2 - 1, 0.78),
+        child: Transform.rotate(
+          angle: math.pi / 4,
+          child: Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFD166),
+              border: Border.all(color: const Color(0xFF231A05), width: 0.7),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VideoOverlayAudioBlock extends StatelessWidget {
   const _VideoOverlayAudioBlock({
     required this.overlay,
@@ -2719,7 +2766,11 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
       overlay.timelineDuration / math.max(duration, 0.001) * canvasWidth,
     );
     final accent = _TimelinePainter._overlayAudioColor;
-    final active = !trackMuted && !overlay.muted && overlay.audioVolume > 0;
+    final active =
+        !trackMuted &&
+        !overlay.muted &&
+        (overlay.audioVolume > 0 ||
+            overlay.audioGainKeyframes.any((keyframe) => keyframe.volume > 0));
     return Positioned(
       key: ValueKey('video-overlay-audio-${overlay.id}'),
       left: left,
@@ -2740,35 +2791,47 @@ class _VideoOverlayAudioBlock extends StatelessWidget {
               ),
               borderRadius: BorderRadius.circular(3),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 7),
-              child: Row(
-                children: [
-                  Icon(
-                    active ? Icons.graphic_eq : Icons.volume_off_outlined,
-                    size: 13,
-                    color: _TimelinePainter._clipTextColor,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      'A${overlay.audioTrack} ${overlay.sourceName}  ${(overlay.audioVolume * 100).round()}%',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  left: 7,
+                  right: 7,
+                  child: Row(
+                    children: [
+                      Icon(
+                        active ? Icons.graphic_eq : Icons.volume_off_outlined,
+                        size: 13,
                         color: _TimelinePainter._clipTextColor,
-                        fontWeight: FontWeight.w800,
                       ),
-                    ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'A${overlay.audioTrack} ${overlay.sourceName}${overlay.audioGainKeyframes.isEmpty ? '  ${(overlay.audioVolume * 100).round()}%' : '  VOL'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: _TimelinePainter._clipTextColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      if (locked)
+                        const Icon(
+                          Icons.lock,
+                          size: 12,
+                          color: _TimelinePainter._clipTextColor,
+                        ),
+                    ],
                   ),
-                  if (locked)
-                    const Icon(
-                      Icons.lock,
-                      size: 12,
-                      color: _TimelinePainter._clipTextColor,
-                    ),
-                ],
-              ),
+                ),
+                for (final keyframe in overlay.audioGainKeyframes)
+                  _AudioAutomationDiamond(
+                    fraction: overlay.timelineDuration <= 0
+                        ? 0
+                        : keyframe.time / overlay.timelineDuration,
+                  ),
+              ],
             ),
           ),
         ),
@@ -2862,7 +2925,16 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
               .toDouble(),
         );
         onChanged(
-          origin.copyWith(timelineStart: start, sourceStart: sourceStart),
+          origin.copyWith(
+            timelineStart: start,
+            sourceStart: sourceStart,
+            gainKeyframes: windowAudioGainKeyframes(
+              keyframes: origin.gainKeyframes,
+              offset: start - origin.timelineStart,
+              duration: origin.timelineEnd - start,
+              fallback: origin.volume,
+            ),
+          ),
         );
       case _OverlayDragMode.trimEnd:
         final end = snapSecondsToFrame(
@@ -2876,7 +2948,18 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
             origin.sourceEnd + (end - origin.timelineEnd),
           ),
         );
-        onChanged(origin.copyWith(timelineEnd: end, sourceEnd: sourceEnd));
+        onChanged(
+          origin.copyWith(
+            timelineEnd: end,
+            sourceEnd: sourceEnd,
+            gainKeyframes: windowAudioGainKeyframes(
+              keyframes: origin.gainKeyframes,
+              offset: 0,
+              duration: end - origin.timelineStart,
+              fallback: origin.volume,
+            ),
+          ),
+        );
     }
   }
 
@@ -2927,7 +3010,11 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
     );
     const accent = _TimelinePainter._standaloneAudioColor;
     final active =
-        !widget.trackMuted && clip.enabled && !clip.muted && clip.volume > 0;
+        !widget.trackMuted &&
+        clip.enabled &&
+        !clip.muted &&
+        (clip.volume > 0 ||
+            clip.gainKeyframes.any((keyframe) => keyframe.volume > 0));
     return Positioned(
       key: ValueKey('audio-clip-${clip.id}'),
       left: left,
@@ -2968,7 +3055,7 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          'A${clip.track} ${clip.sourceName}  ${(clip.volume * 100).round()}%',
+                          'A${clip.track} ${clip.sourceName}${clip.gainKeyframes.isEmpty ? '  ${(clip.volume * 100).round()}%' : '  VOL'}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelSmall
@@ -2981,6 +3068,12 @@ class _StandaloneAudioBlockState extends State<_StandaloneAudioBlock> {
                     ],
                   ),
                 ),
+                for (final keyframe in clip.gainKeyframes)
+                  _AudioAutomationDiamond(
+                    fraction: clip.timelineDuration <= 0
+                        ? 0
+                        : keyframe.time / clip.timelineDuration,
+                  ),
                 if (!widget.locked) ...[
                   _OverlayTrimHandle(
                     alignment: Alignment.centerLeft,
@@ -4043,6 +4136,11 @@ class _TimelinePainter extends CustomPainter {
           ? '$channelLabel off C${segment.order}'
           : '$channelLabel C${segment.order}',
       track: track,
+      audioGainKeyframePositions: [
+        for (final keyframe in segment.audioGainKeyframes)
+          displayStart +
+              keyframe.time * (sequenceMode ? 1.0 : segment.playbackSpeed),
+      ],
     );
   }
 
@@ -4063,6 +4161,7 @@ class _TimelinePainter extends CustomPainter {
     bool disabledPattern = false,
     bool hasVideoEffects = false,
     List<double> motionKeyframePositions = const [],
+    List<double> audioGainKeyframePositions = const [],
     List<ui.Image> thumbnails = const [],
   }) {
     final left = _secondsToX(start, size.width);
@@ -4151,6 +4250,14 @@ class _TimelinePainter extends CustomPainter {
     }
     if (track == _DragTrack.video && motionKeyframePositions.isNotEmpty) {
       _drawMotionKeyframeMarkers(canvas, size, rect, motionKeyframePositions);
+    }
+    if (track != _DragTrack.video && audioGainKeyframePositions.isNotEmpty) {
+      _drawAudioGainKeyframeMarkers(
+        canvas,
+        size,
+        rect,
+        audioGainKeyframePositions,
+      );
     }
     final effectiveBorder = handlesActive ? colorScheme.primary : border;
     canvas.drawRRect(
@@ -4269,6 +4376,34 @@ class _TimelinePainter extends CustomPainter {
         ..lineTo(center.dx + 4, center.dy)
         ..lineTo(center.dx, center.dy + 4)
         ..lineTo(center.dx - 4, center.dy)
+        ..close();
+      canvas.drawPath(path, fill);
+      canvas.drawPath(path, stroke);
+    }
+  }
+
+  void _drawAudioGainKeyframeMarkers(
+    Canvas canvas,
+    Size size,
+    Rect rect,
+    List<double> positions,
+  ) {
+    final fill = Paint()..color = const Color(0xFFFFD166);
+    final stroke = Paint()
+      ..color = Colors.black.withValues(alpha: 0.78)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    for (final position in positions) {
+      final x = _secondsToX(
+        position,
+        size.width,
+      ).clamp(rect.left + 4, rect.right - 4).toDouble();
+      final center = Offset(x, rect.bottom - 7);
+      final path = Path()
+        ..moveTo(center.dx, center.dy - 3.5)
+        ..lineTo(center.dx + 3.5, center.dy)
+        ..lineTo(center.dx, center.dy + 3.5)
+        ..lineTo(center.dx - 3.5, center.dy)
         ..close();
       canvas.drawPath(path, fill);
       canvas.drawPath(path, stroke);
